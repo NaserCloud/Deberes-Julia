@@ -440,13 +440,13 @@ const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tar
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
   const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[]};
-  s=Object.assign(d,s);s.ai=Object.assign({on:false,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});
+  s=Object.assign(d,s);s.ai=Object.assign({on:false,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});
   if(!s.dictados)s.dictados=[SAMPLE];
   return s;
 }
 let state=loadState();
 const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',fix:null,tab:'dictados',editId:null,unlocked:false,run:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -502,6 +502,24 @@ const Dict=(()=>{
 const AI_STYLE='v1';
 const AI_INSTR='Habla en español de España, como una maestra de primaria dictando a una niña de diez años: voz cálida, clara y pausada, con muy buena dicción. Pronuncia cada palabra con calma, sin prisa y sin añadir ni quitar nada del texto. Los signos de puntuación escritos como palabras (coma, punto, punto y aparte, abrir exclamación…) dilos de forma natural, como hace una profesora al dictar.';
 const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+const apiErr=s=>s===401?'La clave de OpenAI no es correcta':s===429?'Límite de uso o saldo agotado en OpenAI':s===403?'La clave no tiene permiso para esto':s===413?'La foto es demasiado grande':'Error de OpenAI ('+s+')';
+const VISION_SYS='Eres un transcriptor literal de texto manuscrito (OCR). La imagen es la hoja de cuaderno de una niña de primaria que ha escrito un dictado y puede tener faltas de ortografía. Tu única tarea es copiar EXACTAMENTE lo que hay escrito, letra por letra, sin corregir NADA: no corrijas la ortografía, ni las tildes (si falta una tilde, no la pongas; si hay una tilde de más, déjala), ni las mayúsculas o minúsculas, ni los signos de puntuación, ni las palabras mal separadas o pegadas. Si una letra está equivocada, escríbela tal como está. Conserva los saltos de línea. Ignora los tachones y lo tachado. Si una palabra es totalmente ilegible, escribe [?] en su lugar. Incluye la fecha o el título si los ha escrito. Responde SOLO con el texto transcrito, sin comillas, sin comentarios y sin explicaciones.';
+async function readNotebook(dataUrl){
+  const a=state.ai;
+  const body={model:a.visionModel||'gpt-4o',temperature:0,messages:[{role:'system',content:VISION_SYS},{role:'user',content:[{type:'text',text:'Transcribe literalmente el texto manuscrito de esta foto, sin corregir ninguna falta.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}]};
+  let r;try{r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Authorization':'Bearer '+a.key.trim(),'Content-Type':'application/json'},body:JSON.stringify(body)});}
+  catch(e){throw new Error('Sin conexión con OpenAI');}
+  if(!r.ok)throw new Error(apiErr(r.status));
+  const j=await r.json();const t=(j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||'').trim();
+  if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja bien recta.');
+  return t.replace(/^```[a-z]*\n?|```$/g,'').trim();
+}
+function fileToJpeg(file,max=1800){
+  return new Promise((res,rej)=>{const url=URL.createObjectURL(file),img=new Image();
+    img.onload=()=>{const k=Math.min(1,max/Math.max(img.width,img.height)),c=document.createElement('canvas');c.width=Math.round(img.width*k);c.height=Math.round(img.height*k);
+      const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res(c.toDataURL('image/jpeg',0.85));};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('No se ha podido abrir la foto'));};img.src=url;});
+}
 const Voz=(()=>{
   const el=new Audio();el.preload='auto';el.preservesPitch=true;el.webkitPreservesPitch=true;
   const map=new Map();let dbp=null;
@@ -514,7 +532,7 @@ const Voz=(()=>{
     if(/^gpt-4o/.test(a.model))body.instructions=AI_INSTR;
     let r;try{r=await fetch('https://api.openai.com/v1/audio/speech',{method:'POST',headers:{'Authorization':'Bearer '+a.key.trim(),'Content-Type':'application/json'},body:JSON.stringify(body)});}
     catch(e){throw new Error('Sin conexión con OpenAI');}
-    if(!r.ok){const m=r.status===401?'La clave de OpenAI no es correcta':r.status===429?'Límite de uso o saldo agotado en OpenAI':r.status===403?'La clave no tiene permiso para voz':'Error de OpenAI ('+r.status+')';throw new Error(m);}
+    if(!r.ok)throw new Error(apiErr(r.status));
     return await r.blob();
   }
   async function missing(texts){const out=[];for(const t of [...new Set(texts)]){const v=await idb('readonly',s=>s.getKey(K(t))).catch(()=>undefined);if(v===undefined)out.push(t);}return out;}
@@ -569,6 +587,8 @@ function renderRun(){
   <button class="btn" data-act="skip" id="bSkip">⏭ Siguiente</button><button class="btn danger" data-act="stop" id="bStop">⏹ Parar</button></div>
   <div class="status"><span class="ico" id="stIco">🎧</span><div style="flex:1"><div id="stTxt">Pulsa «Empezar dictado» cuando estés lista.</div><div class="bar"><i id="stBar"></i></div></div></div>
   <textarea id="answer" placeholder="Escribe aquí lo que oigas…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-gramm="false">${esc(ui.answer)}</textarea>
+  <div class="row" style="margin-top:10px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Lo he escrito en el cuaderno: subir foto<input type="file" accept="image/*" id="photoIn" hidden></label></div>
+  <div id="photoBox">${photoHTML()}</div>
   <div class="row" style="margin-top:14px"><button class="btn success big" data-act="correct">✅ Corregir</button></div>`;
   updateRun();
 }
@@ -587,6 +607,24 @@ function updateRun(){
   const run=s&&!s.dead&&ph!=='done',b=id=>$(id);
   b('#bStart').disabled=!!run;b('#bPause').disabled=!run;b('#bRepeat').disabled=!run||ph==='paused'||ph==='starting';b('#bSkip').disabled=!run||ph==='paused';b('#bStop').disabled=!run;
   b('#bPause').textContent=ph==='paused'?'▶ Reanudar':'⏸ Pausa';
+}
+function photoHTML(){
+  if(!ui.photo)return '';
+  return `<div class="panel"><div class="row" style="flex-wrap:nowrap;align-items:flex-start"><img src="${ui.photo}" alt="Tu cuaderno" style="width:130px;border-radius:10px;border:2px solid var(--line)"><div>✅ <b>He leído tu cuaderno.</b> Comprueba que el texto de arriba es lo que tú escribiste: si la app ha leído mal una letra, cámbiala, pero <b>no corrijas tus faltas</b>. Si aparece el título o la fecha, no pasa nada.${/\[\?\]/.test(ui.answer)?'<br><span class="wrong">Hay partes que no se han podido leer ([?]): escríbelas tú.</span>':''}</div></div></div>`;
+}
+async function handlePhoto(file){
+  if(!state.ai.key.trim())return toast('El tutor tiene que poner la clave de OpenAI en Ajustes para leer fotos');
+  const box=$('#photoBox');if(box)box.innerHTML='<div class="status"><span class="ico">🔎</span><div>Leyendo tu letra… unos segundos</div></div>';
+  try{
+    const data=await fileToJpeg(file),txt=await readNotebook(data);
+    ui.answer=txt;ui.photo=data;
+    if(ui.screen==='run'&&ui.role==='alumna'){const a=$('#answer');if(a)a.value=txt;const b=$('#photoBox');if(b)b.innerHTML=photoHTML();}
+  }catch(e){const b=$('#photoBox');if(b)b.innerHTML='';toast(e.message);}
+}
+function dropTitle(ans,title){
+  const lines=ans.split('\n'),norm=s=>strip(s.toLowerCase()).replace(/[^\p{L}\p{N}]/gu,'');
+  const a=norm(lines[0]||''),t=norm(title||'');if(!a||!t)return ans;
+  return lev(a,t)/Math.max(a.length,t.length)<=0.15?lines.slice(1).join('\n').trim():ans;
 }
 function dictChunks(d){
   const chunks=buildChunks(d.text,state.settings.phr);
@@ -620,6 +658,7 @@ function goCorrect(){
   if(!ui.answer.trim())return toast('Escribe algo primero ✍️');
   const s=Dict.cur;if(s&&!s.dead&&s.phase!=='done'&&!confirm('El dictado aún no ha terminado. ¿Quieres corregir ya?'))return;
   Dict.stop();
+  ui.answer=dropTitle(ui.answer,d.title);if(!ui.answer.trim())return toast('No hay texto para corregir');
   const r=computeCorrection(d.text,ui.answer,state.customRules);
   r.errors.forEach(e=>{e.stage=e.type==='extra'?'ack':'word';e.fails=0;e.done=false;
     if(e.type==='sub'){e.opts=state.rulesMode==='test'?makeOptions(e.a):null;e.wrongPicks=[];e.manual=state.rulesMode!=='test';}});
@@ -753,13 +792,14 @@ function tabAjustes(){
   <label class="f">Pausa después de cada signo<select data-set="ppause"><option value="0.6" ${s.ppause==0.6?'selected':''}>Corta</option><option value="1" ${s.ppause==1?'selected':''}>Normal</option><option value="1.6" ${s.ppause==1.6?'selected':''}>Larga</option><option value="2.2" ${s.ppause==2.2?'selected':''}>Muy larga</option></select></label>
   ${Dict.voices().length?`<label class="f">Voz<select data-set="voice">${Dict.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.voice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en español en este dispositivo.</p>'}</div>
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
-  <div class="panel"><h3>🎙 Voz IA (mucho más humana)</h3>
+  <div class="panel"><h3>🎙 IA de OpenAI: voz y lectura de fotos</h3>
   <p class="mute" style="margin-top:0">Usa la voz de OpenAI para dictar como una profesora. El audio se genera <b>una sola vez</b> al guardar cada dictado (cuesta unos céntimos) y queda guardado en este iPad. La clave solo se guarda en este dispositivo.</p>
   <label class="f"><input type="checkbox" data-ai="on" ${state.ai.on?'checked':''}> Usar voz IA</label><br>
   <label class="f">Clave API de OpenAI<input type="password" data-ai="key" value="${esc(state.ai.key)}" placeholder="sk-..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
   <div class="grid2" style="margin-top:12px">
    <label class="f">Voz<select data-ai="voice">${['coral','nova','shimmer','sage','ballad','alloy','ash','echo','fable','onyx','verse'].map(v=>`<option ${state.ai.voice===v?'selected':''}>${v}</option>`).join('')}</select></label>
    <label class="f">Modelo<select data-ai="model"><option value="gpt-4o-mini-tts" ${state.ai.model==='gpt-4o-mini-tts'?'selected':''}>gpt-4o-mini-tts (recomendado)</option><option value="tts-1-hd" ${state.ai.model==='tts-1-hd'?'selected':''}>tts-1-hd</option></select></label>
+   <label class="f">Modelo para leer fotos del cuaderno<select data-ai="visionModel"><option value="gpt-4o" ${state.ai.visionModel==='gpt-4o'?'selected':''}>gpt-4o (mejor con letra a mano)</option><option value="gpt-4o-mini" ${state.ai.visionModel==='gpt-4o-mini'?'selected':''}>gpt-4o-mini (más barato)</option></select></label>
    <label class="f">Velocidad de la voz IA <span class="v" id="v_aispeed">${state.ai.speed}×</span><input type="range" min="0.7" max="1.2" step="0.05" value="${state.ai.speed}" data-ai="speed"></label></div>
   <div class="row" style="margin-top:12px"><button class="btn primary" data-act="testAI">🔊 Probar voz IA</button></div>
   <p class="mute" style="margin-bottom:0">Si cambias la voz, el modelo o el largo de las frases, hay que pulsar «Generar voz» en cada dictado (o se genera sola la primera vez que Julia lo empieza). Si falla algo, la app usa la voz del iPad.</p></div>
@@ -812,12 +852,12 @@ const studentActions={
   goHome(){if(ui.role==='tutor'){ui.role='alumna';}Dict.stop();ui.screen='home';render();},
   goList(){ui.screen='list';render();},
   backList(){Dict.stop();ui.screen='list';render();},
-  openDict(b){ui.dict=b.dataset.id;ui.answer='';ui.screen='run';render();},
+  openDict(b){ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.screen='run';render();},
   start:startDictado,
   pause(){Dict.cur&&Dict.cur.paused?Dict.resume():Dict.pause();},
   repeat(){Dict.repeat();},skip(){Dict.skip();},stop(){Dict.stop();updateRun();},
   correct:goCorrect,
-  again(){ui.answer='';ui.fix=null;ui.screen='run';render();},
+  again(){ui.answer='';ui.photo=null;ui.fix=null;ui.screen='run';render();},
   setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();}
 };
 const ALL=Object.assign({},studentActions,tutorActions,fixActions);
@@ -832,6 +872,7 @@ document.addEventListener('input',e=>{const t=e.target;
 });
 document.addEventListener('change',e=>{const t=e.target;
   if(t.dataset.set==='voice'){state.settings.voice=t.value;save();}
+  if(t.id==='photoIn'&&t.files[0]){const f=t.files[0];t.value='';handlePhoto(f);return;}
   if(t.id==='imp'&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const s=JSON.parse(fr.result);if(!Array.isArray(s.dictados))throw 0;if(confirm('Esto reemplazará los datos actuales. ¿Continuar?')){const oldKey=state.ai.key;localStorage.setItem(KEY,JSON.stringify(s));state=loadState();if(!state.ai.key)state.ai.key=oldKey;save();ui.tab='dictados';render();toast('Copia restaurada');}}catch(x){toast('Archivo no válido');}};fr.readAsText(t.files[0]);}
 });
 document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.target;
