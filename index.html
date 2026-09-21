@@ -50,6 +50,18 @@ input:focus,textarea:focus,select:focus{outline:3px solid #c9c2f7;border-color:v
 .marked .bad{color:var(--bad);font-weight:800;background:var(--badbg);border-radius:6px;padding:0 4px;text-decoration:underline wavy}
 .tbox{position:sticky;z-index:4;background:var(--bg);padding:8px 0 6px;margin-top:6px}
 .tbox-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:1.05rem}.tbox-h .mute{font-size:.8rem}
+.cmp{max-height:40vh;overflow:auto;-webkit-overflow-scrolling:touch;border:2px solid var(--line);border-radius:var(--r);background:#fff;box-shadow:0 4px 10px rgba(45,42,69,.12);font-size:.98rem;line-height:1.55}
+.chead,.crow{display:grid;grid-template-columns:1fr 1fr}.cmp.one .chead,.cmp.one .crow{grid-template-columns:1fr}
+.chead{position:sticky;top:0;z-index:2;font-weight:800;font-size:.9rem;background:#fff;border-bottom:2px solid var(--line)}
+.chead>div{padding:5px 12px}.chead>div+div{background:#dbe8ff}
+.cs{padding:4px 12px;background:#fff}.co{padding:4px 12px;background:#eaf2ff;color:#1e3a8a;border-left:3px solid #3b82f6}
+.cmp.one .co{display:none}.crow.para .cs,.crow.para .co{padding-top:12px}
+.cmp .bad{color:var(--bad);font-weight:800;background:var(--badbg);border-radius:6px;padding:0 3px;text-decoration:underline wavy}
+.cmp .miss{color:var(--bad);font-weight:800;border:2px dashed var(--bad);border-radius:8px;padding:0 5px;font-size:.85rem}
+.cmp .punct{text-decoration:underline dotted var(--warn);text-decoration-thickness:3px;text-underline-offset:4px}
+.cmp .fixed{color:var(--ok);font-weight:800;background:var(--okbg);border-radius:6px;padding:0 3px}
+.cmp .gone{color:var(--mute);text-decoration:line-through}.cmp .blank{color:#93a3c0}
+@media(min-width:760px){.cmp{max-height:44vh;font-size:1.08rem;line-height:1.55}.cs,.co{padding:4px 14px}}
 .tgrid{display:grid;grid-template-columns:1fr;gap:8px}
 @media(min-width:760px){.tgrid{grid-template-columns:1fr 1fr;gap:12px}}
 .tbox .marked.orig{background:#eaf2ff;border-color:#3b82f6;color:#1e3a8a}
@@ -378,7 +390,7 @@ function computeCorrection(orig,ans,custom){
     if(e.type==='sub'){const a=analyze(e.correct,e.typed,e.ss,custom);e.rule=a.text;e.a=a;}
   });
   const wrong=errors.filter(e=>e.type==='sub'||e.type==='missing').length;
-  return {O,S,errors,badS,missAfter,pw,punct,total:O.length,wrong};
+  return {O,S,al,errors,badS,missAfter,pw,punct,total:O.length,wrong};
 }
 /* ---- dictado: trozos y texto hablado ---- */
 const BREAK=new Set(['y','e','o','u','pero','que','con','en','a','de','por','para','cuando','donde','como','mientras','porque','si','aunque','sin','hasta','después','luego','entonces','al','del','sobre','desde']);
@@ -449,15 +461,15 @@ const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:tru
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
-  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[]};
-  s=Object.assign(d,s);s.ai=Object.assign({on:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:''},s.sync||{});
+  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[]};
+  s=Object.assign(d,s);s.ai=Object.assign({on:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:''},s.sync||{});
   if(!s.dictados)s.dictados=[SAMPLE];
   return s;
 }
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -507,6 +519,7 @@ const Dict=(()=>{
     pause(){const s=cur;if(!s||s.dead||s.paused)return;s.pp=s.phase;s.rest=s.left;s.paused=true;halt(s);s.phase='paused';s.h.onPhase(s);},
     resume(){const s=cur;if(!s||!s.paused)return;s.paused=false;if(s.pp==='waiting'||s.pp==='starting'||s.pp==='regap')wait(s,Math.max(1,s.rest),s.then,s.pp);else s.to=setTimeout(()=>play(s),200);},
     repeat(){const s=cur;if(!s||s.dead||s.phase==='starting')return;halt(s);s.paused=false;s.rep=Math.max(0,s.st.repeat-1);s.to=setTimeout(()=>play(s),200);},
+    prev(){const s=cur;if(!s||s.dead||s.phase==='starting')return;halt(s);s.paused=false;if(s.i>0)s.i--;s.rep=0;play(s);},
     skip(){const s=cur;if(!s||s.dead)return;s.paused=false;if(s.phase==='starting'){halt(s);play(s);return;}advance(s);}
   };
 })();
@@ -530,6 +543,16 @@ async function readNotebook(dataUrl){
   const j=await r.json();const t=(j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||'').trim();
   if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja bien recta.');
   return t.replace(/^```[a-z]*\n?|```$/g,'').trim();
+}
+const PRINT_SYS='Eres un transcriptor fiel de texto (impreso o escrito) para crear dictados escolares en español. Copia EXACTAMENTE el texto de la imagen respetando ortografía, tildes, mayúsculas, signos de puntuación y saltos de párrafo. No resumas, no añadas, no corrijas, no traduzcas y no expliques nada. Ignora números de página, encabezados, pies de página, numeración y enunciados de ejercicios que no formen parte del texto. Si hay un título claro, escribe en la primera línea «TÍTULO: » seguido del título, deja una línea en blanco y continúa con el texto; si no hay título, empieza directamente por el texto. No uses markdown ni comillas para envolver el resultado. Si alguna palabra no se puede leer, escribe [?].';
+async function readPrinted(dataUrl){
+  const body={model:state.ai.visionModel||'gpt-4o',temperature:0,max_tokens:1500,messages:[{role:'system',content:PRINT_SYS},{role:'user',content:[{type:'text',text:'Transcribe el texto de esta imagen para usarlo como dictado.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}]};
+  let r;try{r=await aiCall('vision','/v1/chat/completions',body);}catch(e){throw new Error('Sin conexión con el servidor de voz');}
+  if(!r.ok)throw new Error(apiErr(r.status));
+  const j=await r.json();let t=(j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||'').trim().replace(/^```[a-z]*\n?|```$/g,'').trim();
+  if(!t)throw new Error('No he podido leer texto en la foto. Prueba con más luz y la página recta.');
+  let title='';const m=t.match(/^T[ÍI]TULO:\s*(.+?)\s*(?:\n+|$)/i);if(m){title=m[1].trim();t=t.slice(m[0].length).trim();}
+  return {title,text:t};
 }
 function fileToJpeg(file,max=1800){
   return new Promise((res,rej)=>{const url=URL.createObjectURL(file),img=new Image();
@@ -579,11 +602,11 @@ const Voz=(()=>{
 /* ================= sincronización con Supabase ================= */
 const SB_URL='https://rzzaizkzszgiirwmilyq.supabase.co',SB_KEY='sb_publishable_xdaxsZhA3FDyGWsMeT2pLA_4TSyUvpl';
 const Cloud=(()=>{
-  const K=['dictados','customRules','rulesMode','pin','settings','ai'],hdr={apikey:SB_KEY,'Content-Type':'application/json'};
+  const K=['dictados','customRules','rulesMode','pin','settings','ai','tareas'],hdr={apikey:SB_KEY,'Content-Type':'application/json'};
   const part=k=>{if(k==='ai'){const o=Object.assign({},state.ai);delete o.key;return o;}if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;return o;}return state[k];};
   const js=k=>JSON.stringify(part(k)===undefined?null:part(k));
   const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':(v&&typeof v==='object')?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
-  const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
+  const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='tareas')return !v||!v.length;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
     if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;return canon(o)===canon(d);}return false;};
   let timer=null,busy=false,again=false,started=false;
   const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
@@ -596,10 +619,11 @@ const Cloud=(()=>{
       if(!C.on)return;const s=state.sync;let d=false;
       K.forEach(k=>{const j=js(k);if(s.j[k]!==j){s.j[k]=j;s.t[k]=Date.now();d=true;}});
       const hj=state.history.map(h=>h.id).join(',');if(s.hj!==hj){s.hj=hj;d=true;}
+      const sj=state.sesiones.map(x=>x.id+':'+x.upd).join(',');if(s.sj!==sj){s.sj=sj;d=true;}
       if(d){s.dirty=true;persist();clearTimeout(timer);timer=setTimeout(()=>C.sync(),1200);}
     },
     merge(rv){
-      const s=state.sync,first=!s.init,out={v:1,t:{},d:{},history:[],hclear:0};let changed=false;
+      const s=state.sync,first=!s.init,out={v:1,t:{},d:{},history:[],hclear:0,ses:[]};let changed=false;
       const localD=state.dictados.slice();let adoptedD=false;
       K.forEach(k=>{
         let lt=first&&rv?0:(s.t[k]||0);let rt=rv?(rv.t&&rv.t[k]||0):-1;
@@ -618,9 +642,13 @@ const Cloud=(()=>{
       (rv&&rv.history||[]).concat(state.history).forEach(h=>{if(h.id>hc)map[h.id]=h;});
       const H=Object.values(map).sort((a,b)=>b.id-a.id).slice(0,500);
       if(H.map(h=>h.id).join()!==state.history.map(h=>h.id).join()){state.history=H;changed=true;}
+      const sm={};(rv&&rv.ses||[]).concat(state.sesiones).forEach(x=>{if(!sm[x.id]||(x.upd||0)>(sm[x.id].upd||0))sm[x.id]=x;});
+      const SS=Object.values(sm).sort((a,b)=>a.id<b.id?-1:1);
+      if(canon(SS)!==canon(state.sesiones.slice().sort((a,b)=>a.id<b.id?-1:1))){state.sesiones=SS;changed=true;}
+      s.sj=state.sesiones.map(x=>x.id+':'+x.upd).join(',');out.ses=SS;
       s.hclear=hc;s.hj=H.map(h=>h.id).join(',');out.history=H;out.hclear=hc;
-      const allP=K.every(k=>pristine(k,part(k)))&&!state.history.length;
-      return {out,changed,skip:!rv&&allP&&first,push:!rv||canon(out)!==canon({v:rv.v,t:rv.t,d:rv.d,history:rv.history||[],hclear:rv.hclear||0})};
+      const allP=K.every(k=>pristine(k,part(k)))&&!state.history.length&&!state.sesiones.length;
+      return {out,changed,skip:!rv&&allP&&first,push:!rv||canon(out)!==canon({v:rv.v,t:rv.t,d:rv.d,history:rv.history||[],hclear:rv.hclear||0,ses:(rv.ses||[]).slice().sort((a,b)=>a.id<b.id?-1:1)})};
     },
     async sync(manual){
       if(!C.on)return;if(busy){again=true;return;}
@@ -643,7 +671,7 @@ const Cloud=(()=>{
       }catch(e){C.set('err',e&&e.message&&!/fetch|network|load/i.test(e.message)?e.message:'sin internet');if(manual)toast('Sin conexión con el servidor');}
       busy=false;if(again){again=false;setTimeout(()=>C.sync(),500);}
     },
-    idle(){const a=document.activeElement;return !(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&ui.screen!=='run'&&ui.screen!=='fix'&&!ui.editId&&!ui.preparing;},
+    idle(){const a=document.activeElement;return !(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&ui.screen!=='run'&&ui.screen!=='fix'&&ui.screen!=='mrun'&&!ui.editId&&!ui.preparing;},
     start(){
       if(!C.on||started)return;started=true;C.sync();
       setInterval(()=>{if(!document.hidden&&navigator.onLine!==false)C.sync();},25000);
@@ -658,12 +686,7 @@ function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
-  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix}[ui.screen]||renderHome)();
-}
-function renderHome(){
-  app.innerHTML=`<h1>¡Hola, Julia! 👋</h1><p class="mute">¿Qué deberes toca hoy?</p>
-  <div class="tiles"><button class="tile" data-act="goList"><span class="ico">✏️</span><b>Dictados</b><small>Escucha y escribe lo que oyes</small></button>
-  <div class="tile soon"><span class="ico">✨</span><b>Más deberes</b><small>Muy pronto…</small></div></div>`;
+  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum}[ui.screen]||renderHome)();
 }
 function renderList(){
   const L=state.dictados;
@@ -674,11 +697,11 @@ function renderList(){
 const rateLabel=r=>r<.6?'Muy lenta':r<.8?'Lenta':r<1?'Normal':'Rápida';
 function renderRun(){
   const d=state.dictados.find(x=>x.id===ui.dict);if(!d){ui.screen='list';return render();}
-  app.innerHTML=`<button class="link" data-act="backList">← Dictados</button><h2>${esc(d.title)}</h2>
+  app.innerHTML=`<button class="link" data-act="backList">${ui.item?'← Deberes de hoy':'← Dictados'}</button><h2>${esc(d.title)}</h2>
   ${Dict.supported?'':'<div class="panel" style="border-color:var(--bad)">Este navegador no puede leer en voz alta. Prueba con Safari en el iPad.</div>'}
   <div class="row"><button class="btn primary big" data-act="start" id="bStart">▶ Empezar dictado</button>
   <button class="btn" data-act="pause" id="bPause">⏸ Pausa</button><button class="btn" data-act="repeat" id="bRepeat">🔁 Repetir</button>
-  <button class="btn" data-act="skip" id="bSkip">⏭ Siguiente</button><button class="btn danger" data-act="stop" id="bStop">⏹ Parar</button></div>
+  <button class="btn" data-act="prev" id="bPrev">⏮ Anterior</button><button class="btn" data-act="skip" id="bSkip">⏭ Siguiente</button><button class="btn danger" data-act="stop" id="bStop">⏹ Parar</button></div>
   <p class="mute" style="margin:6px 0;font-size:.85rem">🔈 ¿No oyes nada? Sube el volumen y desactiva el modo silencio del iPhone/iPad (interruptor lateral).</p>
   <div class="status"><span class="ico" id="stIco">🎧</span><div style="flex:1"><div id="stTxt">Pulsa «Empezar dictado» cuando estés lista.</div><div class="bar"><i id="stBar"></i></div></div></div>
   <textarea id="answer" placeholder="Escribe aquí lo que oigas…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-gramm="false">${esc(ui.answer)}</textarea>
@@ -700,7 +723,7 @@ function updateRun(){
   else if(ph==='done')set('🎉','¡Dictado terminado! Repasa lo que has escrito y pulsa «Corregir».',100);
   else set('🎧','Pulsa «Empezar dictado» cuando estés lista.',0);
   const run=s&&!s.dead&&ph!=='done',b=id=>$(id);
-  b('#bStart').disabled=!!run;b('#bPause').disabled=!run;b('#bRepeat').disabled=!run||ph==='paused'||ph==='starting';b('#bSkip').disabled=!run||ph==='paused';b('#bStop').disabled=!run;
+  b('#bStart').disabled=!!run;b('#bPause').disabled=!run;b('#bRepeat').disabled=!run||ph==='paused'||ph==='starting';b('#bSkip').disabled=!run||ph==='paused';b('#bPrev').disabled=!run||ph==='paused'||ph==='starting';b('#bStop').disabled=!run;
   b('#bPause').textContent=ph==='paused'?'▶ Reanudar':'⏸ Pausa';
 }
 function photoHTML(){
@@ -777,17 +800,50 @@ function markedHTML(r){
   });
   return out+esc(txt.slice(pos));
 }
+function toksOf(T,W){
+  return W.map((w,k)=>{
+    const prevE=k?W[k-1].e:0,g0=T.slice(prevE,w.i),pre=((g0.match(/[¿¡«“"(]+\s*$/)||[''])[0]).replace(/\s+/g,'');
+    const g1=T.slice(w.e,k+1<W.length?W[k+1].i:T.length),suf=g1.replace(/[¿¡«“"(]+\s*$/,'').replace(/\s+/g,'');
+    return {w:w.t,pre,suf,nl:/\n/.test(g1)};});
+}
+function cmpHTML(r){
+  const ans=ui.answer,d=state.dictados.find(x=>x.id===ui.dict),orig=d?d.text:'',both=state.settings.showOrig!==false;
+  const S=toksOf(ans,r.S),O=toksOf(orig,r.O),N=innerWidth<760?4:innerWidth<1000?5:6;
+  const byMiss={},bySub={};r.errors.forEach((e,i)=>{if(e.type==='missing')byMiss[e.oi]=i;else if(e.type==='sub')bySub[e.oi]=i;});
+  const fx=e=>e.done||e.stage==='rule';
+  const sCell=p=>{
+    if(p.s!==null){const t=S[p.s],bi=r.badS[p.s];let w;
+      if(bi!==undefined){const e=r.errors[bi];
+        w=fx(e)?(e.type==='extra'?`<span class="gone">${esc(t.w)}</span>`:`<span class="fixed" title="Tú escribiste: ${esc(t.w)}">${esc(e.correct)}</span>`):`<span class="bad">${esc(t.w)}</span><sup>${e.n}</sup>`;}
+      else w=r.pw[p.s]?`<span class="punct" title="Revisa la puntuación">${esc(t.w)}</span>`:esc(t.w);
+      return esc(t.pre)+w+esc(t.suf);}
+    const e=r.errors[byMiss[p.o]];return e?(fx(e)?`<span class="fixed">${esc(e.correct)}</span>`:`<span class="miss">⬚<sup>${e.n}</sup></span>`):'';
+  };
+  const oCell=p=>{
+    if(p.o===null)return '<span class="blank">—</span>';
+    const t=O[p.o],hit=bySub[p.o]!==undefined||byMiss[p.o]!==undefined;
+    return esc(t.pre)+(hit?`<b>${esc(t.w)}</b>`:esc(t.w))+esc(t.suf);
+  };
+  const rows=[];let cur=null,n=0;
+  r.al.forEach(p=>{
+    if(!cur){cur={s:[],o:[],para:rows.length&&rows[rows.length-1].endPara};n=0;}
+    cur.s.push(sCell(p));cur.o.push(oCell(p));n++;
+    const t=p.o!==null?O[p.o]:S[p.s],endS=/[.!?…]["»”)]*$/.test(t.suf),endC=/[,;:]["»”)]*$/.test(t.suf);
+    if(t.nl||endS||(endC&&n>=3)||n>=N){cur.endPara=t.nl;rows.push(cur);cur=null;}
+  });
+  if(cur)rows.push(cur);
+  return `<div class="chead"><div>✍️ Tu texto</div>${both?'<div style="color:#1d4ed8">📘 Dictado original</div>':''}</div>`+
+    rows.map(x=>`<div class="crow${x.para?' para':''}"><div class="cs">${x.s.join(' ')}</div>${both?`<div class="co">${x.o.join(' ')}</div>`:''}</div>`).join('');
+}
 function shown(s){return s===''?'(nada)':'«'+s+'»';}
 function renderFix(){
   const r=ui.fix;if(!r){ui.screen='list';return render();}
   const ok=r.total-r.wrong,pct=r.total?Math.round(100*ok/r.total):100;
   const stars=pct>=95?'⭐⭐⭐':pct>=80?'⭐⭐':pct>=50?'⭐':'💪';
-  app.innerHTML=`<button class="link" data-act="backList">← Dictados</button>
+  app.innerHTML=`<button class="link" data-act="backList">${ui.item?'← Deberes de hoy':'← Dictados'}</button>
   <div class="panel"><h2 style="margin:0">${stars} ${ok} de ${r.total} palabras bien (${pct}%)</h2>
   <p class="mute" style="margin:.3em 0 0">${r.errors.length?'Las palabras en rojo son las que hay que corregir. ¡Tú puedes!':'¡Perfecto! No has fallado ninguna palabra. 🎉'}</p></div>
-  <div class="tbox" id="tbox"><div class="${state.settings.showOrig!==false?'tgrid':''}">
-   <div><div class="tbox-h"><b>✍️ Tu texto</b><span class="mute">🔴 por corregir · 🟢 corregida</span></div><div class="marked" id="marked">${markedHTML(r)}</div></div>
-   ${state.settings.showOrig!==false?`<div><div class="tbox-h"><b style="color:#1d4ed8">📘 Dictado original</b><span class="mute">para comparar</span></div><div class="marked orig" id="orig">${esc(state.dictados.find(d=>d.id===ui.dict)?.text||'')}</div></div>`:''}</div></div>
+  <div class="tbox" id="tbox"><div class="tbox-h"><b>Compara tu texto con el original</b><span class="mute">🔴 por corregir · 🟢 corregida</span></div><div class="cmp${state.settings.showOrig!==false?'':' one'}" id="cmp">${cmpHTML(r)}</div></div>
   ${ui.photo?`<details class="panel" style="padding:10px 16px"><summary style="cursor:pointer;font-weight:700">📷 Ver la foto de mi cuaderno</summary><img src="${ui.photo}" alt="Mi cuaderno" style="width:100%;border-radius:12px;margin-top:10px"></details>`:''}
   ${r.punct.length?`<div class="panel" style="border-color:var(--warn)"><b>🟠 Signos de puntuación para revisar</b><ul style="margin:.4em 0 0">${r.punct.map(p=>`<li>${p.after?'Después de «'+esc(p.after)+'»':'Al principio'}: debería ir ${esc(shown(p.exp))} y tienes ${esc(shown(p.got))}.</li>`).join('')}</ul></div>`:''}
   ${r.errors.length?`<h3>Vamos a corregirlas <span class="mute" id="prog"></span></h3><div id="cards">${r.errors.map((e,i)=>`<div class="card" data-card="${i}"></div>`).join('')}</div>`:''}
@@ -827,14 +883,15 @@ function drawCard(i){
   const inp=$(`#w${i}`);if(inp&&e.focus){inp.focus();e.focus=false;}
 }
 function updateFinal(){
-  const mk=$('#marked');if(mk&&ui.fix)mk.innerHTML=markedHTML(ui.fix);
+  const mk=$('#cmp');if(mk&&ui.fix){const st=mk.scrollTop;mk.innerHTML=cmpHTML(ui.fix);mk.scrollTop=st;}
   const r=ui.fix,left=r.errors.filter(e=>!e.done).length,p=$('#prog');
   if(p)p.textContent=`(${r.errors.length-left} de ${r.errors.length})`;
   const f=$('#final');if(!f)return;
   if(left){f.innerHTML='';return;}
+  recordDictado();
   f.innerHTML=`<div class="panel" style="border-color:var(--ok);background:var(--okbg)"><h2 style="margin:0">🎉 ¡Muy bien, Julia!</h2><p>${r.errors.length?'Has corregido todos los fallos.':'Sigue así.'}</p>
   <details><summary>Ver el dictado correcto</summary><div class="marked" style="margin-top:8px">${esc(state.dictados.find(d=>d.id===ui.dict)?.text||'')}</div></details>
-  <div class="row" style="margin-top:12px"><button class="btn primary" data-act="again">🔁 Repetir este dictado</button><button class="btn" data-act="backList">Elegir otro</button></div></div>`;
+  <div class="row" style="margin-top:12px">${ui.item?'<button class="btn primary big" data-act="backList">📅 Volver a los deberes</button>':'<button class="btn primary" data-act="again">🔁 Repetir este dictado</button><button class="btn" data-act="backList">Elegir otro</button>'}</div></div>`;
 }
 const fixActions={
   word(b){const i=+b.dataset.i,e=ui.fix.errors[i],v=($(`#w${i}`).value||'').trim().normalize('NFC');
@@ -851,14 +908,305 @@ const fixActions={
   rule(b){const i=+b.dataset.i,e=ui.fix.errors[i];if(!($(`#r${i}`).value||'').trim())return toast('Escribe la regla con tus palabras');e.shown=true;drawCard(i);},
   self(b){const i=+b.dataset.i,e=ui.fix.errors[i];e.done=true;e.stage='done';drawCard(i);updateFinal();}
 };
+/* ================= matemáticas por código (sin IA) ================= */
+function seedRng(str){
+  let h=1779033703^str.length;
+  for(let i=0;i<str.length;i++){h=Math.imul(h^str.charCodeAt(i),3432918353);h=h<<13|h>>>19;}
+  let a=h>>>0;
+  return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+}
+const ri=(r,a,b)=>a+Math.floor(r()*(b-a+1)),pk=(r,arr)=>arr[Math.floor(r()*arr.length)];
+const gcd=(a,b)=>b?gcd(b,a%b):Math.abs(a);
+const lcm=(a,b)=>a/gcd(a,b)*b;
+const redu=(n,d)=>{const g=gcd(n,d)||1;return [n/g,d/g];};
+const fracTxt=f=>f[1]===1?String(f[0]):f[0]+'/'+f[1];
+const MATH_LABELS={suma:'Sumas',resta:'Restas',multi:'Multiplicaciones',divi:'Divisiones',tablas:'Tablas de multiplicar',frac_simp:'Simplificar fracciones',frac_suma_igual:'Sumar fracciones (mismo denominador)',frac_suma_dist:'Sumar fracciones (distinto denominador)',frac_de_num:'Fracción de un número',porc:'Porcentajes',dec:'Decimales (sumas y restas)',orden:'Orden de operaciones',ratio:'Proporción (ratio)',problemas:'Problemas con plantillas'};
+const MATH_LEVELS={1:'Fácil',2:'Medio',3:'Difícil'};
+const NAMES=['Lucía','Pablo','Marta','Álvaro','Carla','Hugo','Sara','Leo','Noa','Daniel','Irene','Mateo'];
+const FEM=new Set(['canicas','pegatinas','galletas','naranjas']),cu=o=>FEM.has(o)?'Cuántas':'Cuántos';
+const OBJS=['cromos','canicas','pegatinas','libros','lápices','caramelos','galletas','naranjas','globos','bolígrafos'];
+const G={
+  suma:(r,lv)=>{const [lo,hi]=[[10,99],[100,999],[1000,9999]][lv-1],a=ri(r,lo,hi),b=ri(r,lo,hi);return {q:`${a} + ${b} =`,a:a+b,kind:'num'};},
+  resta:(r,lv)=>{const [lo,hi]=[[10,99],[100,999],[1000,9999]][lv-1];let a=ri(r,lo,hi),b=ri(r,lo,hi);if(b>a)[a,b]=[b,a];if(a===b)a++;return {q:`${a} − ${b} =`,a:a-b,kind:'num'};},
+  multi:(r,lv)=>{const a=lv===1?ri(r,12,99):ri(r,100,999),b=lv===3?ri(r,11,99):ri(r,2,9);return {q:`${a} × ${b} =`,a:a*b,kind:'num'};},
+  divi:(r,lv)=>{const d=lv===3?ri(r,11,30):ri(r,2,9),q=lv===1?ri(r,2,12):lv===2?ri(r,10,120):ri(r,10,60);return {q:`${d*q} ÷ ${d} =`,a:q,kind:'num'};},
+  tablas:(r,lv,cfg)=>{const t=pk(r,(cfg&&cfg.tablas&&cfg.tablas.length)?cfg.tablas:[2,3,4,5,6,7,8,9,10]),m=ri(r,1,10);return r()<.5?{q:`${t} × ${m} =`,a:t*m,kind:'num'}:{q:`${m} × ${t} =`,a:t*m,kind:'num'};},
+  frac_simp:(r,lv)=>{let a,b;do{b=ri(r,2,9);a=ri(r,1,b-1);}while(gcd(a,b)!==1);const k=lv===1?ri(r,2,3):lv===2?ri(r,2,6):ri(r,3,8);return {q:`Simplifica la fracción ${a*k}/${b*k}`,a:[a,b],kind:'frac'};},
+  frac_suma_igual:(r,lv)=>{const d=lv===1?ri(r,3,8):ri(r,4,12);let a,b;if(lv===1){a=ri(r,1,d-2);b=ri(r,1,d-1-a);}else{a=ri(r,1,d-1);b=ri(r,1,d-1);}return {q:`${a}/${d} + ${b}/${d} =  (simplifica el resultado)`,a:redu(a+b,d),kind:'frac'};},
+  frac_suma_dist:(r,lv)=>{const P=lv===2?[[2,4],[3,6],[2,6],[4,8],[5,10],[3,9]]:[[2,3],[3,4],[2,5],[3,5],[4,6],[6,4],[4,5],[3,2]];const [d1,d2]=pk(r,P),a=ri(r,1,d1-1),b=ri(r,1,d2-1),L=lcm(d1,d2),n=a*(L/d1)+b*(L/d2);return {q:`${a}/${d1} + ${b}/${d2} =  (simplifica el resultado)`,a:redu(n,L),kind:'frac'};},
+  frac_de_num:(r,lv)=>{const d=pk(r,lv===1?[2,3,4,5,10]:[2,3,4,5,6,8,10,12]),n=ri(r,1,d-1),k=ri(r,2,lv===3?20:12);return {q:`${n}/${d} de ${d*k} =`,a:n*k,kind:'num'};},
+  porc:(r,lv)=>{const p=pk(r,lv===1?[10,50]:lv===2?[10,20,25,50]:[5,10,15,20,25,30,75]),base=20*ri(r,2,lv===1?10:25);return {q:`${p}% de ${base} =`,a:base*p/100,kind:'num'};},
+  dec:(r,lv)=>{const m=lv===1?[100,999]:lv===2?[1000,9999]:[10000,99999],A=ri(r,...m),B=ri(r,...m),f=x=>(x/100).toFixed(2).replace('.',',');if(r()<.5)return {q:`${f(A)} + ${f(B)} =`,a:(A+B)/100,kind:'num'};const hi=Math.max(A,B),lo=Math.min(A,B)===hi?hi-1:Math.min(A,B);return {q:`${f(hi)} − ${f(lo)} =`,a:(hi-lo)/100,kind:'num'};},
+  orden:(r,lv)=>{const a=ri(r,2,20),b=ri(r,2,9),c=ri(r,2,9),d=ri(r,1,a);if(lv===1)return {q:`${a} + ${b} × ${c} =`,a:a+b*c,kind:'num'};if(lv===2)return r()<.5?{q:`(${a} + ${b}) × ${c} =`,a:(a+b)*c,kind:'num'}:{q:`${a*c} − ${b} × ${c} =`,a:a*c-b*c,kind:'num'};return {q:`(${a} + ${b}) × ${c} − ${d} =`,a:(a+b)*c-d,kind:'num'};},
+  ratio:(r,lv)=>{const x=ri(r,2,4),y=x+ri(r,1,4),k=ri(r,2,lv===3?12:6),n=pk(r,NAMES);return r()<.5?{q:`En una clase hay ${x} chicos por cada ${y} chicas. Si hay ${y*k} chicas, ¿cuántos chicos hay?`,a:x*k,kind:'num'}:{q:`Para hacer una receta se usan ${x} tazas de harina por cada ${y} de leche. ${n} usa ${x*k} tazas de harina. ¿Cuántas tazas de leche necesita?`,a:y*k,kind:'num'};},
+  problemas:(r,lv)=>{
+    const n=pk(r,NAMES),o=pk(r,OBJS),S=lv===1?[10,60]:lv===2?[30,300]:[200,2000];
+    const T=[
+      ()=>{const a=ri(r,...S),b=ri(r,...S);return {q:`${n} tenía ${a} ${o} y ha conseguido ${b} más. ¿${cu(o)} ${o} tiene ahora?`,a:a+b,kind:'num'};},
+      ()=>{let a=ri(r,...S),b=ri(r,...S);if(b>=a)b=Math.max(1,Math.floor(a/2));return {q:`${n} tenía ${a} ${o} y ha regalado ${b}. ¿${cu(o)} ${o} le quedan?`,a:a-b,kind:'num'};},
+      ()=>{const a=ri(r,lv===1?4:6,lv===3?40:15),b=ri(r,2,lv===3?25:9);return {q:`En cada caja caben ${a} ${o}. ¿${cu(o)} ${o} hay en ${b} cajas?`,a:a*b,kind:'num'};},
+      ()=>{const d=ri(r,2,9),q=ri(r,lv===1?3:8,lv===3?60:25);return {q:`${n} reparte ${d*q} ${o} entre ${d} amigos por igual. ¿${cu(o)} ${o} recibe cada amigo?`,a:q,kind:'num'};},
+      ()=>{const a=ri(r,8,lv===3?60:30),b=ri(r,8,lv===3?60:30);return {q:`Un jardín rectangular mide ${a} m de largo y ${b} m de ancho. ¿Cuál es su perímetro en metros?`,a:2*(a+b),kind:'num'};},
+      ()=>{const a=ri(r,6,lv===3?40:20),b=ri(r,4,lv===3?40:15);return {q:`Una sala rectangular mide ${a} m de largo y ${b} m de ancho. ¿Cuál es su área en metros cuadrados?`,a:a*b,kind:'num'};},
+      ()=>{const v=ri(r,lv===1?30:50,lv===3?120:90),h=ri(r,2,lv===3?9:6);return {q:`Un tren recorre ${v} km cada hora. ¿Cuántos km recorre en ${h} horas?`,a:v*h,kind:'num'};}
+    ];
+    const T2=[
+      ()=>{const d=pk(r,[2,3,4,5,10]),k=ri(r,4,25),x=ri(r,1,d-1);return {q:`Un libro tiene ${d*k} páginas. ${n} ha leído ${x}/${d} del libro. ¿Cuántas páginas ha leído?`,a:x*k,kind:'num'};},
+      ()=>{const P=20*ri(r,3,15),p=pk(r,[10,20,25,50]);return {q:`Una camiseta cuesta ${P} €. Tiene un ${p}% de descuento. ¿Cuántos euros se descuentan?`,a:P*p/100,kind:'num'};},
+      ()=>{const a=ri(r,3,9),b=ri(r,4,12),c=ri(r,2,a*b-1);return {q:`${n} compra ${a} bolsas con ${b} ${o} cada una y luego regala ${c}. ¿${cu(o)} ${o} le quedan?`,a:a*b-c,kind:'num'};},
+      ()=>{const p=ri(r,2,9),k=ri(r,2,6),pay=Math.ceil((p*k+1)/10)*10;return {q:`Cada cuaderno cuesta ${p} €. ${n} compra ${k} cuadernos y paga con ${pay} €. ¿Cuántos euros le devuelven?`,a:pay-p*k,kind:'num'};}
+    ];
+    const T3=[
+      ()=>{const d=pk(r,[4,5,6,8,10]),a=ri(r,1,d-2),b=ri(r,1,d-1-a);return {q:`${n} se ha comido ${a}/${d} de una tarta y un amigo ${b}/${d}. ¿Qué fracción de la tarta se han comido entre los dos? (simplifica el resultado)`,a:redu(a+b,d),kind:'frac'};}
+    ];
+    const pool=lv===1?T:lv===2?T.concat(T2):T.concat(T2,T3);
+    return pk(r,pool)();
+  }
+};
+function makeExercises(cfg,seed){
+  const gens=(cfg.gens&&cfg.gens.length?cfg.gens:['suma']).filter(g=>G[g]),n=Math.max(1,Math.min(40,cfg.n||10)),lv=Math.max(1,Math.min(3,cfg.level||1)),r=seedRng(String(seed));
+  const out=[],seen=new Set();let order=[];
+  for(let i=0;i<n;i++){
+    if(!order.length){order=gens.slice();for(let j=order.length-1;j>0;j--){const k=Math.floor(r()*(j+1));[order[j],order[k]]=[order[k],order[j]];}}
+    const g=order.pop();let ex=null;
+    for(let t=0;t<40;t++){ex=G[g](r,lv,cfg);if(!seen.has(ex.q))break;}
+    seen.add(ex.q);ex.gen=g;ex.txt=ex.kind==='frac'?fracTxt(ex.a):String(ex.a).replace('.',',');out.push(ex);
+  }
+  return out;
+}
+function parseFrac(s){
+  s=String(s||'').trim().replace(/\s+/g,'').replace(/,/g,'.');if(!s)return null;
+  let m=s.match(/^(-?\d+)\/(\d+)$/);if(m){const d=+m[2];return d?[+m[1],d]:null;}
+  m=s.match(/^-?\d+(\.\d+)?$/);if(m){const v=+s;return Number.isInteger(v)?[v,1]:null;}return null;
+}
+function checkMath(ex,input){
+  const raw=String(input||'').trim();if(!raw)return {ok:false,bad:true,hint:'Escribe tu respuesta'};
+  if(ex.kind==='num'){const v=Number(raw.replace(/\s+/g,'').replace(',','.'));if(!isFinite(v))return {ok:false,bad:true,hint:'Escribe solo un número'};return {ok:Math.abs(v-ex.a)<1e-9};}
+  const f=parseFrac(raw);if(!f)return {ok:false,bad:true,hint:'Escribe una fracción como 3/4 (o un número entero)'};
+  if(f[0]*ex.a[1]!==ex.a[0]*f[1])return {ok:false};
+  const rr=redu(f[0],f[1]);if(rr[0]===ex.a[0]&&rr[1]===ex.a[1]&&(f[1]===ex.a[1]&&f[0]===ex.a[0]))return {ok:true};
+  return {ok:false,soft:true,hint:'¡Está bien! Pero se puede simplificar más. Escríbela simplificada.'};
+}
+// </PURE2>
+/* ================= deberes del día (sesiones, mates, informe) ================= */
+const todayStr=()=>new Date().toLocaleDateString('sv-SE');
+const fmtHM=t=>t?new Date(t).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'';
+const fmtDur=s=>{s=Math.round(s||0);if(s<60)return s+' s';const m=Math.floor(s/60);return m+' min'+(s%60?' '+(s%60)+' s':'');};
+const fmtDay=d=>{const s=new Date(d+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'});return s[0].toUpperCase()+s.slice(1);};
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const itemsOf=date=>state.tareas.filter(t=>t.date===date).flatMap(t=>t.items.map(it=>Object.assign({tid:t.id},it)));
+function getSes(date,create){
+  let s=state.sesiones.find(x=>x.id==='s'+date);
+  if(!s&&create){s={id:'s'+date,date,upd:Date.now(),started:0,finished:0,items:{},extra:[]};state.sesiones.push(s);}
+  return s;
+}
+function mathTitle(cfg){const l=(cfg.gens||[]).map(g=>MATH_LABELS[g]||g);return 'Mates: '+(l.length>3?l.slice(0,3).join(', ')+'…':l.join(', '))+' · '+MATH_LEVELS[cfg.level||1];}
+function itemTitle(it){
+  if(it.type==='dictado'){const d=state.dictados.find(x=>x.id===it.did);return 'Dictado: '+(d?d.title:'(dictado borrado)');}
+  return mathTitle(it.cfg);
+}
+function touchSes(s){s.upd=Date.now();save();}
+/* ---- registrar resultados ---- */
+function recItem(it){
+  const s=getSes(todayStr(),true),now=Date.now();
+  if(!s.started)s.started=now;
+  const r=s.items[it.id]||(s.items[it.id]={title:itemTitle(it),kind:it.type,start:now,secs:0,done:false});
+  return [s,r];
+}
+function recordDictado(){
+  const f=ui.fix;if(!f||f.saved)return;f.saved=true;
+  const secs=Math.round((Date.now()-(ui.t0||Date.now()))/1000),d=state.dictados.find(x=>x.id===ui.dict);
+  const res={total:f.total,wrong:f.wrong,punct:f.punct.length,errs:f.errors.filter(e=>e.type!=='extra').map(e=>({typed:e.typed||'',correct:e.correct||'',type:e.type})),photo:!!ui.photo};
+  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it){const [s,r]=recItem(it);r.secs=(r.secs||0)+secs;r.end=Date.now();r.done=true;r.res=res;touchSes(s);return;}}
+  const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;
+  s.extra.push({id:uid(),kind:'dictado',title:'Dictado: '+(d?d.title:''),start:Date.now()-secs*1000,end:Date.now(),secs,res});touchSes(s);
+}
+/* ---- informe (sirve para la pantalla y para el futuro correo) ---- */
+function sessionReport(s){
+  const rows=[];
+  const one=(r,extra)=>{
+    const o={title:r.title,done:!!r.done||extra,secs:r.secs||0,at:r.start,line:'',det:[]};
+    if(r.kind==='dictado'&&r.res){const x=r.res;o.line=`${x.total-x.wrong} de ${x.total} palabras bien (${x.total?Math.round(100*(x.total-x.wrong)/x.total):100}%)`+(x.punct?` · ${x.punct} fallos de puntuación`:'')+(x.photo?' · con foto del cuaderno':'');
+      o.det=x.errs.map(e=>e.type==='sub'?`${e.typed} → ${e.correct}`:`falta «${e.correct}»`);}
+    else if(r.kind==='mates'&&r.res){const x=r.res;o.line=`${x.first} de ${x.n} a la primera · ${x.ok} de ${x.n} correctos`;
+      o.det=x.wrong.map(w=>`${w.q.replace(/\s*=\s*$/,'')} = ${w.a}${w.given&&w.given.length?' (puso '+w.given.join(', ')+')':''}`);}
+    else o.line=r.done?'Hecho':'Empezado, sin terminar';
+    return o;
+  };
+  const plan=itemsOf(s.date);
+  const seen=new Set();
+  plan.forEach(it=>{seen.add(it.id);const r=s.items[it.id];rows.push(r?one(r):{title:itemTitle(it),done:false,secs:0,line:'Sin hacer',det:[],todo:true});});
+  Object.keys(s.items).filter(k=>!seen.has(k)).forEach(k=>rows.push(one(s.items[k])));
+  (s.extra||[]).forEach(r=>rows.push(Object.assign(one(r,true),{loose:true})));
+  const secs=rows.reduce((a,r)=>a+r.secs,0);
+  return {date:s.date,started:s.started,finished:s.finished,secs,rows,pending:rows.filter(r=>r.todo).length};
+}
+function reportHTML(s,tutor){
+  const R=sessionReport(s);
+  return `<div class="panel"><b>${esc(fmtDay(R.date))}</b><br><small class="mute">${R.started?`Empezó a las ${fmtHM(R.started)}`:'No ha empezado'}${R.finished?` · Finalizó a las ${fmtHM(R.finished)}`:R.started?' · <b style="color:var(--bad)">Sin finalizar</b>':''} · Tiempo trabajando: ${fmtDur(R.secs)}${R.pending?` · ${R.pending} sin hacer`:''}</small>
+  ${R.rows.map(r=>`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">${r.todo?'⬜':'✅'} <b>${esc(r.title)}</b>${r.loose?' <small class="mute">(suelto)</small>':''}<br><small>${esc(r.line)}${r.secs?` · ⏱ ${fmtDur(r.secs)}`:''}${r.at&&tutor?` · ${fmtHM(r.at)}`:''}</small>${r.det.length?`<br><small class="wrong">${r.det.slice(0,15).map(esc).join(' · ')}${r.det.length>15?` · …y ${r.det.length-15} más`:''}</small>`:''}</div>`).join('')||'<small class="mute">Sin actividad.</small>'}</div>`;
+}
+/* ---- pantallas ---- */
+function renderHome(){
+  const t=todayStr(),its=itemsOf(t),s=getSes(t,false),done=its.filter(i=>s&&s.items[i.id]&&s.items[i.id].done).length;
+  const sub=!its.length?'Hoy no hay deberes puestos':s&&s.finished&&done===its.length?'✅ ¡Todo terminado!':`${done} de ${its.length} hechos`;
+  app.innerHTML=`<h1>¡Hola, Julia! 👋</h1><p class="mute">¿Qué deberes toca hoy?</p>
+  <div class="tiles"><button class="tile" data-act="goToday" style="border-color:var(--pri)"><span class="ico">📅</span><b>Deberes de hoy</b><small>${sub}</small></button>
+  <button class="tile" data-act="goList"><span class="ico">✏️</span><b>Dictados</b><small>Escucha y escribe lo que oyes</small></button>
+  <button class="tile" data-act="goMlist"><span class="ico">➗</span><b>Matemáticas</b><small>Practica cuando quieras</small></button></div>`;
+}
+function renderToday(){
+  const t=todayStr(),its=itemsOf(t),s=getSes(t,false);
+  const st=i=>s&&s.items[i.id]&&s.items[i.id].done;
+  app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>📅 Deberes de hoy</h2><p class="mute" style="margin-top:0">${esc(fmtDay(t))}</p>`+
+  (its.length?`<div class="list">${its.map(i=>{const r=s&&s.items[i.id];const x=r&&r.res;const sm=x?(i.type==='dictado'?`${x.total-x.wrong} de ${x.total} bien`:`${x.first} de ${x.n} a la primera`):'';
+    return `<button class="item" data-act="openItem" data-id="${esc(i.id)}"><span>${st(i)?'✅':'⬜'} <b>${esc(itemTitle(i))}</b>${sm?`<br><small class="mute">${esc(sm)}</small>`:''}</span><span style="font-size:1.6rem">${st(i)?'🔁':'▶️'}</span></button>`;}).join('')}</div>
+  ${s&&s.finished?`<div class="panel" style="border-color:var(--ok);background:var(--okbg)">🎉 Has finalizado los deberes a las ${fmtHM(s.finished)}.</div><div class="row"><button class="btn" data-act="finishDay">📋 Ver resumen</button></div>`
+   :`<div class="row" style="margin-top:14px"><button class="btn success big" data-act="finishDay">🏁 Finalizar deberes</button></div>`}`
+  :`<div class="panel">Hoy tu tutor no ha puesto deberes. Puedes practicar por tu cuenta con los dictados o las matemáticas 😊</div>`);
+}
+function renderDsum(){
+  const s=getSes(todayStr(),false);
+  app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>🎉 ¡Deberes terminados!</h2>${s?reportHTML(s,false):''}<p class="mute">Tu tutor podrá ver este resumen. ¡Buen trabajo, Julia!</p>`;
+}
+function renderMlist(){
+  const lv=ui.mlv||2,gens=Object.keys(MATH_LABELS);
+  app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>➗ Matemáticas</h2>
+  <div class="seg" style="margin-bottom:10px">${[1,2,3].map(l=>`<button class="btn ${lv===l?'on':''}" data-act="mlv" data-l="${l}">${MATH_LEVELS[l]}</button>`).join('')}</div>
+  <div class="list"><button class="item" data-act="mstart" data-g="mix"><span><b>🎲 Mezcla de todo</b><br><small class="mute">10 ejercicios variados</small></span><span style="font-size:1.6rem">▶️</span></button>
+  ${gens.map(g=>`<button class="item" data-act="mstart" data-g="${g}"><span><b>${esc(MATH_LABELS[g])}</b><br><small class="mute">10 ejercicios</small></span><span style="font-size:1.6rem">▶️</span></button>`).join('')}</div>`;
+}
+function startMath(cfg,seed,itemId,title){
+  const ex=makeExercises(cfg,seed);
+  ui.mrun={ex,i:0,tries:0,log:[],cfg,itemId,title:title||mathTitle(cfg),msg:'',reveal:false,given:[],t0:Date.now(),et:Date.now(),acc:0};
+  ui.t0=Date.now();ui.screen='mrun';render();
+}
+function renderMrun(){
+  const m=ui.mrun;if(!m){ui.screen='home';return render();}
+  const e=m.ex[m.i],pct=Math.round(100*m.i/m.ex.length);
+  app.innerHTML=`<button class="link" data-act="mexit">← Salir</button><h2 style="margin:0">${esc(m.title)}</h2>
+  <div class="status"><span class="ico">🧮</span><div style="flex:1"><div>Ejercicio ${m.i+1} de ${m.ex.length}</div><div class="bar"><i style="width:${pct}%"></i></div></div></div>
+  ${m.msg?`<p style="font-weight:800;color:${m.msgOk?'var(--ok)':'var(--bad)'};margin:6px 0">${esc(m.msg)}</p>`:''}
+  <div class="panel"><div style="font-size:${e.q.length>30?'1.3':'2'}rem;font-weight:800;line-height:1.4">${esc(e.q)}</div>
+  ${m.reveal?`<p style="margin:12px 0 0">La respuesta correcta era: <b style="font-size:1.6rem;color:var(--ok)">${esc(e.txt)}</b></p>`
+   :`<div class="row" style="margin-top:14px;flex-wrap:nowrap"><input type="text" id="mans" data-enter="mans" inputmode="${e.kind==='num'?'decimal':'text'}" placeholder="${e.kind==='frac'?'Ej.: 3/4':'Tu respuesta'}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="max-width:260px"><button class="btn primary big" data-act="mcheck">✔ Comprobar</button></div>`}</div>
+  ${m.reveal?`<div class="row"><button class="btn primary big" data-act="mnext">${m.i+1<m.ex.length?'Siguiente ➜':'Terminar'}</button></div>`:''}`;
+  const i=$('#mans');if(i)i.focus();
+}
+function mathAdvance(ok,first){
+  const m=ui.mrun,e=m.ex[m.i];
+  m.log.push({q:e.q,a:e.txt,given:m.given.slice(),ok,first,secs:Math.round((Date.now()-m.et)/1000)});
+  m.i++;m.tries=0;m.given=[];m.reveal=false;m.et=Date.now();
+  if(m.i>=m.ex.length)return finishMath();
+  m.msg=ok?'✅ ¡Bien!':'';m.msgOk=true;render();
+}
+function finishMath(){
+  const m=ui.mrun,secs=Math.round((Date.now()-ui.t0)/1000);
+  const res={n:m.ex.length,ok:m.log.filter(x=>x.ok).length,first:m.log.filter(x=>x.first).length,secs,wrong:m.log.filter(x=>!x.first).map(x=>({q:x.q,a:x.a,given:x.given,ok:x.ok})),log:m.log.map(x=>({secs:x.secs}))};
+  m.res=res;
+  let s=null;
+  if(m.itemId){const it=itemsOf(todayStr()).find(x=>x.id===m.itemId);if(it){const [ss,r]=recItem(it);r.secs=(r.secs||0)+secs;r.end=Date.now();r.done=true;r.res=res;s=ss;}}
+  if(!s){s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;s.extra.push({id:uid(),kind:'mates',title:m.title,start:Date.now()-secs*1000,end:Date.now(),secs,res,done:true});}
+  touchSes(s);ui.screen='msum';render();
+}
+function renderMsum(){
+  const m=ui.mrun,r=m&&m.res;if(!r){ui.screen='home';return render();}
+  const good=r.first>=Math.ceil(r.n*.8);
+  app.innerHTML=`<h2>${good?'🎉 ¡Genial, Julia!':'💪 ¡Bien hecho!'}</h2>
+  <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${r.first} de ${r.n} a la primera</div><small class="mute">${r.ok} de ${r.n} correctos · ⏱ ${fmtDur(r.secs)}</small></div>
+  ${r.wrong.length?`<h3>Para repasar</h3><div class="panel">${r.wrong.map(w=>`<div style="margin:6px 0"><b>${esc(w.q)}</b> <span style="color:var(--ok);font-weight:800">${esc(w.a)}</span>${w.given.length?`<br><small class="wrong">Pusiste: ${w.given.map(esc).join(', ')}</small>`:''}</div>`).join('')}</div>`:''}
+  <div class="row"><button class="btn primary big" data-act="${m.itemId?'goToday':'goMlist'}">${m.itemId?'📅 Volver a los deberes':'➕ Más ejercicios'}</button><button class="btn" data-act="goHome">Inicio</button></div>`;
+}
+const taskActions={
+  goToday(){Dict.stop();ui.item=null;ui.mrun=null;ui.screen='today';render();},
+  goMlist(){ui.screen='mlist';render();},
+  mlv(b){ui.mlv=+b.dataset.l;render();},
+  mstart(b){const g=b.dataset.g,lv=ui.mlv||2;
+    const cfg={gens:g==='mix'?['suma','resta','multi','divi','frac_de_num','porc','dec','orden','problemas']:[g],n:10,level:lv,tablas:[]};
+    startMath(cfg,'l'+Date.now(),null,g==='mix'?'Mezcla de matemáticas · '+MATH_LEVELS[lv]:MATH_LABELS[g]+' · '+MATH_LEVELS[lv]);},
+  openItem(b){
+    const it=itemsOf(todayStr()).find(x=>x.id===b.dataset.id);if(!it)return;
+    const [s]=recItem(it);touchSes(s);ui.item=it.id;
+    if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.screen='run';render();}
+    else startMath(it.cfg,it.seed,it.id);
+  },
+  mexit(){if(confirm('¿Salir? Perderás lo que llevas de esta serie.')){ui.mrun=null;ui.screen=ui.item?'today':'mlist';render();}},
+  mcheck(){
+    const m=ui.mrun,e=m.ex[m.i],v=($('#mans').value||'').trim(),c=checkMath(e,v);
+    if(c.ok)return mathAdvance(true,m.tries===0);
+    if(c.bad||c.soft){m.msg=c.hint;m.msgOk=!!c.soft;render();return;}
+    m.given.push(v);m.tries++;
+    if(m.tries>=2){m.reveal=true;m.msg='No pasa nada, mira la respuesta y sigue 💪';m.msgOk=false;}else{m.msg='Todavía no. ¡Inténtalo otra vez!';m.msgOk=false;}
+    render();
+  },
+  mnext(){mathAdvance(false,false);},
+  finishDay(){
+    const t=todayStr(),its=itemsOf(t),s=getSes(t,true),pend=its.filter(i=>!(s.items[i.id]&&s.items[i.id].done)).length;
+    if(!s.finished){
+      if(pend&&!confirm(`Te faltan ${pend} ${pend===1?'actividad':'actividades'} por hacer. ¿Finalizar de todas formas?`))return;
+      s.finished=Date.now();if(!s.started)s.started=s.finished;touchSes(s);
+    }
+    ui.screen='dsum';render();
+  }
+};
+/* ================= tutor: deberes y actividad ================= */
+function tabDeberes(){
+  const t=todayStr(),gens=Object.keys(MATH_LABELS),D=state.dictados;
+  const byDate={};state.tareas.forEach(x=>(byDate[x.date]=byDate[x.date]||[]).push(x));
+  const dates=Object.keys(byDate).sort(),up=dates.filter(d=>d>=t),past=dates.filter(d=>d<t).reverse();
+  const card=d=>`<div class="panel"><b>${esc(fmtDay(d))}</b>${d===t?' <span class="mute">· hoy</span>':''}${byDate[d].map(x=>x.items.map(it=>`<div style="margin-top:8px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div>${it.type==='dictado'?'✏️':'➗'} ${esc(itemTitle(it))}${it.type==='mates'?`<br><small class="mute">${it.cfg.n} ejercicios${it.cfg.tablas&&it.cfg.tablas.length?' · tablas del '+it.cfg.tablas.join(', '):''}</small><details><summary class="mute" style="font-size:.85rem">Ver ejercicios y soluciones</summary><small>${makeExercises(it.cfg,it.seed).map((e,i)=>`${i+1}. ${esc(e.q)} <b>${esc(e.txt)}</b>`).join('<br>')}</small></details>`:''}</div></div>`).join('')+`<div style="text-align:right;margin-top:6px"><button class="btn danger" data-act="delTask" data-id="${esc(x.id)}">🗑 Borrar</button></div>`).join('<hr style="border:0;border-top:1px solid var(--line)">')}</div>`;
+  $('#tab').innerHTML=`<div class="panel"><h3 style="margin-top:0">＋ Poner deberes</h3>
+  <div class="grid2"><label class="f">Desde el día<input type="date" id="tfDate" value="${t}"></label>
+  <label class="f">Para cuántos días (mismos tipos, ejercicios distintos cada día)<input type="number" id="tfDays" value="1" min="1" max="30"></label></div>
+  <label class="f"><input type="checkbox" id="tfSkip" checked> Saltar sábados y domingos</label>
+  <h4 style="margin:14px 0 4px"><label class="f"><input type="checkbox" id="tfDict" checked> ✏️ Dictado</label></h4>
+  ${D.length?`<div class="mute" style="font-size:.9rem">Marca uno o varios. Si marcas varios y pones varios días, se reparten por orden (un dictado distinto cada día).</div>${D.map((d,i)=>`<label class="f" style="display:block"><input type="checkbox" data-dd="${esc(d.id)}" ${i===0?'checked':''}> ${esc(d.title)}</label>`).join('')}`:'<p class="mute">Aún no hay dictados (créalos en la pestaña Dictados).</p>'}
+  <h4 style="margin:14px 0 4px"><label class="f"><input type="checkbox" id="tfMath" checked> ➗ Matemáticas</label></h4>
+  <div class="grid2" style="margin-bottom:6px">${gens.map(g=>`<label class="f" style="display:block"><input type="checkbox" data-g="${g}" ${['suma','resta','multi','divi'].includes(g)?'checked':''}> ${esc(MATH_LABELS[g])}</label>`).join('')}</div>
+  <div class="grid2"><label class="f">Nivel<select id="tfLv">${[1,2,3].map(l=>`<option value="${l}" ${l===2?'selected':''}>${MATH_LEVELS[l]}</option>`).join('')}</select></label>
+  <label class="f">Número de ejercicios<input type="number" id="tfN" value="10" min="1" max="40"></label>
+  <label class="f">Tablas concretas (solo para «Tablas de multiplicar»)<input type="text" id="tfTab" placeholder="Ej.: 6,7,8 (vacío = todas)" inputmode="numeric"></label></div>
+  <p class="mute" style="margin:6px 0">Los ejercicios los genera la app sola, sin gastar IA. Nivel pensado para Year 6.</p>
+  <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="createTask">💾 Crear deberes</button></div></div>
+  <h3>📅 Próximos deberes</h3>${up.map(card).join('')||'<p class="mute">No hay deberes puestos.</p>'}
+  ${past.length?`<details><summary class="mute">Deberes de días pasados (${past.length})</summary>${past.map(card).join('')}</details>`:''}`;
+}
+function tabActividad(){
+  const S=state.sesiones.slice().sort((a,b)=>a.id<b.id?1:-1);
+  $('#tab').innerHTML=S.length?`<p class="mute" style="margin-top:0">Lo que Julia ha hecho cada día: hora, tiempo, aciertos y fallos.</p>${S.map(s=>reportHTML(s,true)).join('')}`:'<p class="mute">Todavía no hay actividad. Cuando Julia haga sus deberes de hoy, aparecerá aquí.</p>';
+}
+const deberesActions={
+  createTask(){
+    const d0=$('#tfDate').value,nd=Math.max(1,Math.min(30,+$('#tfDays').value||1)),skip=$('#tfSkip').checked;
+    const useD=$('#tfDict').checked,dd=[...document.querySelectorAll('[data-dd]:checked')].map(x=>x.dataset.dd);
+    const useM=$('#tfMath').checked,gens=[...document.querySelectorAll('[data-g]:checked')].map(x=>x.dataset.g);
+    if(!d0)return toast('Elige un día');
+    if(!useD&&!useM)return toast('Marca al menos dictado o matemáticas');
+    if(useD&&!dd.length)return toast('Marca qué dictado(s) poner');
+    if(useM&&!gens.length)return toast('Marca al menos un tipo de matemáticas');
+    const tablas=($('#tfTab').value||'').split(/[^0-9]+/).filter(Boolean).map(Number).filter(x=>x>=1&&x<=20);
+    const cfg={gens,n:Math.max(1,Math.min(40,+$('#tfN').value||10)),level:+$('#tfLv').value,tablas};
+    const dt=new Date(d0+'T12:00:00'),made=[];let k=0;
+    while(made.length<nd&&k<400){const ds=dt.toLocaleDateString('sv-SE'),wd=dt.getDay();
+      if(!(skip&&(wd===0||wd===6)))made.push(ds);dt.setDate(dt.getDate()+1);k++;}
+    made.forEach((date,i)=>{
+      const items=[];
+      if(useD)items.push({id:'i'+uid(),type:'dictado',did:dd[i%dd.length]});
+      if(useM)items.push({id:'i'+uid(),type:'mates',cfg:JSON.parse(JSON.stringify(cfg)),seed:'m'+date+'-'+uid()});
+      state.tareas.push({id:'t'+uid(),date,items});
+    });
+    save();render();toast(`Deberes creados para ${made.length} ${made.length===1?'día':'días'} ✅`);
+  },
+  delTask(b){if(confirm('¿Borrar estos deberes?')){state.tareas=state.tareas.filter(x=>x.id!==b.dataset.id);save();render();}}
+};
 /* ================= área tutor ================= */
 function renderTutor(){
   if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
   if(!ui.unlocked){app.innerHTML=`<h2>🔐 Área de tutor</h2><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" data-enter="pin" placeholder="PIN"><br><br><button class="btn primary big" data-act="pinEnter">Entrar</button></div>`;return;}
-  const tabs=[['dictados','📝 Dictados'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['ajustes','⚙️ Dictado y ajustes']];
+  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['ajustes','⚙️ Dictado y ajustes']];
   app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><button class="btn" data-act="lock">🔒 Bloquear</button></div>
   <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>`;
-  ({dictados:tabDictados,reglas:tabReglas,historial:tabHistorial,ajustes:tabAjustes}[ui.tab])();
+  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,reglas:tabReglas,historial:tabHistorial,ajustes:tabAjustes}[ui.tab])();
 }
 function tabDictados(){
   const t=$('#tab');
@@ -867,6 +1215,7 @@ function tabDictados(){
     const d=state.dictados.find(x=>x.id===ui.editId)||{title:'',text:''};
     t.innerHTML=`${modeCard}<div class="panel"><h3>${d.id?'Editar dictado':'Nuevo dictado'}</h3><label class="f">Título<input type="text" id="dTitle" value="${esc(d.title)}" placeholder="Ej.: Dictado de la semana 5"></label><br>
     <label class="f">Texto a dictar<textarea id="dText" placeholder="Escribe o pega aquí el texto. Usa los signos de puntuación y las tildes tal como deben quedar." autocapitalize="off">${esc(d.text)}</textarea></label>
+    <div class="row" style="margin-top:4px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Crear desde una foto<input type="file" accept="image/*" id="dictPhoto" multiple hidden></label></div><div id="dictPhotoSt" class="mute" style="margin-top:6px"></div>
     <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="saveDict">💾 Guardar</button><button class="btn" data-act="cancelEdit">Cancelar</button></div></div>`;return;}
   t.innerHTML=`${modeCard}<div class="row" style="margin:6px 0"><button class="btn primary" data-act="newDict">＋ Nuevo dictado</button></div><div class="list">${state.dictados.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small>${Voz.ready()?`<br><small class="mute" data-vs="${esc(d.id)}">🎙 Comprobando voz…</small>`:''}</span><span class="row">${Voz.ready()?`<button class="btn" data-act="genVoice" data-id="${esc(d.id)}">🎙 Generar voz</button>`:''}<button class="btn" data-act="editDict" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delDict" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay dictados.</p>'}</div>`;
   refreshVoiceStatus();
@@ -980,18 +1329,18 @@ const tutorActions={
 };
 /* ================= eventos ================= */
 const studentActions={
-  goHome(){if(ui.role==='tutor'){ui.role='alumna';}Dict.stop();ui.screen='home';render();},
+  goHome(){if(ui.role==='tutor'){ui.role='alumna';}Dict.stop();ui.item=null;ui.screen='home';render();},
   goList(){ui.screen='list';render();},
-  backList(){Dict.stop();ui.screen='list';render();},
-  openDict(b){ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.screen='run';render();},
+  backList(){Dict.stop();ui.screen=ui.item?'today':'list';render();},
+  openDict(b){ui.item=null;ui.t0=Date.now();ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.screen='run';render();},
   start:startDictado,
   pause(){Dict.cur&&Dict.cur.paused?Dict.resume():Dict.pause();},
-  repeat(){Dict.repeat();},skip(){Dict.skip();},stop(){Dict.stop();updateRun();},
+  repeat(){Dict.repeat();},skip(){Dict.skip();},prev(){Dict.prev();},stop(){Dict.stop();updateRun();},
   correct:goCorrect,
-  again(){ui.answer='';ui.photo=null;ui.fix=null;ui.screen='run';render();},
+  again(){ui.t0=Date.now();ui.answer='';ui.photo=null;ui.fix=null;ui.screen='run';render();},
   setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();}
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions);
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
@@ -1004,12 +1353,29 @@ document.addEventListener('input',e=>{const t=e.target;
 document.addEventListener('change',e=>{const t=e.target;
   if(t.dataset.set==='voice'){state.settings.voice=t.value;save();}
   if(t.id==='photoIn'&&t.files[0]){const f=t.files[0];t.value='';handlePhoto(f);return;}
+  if(t.id==='dictPhoto'&&t.files.length){readDictPhotos([...t.files]);t.value='';return;}
   if(t.id==='imp'&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const s=JSON.parse(fr.result);if(!Array.isArray(s.dictados))throw 0;if(confirm('Esto reemplazará los datos actuales. ¿Continuar?')){const oldKey=state.ai.key;localStorage.setItem(KEY,JSON.stringify(s));state=loadState();if(!state.ai.key)state.ai.key=oldKey;state.sync={t:{},j:{},init:true,last:0,dirty:true,hclear:0,hj:''};save();ui.tab='dictados';render();toast('Copia restaurada');}}catch(x){toast('Archivo no válido');}};fr.readAsText(t.files[0]);}
 });
 document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.target;
   if(t.dataset.enter==='word')fixActions.word({dataset:{i:t.dataset.i}});
+  if(t.dataset.enter==='mans')taskActions.mcheck();
   if(t.dataset.enter==='pin')tutorActions.pinEnter();});
 render();
+async function readDictPhotos(files){
+  const st=$('#dictPhotoSt');if(!state.ai.on){if(st)st.textContent='';return toast('Activa la IA en Ajustes para leer fotos');}
+  const ta=$('#dText'),ti=$('#dTitle');if(!ta)return;
+  files=files.slice(0,4);let out=[],title='';
+  try{
+    for(let i=0;i<files.length;i++){
+      if(st)st.innerHTML=`🔎 Leyendo la foto ${i+1} de ${files.length}… unos segundos`;
+      const r=await readPrinted(await fileToJpeg(files[i]));if(!title)title=r.title;out.push(r.text);
+    }
+    const txt=out.join('\n\n');
+    if(ta.value.trim()&&!confirm('Ya hay un texto escrito. ¿Quieres sustituirlo por el de la foto?')){if(st)st.textContent='';return;}
+    ta.value=txt;if(ti&&!ti.value.trim()&&title)ti.value=title;
+    if(st)st.innerHTML='✅ <b>Texto leído.</b> Revísalo con calma: la IA puede equivocarse en alguna letra o signo. Corrígelo aquí mismo y pulsa Guardar.'+(/\[\?\]/.test(txt)?' <span class="wrong">Hay partes ilegibles marcadas con [?]: escríbelas tú.</span>':'');
+  }catch(e){if(st)st.textContent='';toast(e.message);}
+}
 Cloud.start();
 </script>
 </body>
