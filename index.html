@@ -50,6 +50,11 @@ input:focus,textarea:focus,select:focus{outline:3px solid #c9c2f7;border-color:v
 .marked .bad{color:var(--bad);font-weight:800;background:var(--badbg);border-radius:6px;padding:0 4px;text-decoration:underline wavy}
 .tbox{position:sticky;z-index:4;background:var(--bg);padding:8px 0 6px;margin-top:6px}
 .tbox-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:1.05rem}.tbox-h .mute{font-size:.8rem}
+.tgrid{display:grid;grid-template-columns:1fr;gap:8px}
+@media(min-width:760px){.tgrid{grid-template-columns:1fr 1fr;gap:12px}}
+.tbox .marked.orig{background:#eaf2ff;border-color:#3b82f6;color:#1e3a8a}
+.tbox .tgrid .marked{max-height:14vh;font-size:.95rem;line-height:1.5;padding:8px 12px}.tgrid .tbox-h{margin-bottom:3px;font-size:.95rem}
+@media(min-width:760px){.tbox .tgrid .marked{max-height:34vh;font-size:1.1rem;line-height:1.8;padding:12px 14px}.tgrid .tbox-h{font-size:1.05rem;margin-bottom:6px}}
 .tbox .marked{max-height:34vh;overflow:auto;-webkit-overflow-scrolling:touch;font-size:1.1rem;line-height:1.8;padding:12px 14px;box-shadow:0 4px 10px rgba(45,42,69,.12)}
 .marked .fixed{color:var(--ok);font-weight:800;background:var(--okbg);border-radius:6px;padding:0 4px}
 .marked .gone{color:var(--mute);text-decoration:line-through}
@@ -440,7 +445,7 @@ function spokenSegs(tokens,punct){
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
-const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,voice:''};
+const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,voice:''};
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
@@ -780,7 +785,9 @@ function renderFix(){
   app.innerHTML=`<button class="link" data-act="backList">← Dictados</button>
   <div class="panel"><h2 style="margin:0">${stars} ${ok} de ${r.total} palabras bien (${pct}%)</h2>
   <p class="mute" style="margin:.3em 0 0">${r.errors.length?'Las palabras en rojo son las que hay que corregir. ¡Tú puedes!':'¡Perfecto! No has fallado ninguna palabra. 🎉'}</p></div>
-  <div class="tbox" id="tbox"><div class="tbox-h"><b>Tu texto</b><span class="mute">🔴 por corregir · 🟢 ya corregida</span></div><div class="marked" id="marked">${markedHTML(r)}</div></div>
+  <div class="tbox" id="tbox"><div class="${state.settings.showOrig!==false?'tgrid':''}">
+   <div><div class="tbox-h"><b>✍️ Tu texto</b><span class="mute">🔴 por corregir · 🟢 corregida</span></div><div class="marked" id="marked">${markedHTML(r)}</div></div>
+   ${state.settings.showOrig!==false?`<div><div class="tbox-h"><b style="color:#1d4ed8">📘 Dictado original</b><span class="mute">para comparar</span></div><div class="marked orig" id="orig">${esc(state.dictados.find(d=>d.id===ui.dict)?.text||'')}</div></div>`:''}</div></div>
   ${ui.photo?`<details class="panel" style="padding:10px 16px"><summary style="cursor:pointer;font-weight:700">📷 Ver la foto de mi cuaderno</summary><img src="${ui.photo}" alt="Mi cuaderno" style="width:100%;border-radius:12px;margin-top:10px"></details>`:''}
   ${r.punct.length?`<div class="panel" style="border-color:var(--warn)"><b>🟠 Signos de puntuación para revisar</b><ul style="margin:.4em 0 0">${r.punct.map(p=>`<li>${p.after?'Después de «'+esc(p.after)+'»':'Al principio'}: debería ir ${esc(shown(p.exp))} y tienes ${esc(shown(p.got))}.</li>`).join('')}</ul></div>`:''}
   ${r.errors.length?`<h3>Vamos a corregirlas <span class="mute" id="prog"></span></h3><div id="cards">${r.errors.map((e,i)=>`<div class="card" data-card="${i}"></div>`).join('')}</div>`:''}
@@ -909,7 +916,8 @@ function tabAjustes(){
   <label class="f">Espera entre trozos <span class="v" id="v_pause">${s.pause} s</span><input type="range" min="1" max="40" value="${s.pause}" data-set="pause"></label>
   <label class="f">Repetir cada trozo <span class="v" id="v_repeat">${s.repeat} ${s.repeat>1?'veces':'vez'}</span><input type="range" min="1" max="3" value="${s.repeat}" data-set="repeat"></label>
   <label class="f" id="gapBox" style="${s.repeat>1?'':'display:none'}">Segundos entre repeticiones <span class="v" id="v_gap">${s.gap} s</span><input type="range" min="1" max="20" value="${s.gap}" data-set="gap"></label>
-  <label class="f"><input type="checkbox" data-set="punct" ${s.punct?'checked':''}> Dictar los signos de puntuación</label>
+  <label class="f"><input type="checkbox" data-set="punct" ${s.punct?'checked':''}> Dictar los signos de puntuación</label><br>
+  <label class="f"><input type="checkbox" data-set="showOrig" ${s.showOrig!==false?'checked':''}> Al corregir, mostrar el texto original del dictado para comparar</label>
   <label class="f">Pausa después de cada signo<select data-set="ppause"><option value="0.6" ${s.ppause==0.6?'selected':''}>Corta</option><option value="1" ${s.ppause==1?'selected':''}>Normal</option><option value="1.6" ${s.ppause==1.6?'selected':''}>Larga</option><option value="2.2" ${s.ppause==2.2?'selected':''}>Muy larga</option></select></label>
   ${Dict.voices().length?`<label class="f">Voz<select data-set="voice">${Dict.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.voice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en español en este dispositivo.</p>'}</div>
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
