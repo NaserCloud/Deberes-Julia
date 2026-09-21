@@ -64,6 +64,23 @@ input:focus,textarea:focus,select:focus{outline:3px solid #c9c2f7;border-color:v
 .cmp .fixed{color:var(--ok);font-weight:800;background:var(--okbg);border-radius:6px;padding:0 3px}
 .cmp .gone{color:var(--mute);text-decoration:line-through}.cmp .blank{color:#93a3c0}
 @media(min-width:760px){.cmp{max-height:44vh;font-size:1.08rem}.cs,.co{padding:4px 14px}}
+.step{background:#fff;border:2px solid var(--line);border-radius:var(--r);padding:16px;margin:12px 0}
+.step h4{margin:0 0 12px;font-size:1.1rem;display:flex;align-items:center;gap:8px}.step h4 .n{background:var(--pri);color:#fff;border-radius:50%;width:26px;height:26px;display:inline-flex;align-items:center;justify-content:center;font-size:.85rem;flex:none}
+.lbl{font-weight:800;font-size:.9rem;color:var(--mute);margin:14px 0 6px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.chip{font:inherit;font-size:.95rem;font-weight:700;border:2px solid var(--line);background:#fff;color:var(--ink);border-radius:999px;padding:8px 14px;cursor:pointer;min-height:40px}
+.chip.on{background:var(--pri);border-color:var(--pri);color:#fff}
+.acts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.act{font:inherit;display:flex;flex-direction:column;align-items:center;gap:2px;padding:14px 8px;border:2px solid var(--line);background:#fff;border-radius:16px;cursor:pointer;color:var(--ink)}
+.act span{font-size:1.8rem}.act.on{border-color:var(--pri);background:#f3f0ff;box-shadow:0 0 0 2px var(--pri) inset}.act.dis{opacity:.45}
+.sub{margin-top:12px;padding:14px;background:#faf9ff;border-radius:14px;border:1px solid var(--line)}
+.sumbar{position:sticky;bottom:8px;z-index:3;background:#fff;border:2px solid var(--pri);border-radius:var(--r);padding:12px 16px;margin:14px 0;box-shadow:0 6px 18px rgba(45,42,69,.18)}
+.agenda{border:2px solid var(--line);border-radius:var(--r);background:#fff;overflow:hidden;margin-top:8px}
+.agrow{display:grid;grid-template-columns:130px 1fr;gap:12px;padding:12px 14px;border-top:1px solid var(--line)}.agrow:first-child{border-top:0}
+.agt{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:4px}
+.tag{background:#f3f0ff;color:var(--pri2);border-radius:999px;padding:4px 12px;font-size:.9rem;font-weight:700}
+.xbtn{margin-left:auto;border:0;background:none;font-size:1.1rem;cursor:pointer;padding:6px;opacity:.6}
+@media(max-width:560px){.agrow{grid-template-columns:1fr;gap:4px}.acts{gap:6px}}
 .tgrid{display:grid;grid-template-columns:1fr;gap:8px}
 @media(min-width:760px){.tgrid{grid-template-columns:1fr 1fr;gap:12px}}
 .tbox .marked.orig{background:#eaf2ff;border-color:#3b82f6;color:#1e3a8a}
@@ -782,7 +799,7 @@ function goCorrect(){
   const r=computeCorrection(d.text,ui.answer,state.customRules);
   r.errors.forEach(e=>{e.stage=e.type==='extra'?'ack':'word';e.fails=0;e.done=false;
     if(e.type==='sub'){e.opts=state.rulesMode==='test'?makeOptions(e.a):null;e.wrongPicks=[];e.manual=state.rulesMode!=='test';}});
-  ui.fix=r;ui.screen='fix';
+  ui.fix=r;ui.origOK=false;ui.pinAsk=false;ui.screen='fix';
   state.history.unshift({id:Date.now(),did:d.id,photo:!!ui.photo,date:new Date().toISOString(),title:d.title,total:r.total,wrong:r.wrong,punct:r.punct.length,errs:r.errors.map(e=>({type:e.type,typed:e.typed||'',correct:e.correct||'',rule:e.rule||''}))});
   state.history=state.history.slice(0,500);save();render();
 }
@@ -808,8 +825,15 @@ function toksOf(T,W){
     const g1=T.slice(w.e,k+1<W.length?W[k+1].i:T.length),suf=g1.replace(/[¿¡«“"(]+\s*$/,'').replace(/\s+/g,'');
     return {w:w.t,pre,suf,nl:/\n/.test(g1)};});
 }
+const origOn=()=>state.settings.showOrig!==false&&!!ui.origOK;
+function origBar(){
+  if(state.settings.showOrig===false||ui.origOK)return '<span class="mute">🔴 por corregir · 🟢 corregida</span>';
+  if(ui.pinAsk)return '<span class="row" style="gap:6px;flex-wrap:nowrap"><input type="password" inputmode="numeric" id="opin" data-enter="opin" placeholder="PIN tutor" style="width:110px;padding:6px 8px;font-size:1rem"><button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="origGo">Ver</button><button class="btn" style="min-height:36px;padding:4px 10px" data-act="origNo">✕</button></span>';
+  return '<button class="btn" style="min-height:36px;padding:4px 12px;font-size:.85rem" data-act="origAsk">🔒 Ver original (tutor)</button>';
+}
+function origRefresh(){const c=$('#cmp'),b=$('#origBar'),h=$('#cmpTitle');if(c){c.className='cmp'+(origOn()?'':' one');c.innerHTML=cmpHTML(ui.fix);}if(b)b.innerHTML=origBar();if(h)h.textContent=origOn()?'Compara tu texto con el original':'Tu texto';}
 function cmpHTML(r){
-  const ans=ui.answer,d=state.dictados.find(x=>x.id===ui.dict),orig=d?d.text:'',both=state.settings.showOrig!==false;
+  const ans=ui.answer,d=state.dictados.find(x=>x.id===ui.dict),orig=d?d.text:'',both=origOn();
   const S=toksOf(ans,r.S),O=toksOf(orig,r.O),N=innerWidth<760?4:innerWidth<1000?5:6;
   const byMiss={},bySub={};r.errors.forEach((e,i)=>{if(e.type==='missing')byMiss[e.oi]=i;else if(e.type==='sub')bySub[e.oi]=i;});
   const fx=e=>e.done||e.stage==='rule';
@@ -845,7 +869,7 @@ function renderFix(){
   app.innerHTML=`<button class="link" data-act="backList">${ui.item?'← Deberes de hoy':'← Dictados'}</button>
   <div class="panel"><h2 style="margin:0">${stars} ${ok} de ${r.total} palabras bien (${pct}%)</h2>
   <p class="mute" style="margin:.3em 0 0">${r.errors.length?'Las palabras en rojo son las que hay que corregir. ¡Tú puedes!':'¡Perfecto! No has fallado ninguna palabra. 🎉'}</p></div>
-  <div class="tbox" id="tbox"><div class="tbox-h"><b>Compara tu texto con el original</b><span class="mute">🔴 por corregir · 🟢 corregida</span></div><div class="cmp${state.settings.showOrig!==false?'':' one'}" id="cmp">${cmpHTML(r)}</div></div>
+  <div class="tbox" id="tbox"><div class="tbox-h"><b id="cmpTitle">${origOn()?'Compara tu texto con el original':'Tu texto'}</b><span id="origBar">${origBar()}</span></div><div class="cmp${origOn()?'':' one'}" id="cmp">${cmpHTML(r)}</div></div>
   ${ui.photo?`<details class="panel" style="padding:10px 16px"><summary style="cursor:pointer;font-weight:700">📷 Ver la foto de mi cuaderno</summary><img src="${ui.photo}" alt="Mi cuaderno" style="width:100%;border-radius:12px;margin-top:10px"></details>`:''}
   ${r.punct.length?`<div class="panel" style="border-color:var(--warn)"><b>🟠 Signos de puntuación para revisar</b><ul style="margin:.4em 0 0">${r.punct.map(p=>`<li>${p.after?'Después de «'+esc(p.after)+'»':'Al principio'}: debería ir ${esc(shown(p.exp))} y tienes ${esc(shown(p.got))}.</li>`).join('')}</ul></div>`:''}
   ${r.errors.length?`<h3>Vamos a corregirlas <span class="mute" id="prog"></span></h3><div id="cards">${r.errors.map((e,i)=>`<div class="card" data-card="${i}"></div>`).join('')}</div>`:''}
@@ -896,6 +920,9 @@ function updateFinal(){
   <div class="row" style="margin-top:12px">${ui.item?'<button class="btn primary big" data-act="backList">📅 Volver a los deberes</button>':'<button class="btn primary" data-act="again">🔁 Repetir este dictado</button><button class="btn" data-act="backList">Elegir otro</button>'}</div></div>`;
 }
 const fixActions={
+  origAsk(){if(!state.pin){ui.origOK=true;return origRefresh();}ui.pinAsk=true;origRefresh();const i=$('#opin');if(i)i.focus();},
+  origGo(){const i=$('#opin');if(!state.pin||(i&&i.value===state.pin)){ui.origOK=true;ui.pinAsk=false;origRefresh();}else{toast('PIN incorrecto');if(i){i.value='';i.focus();}}},
+  origNo(){ui.pinAsk=false;origRefresh();},
   word(b){const i=+b.dataset.i,e=ui.fix.errors[i],v=($(`#w${i}`).value||'').trim().normalize('NFC');
     if(v===e.correct.normalize('NFC')){e.msg='';e.reveal=false;if(e.type==='sub')e.stage='rule';else{e.stage='done';e.done=true;}}
     else{e.fails++;e.msg='No es exacta todavía. Fíjate en cada letra, en las tildes y en las mayúsculas.';
@@ -1156,57 +1183,93 @@ const taskActions={
   }
 };
 /* ================= tutor: deberes y actividad ================= */
+const TF_GROUPS=[['Operaciones',['suma','resta','multi','divi','tablas']],['Fracciones, decimales y %',['frac_simp','frac_suma_igual','frac_suma_dist','frac_de_num','dec','porc']],['Problemas y otros',['problemas','orden','ratio']]];
+const tfDef=()=>({date:todayStr(),days:1,skip:true,useD:false,dd:state.dictados[0]?[state.dictados[0].id]:[],useM:false,gens:['suma','resta','multi','divi'],lv:2,n:10,tablas:'',useE:false,eid:''});
+function tfDates(f){
+  const dt=new Date((f.date||todayStr())+'T12:00:00'),out=[];let k=0;
+  while(out.length<f.days&&k<400){const wd=dt.getDay();if(!(f.skip&&f.days>1&&(wd===0||wd===6)))out.push(dt.toLocaleDateString('sv-SE'));dt.setDate(dt.getDate()+1);k++;}
+  return out;
+}
+function tfCfg(f){return {gens:f.gens.slice(),n:f.n,level:f.lv,tablas:(f.tablas||'').split(/[^0-9]+/).filter(Boolean).map(Number).filter(x=>x>=1&&x<=20)};}
+function tfProblem(f){
+  if(!f.useD&&!f.useM&&!f.useE)return 'Elige al menos una actividad.';
+  if(f.useD&&!f.dd.length)return 'Marca qué dictado poner.';
+  if(f.useM&&!f.gens.length)return 'Marca al menos un tipo de matemáticas.';
+  if(f.useE&&!f.eid)return 'Elige el examen.';
+  return '';
+}
+function tfSummaryHTML(){
+  const f=ui.tf,pr=tfProblem(f),ds=tfDates(f);
+  const parts=[];if(f.useD)parts.push(`✏️ Dictado${f.dd.length>1&&ds.length>1?` (rotando ${f.dd.length})`:''}`);if(f.useM)parts.push(`➗ Mates (${f.n} ejercicios, ${MATH_LEVELS[f.lv]})`);if(f.useE){const e=exGet(f.eid);parts.push('📝 '+(e?e.title:'Examen'));}
+  const when=ds.length===1?fmtDay(ds[0]):`${ds.length} días: del ${fmtDay(ds[0]).toLowerCase()} al ${fmtDay(ds[ds.length-1]).toLowerCase()}`;
+  const prev=f.useM&&f.gens.length&&!pr?`<details style="margin-top:6px"><summary class="mute" style="font-size:.85rem">Ejemplo de ejercicios</summary><small>${makeExercises(tfCfg(f),'vista').slice(0,4).map(e=>esc(e.q)).join('<br>')}</small></details>`:'';
+  return pr?`<span class="mute">${pr}</span>`:`<b>${esc(when)}</b><br><span>${parts.map(esc).join(' + ')}</span>${prev}`;
+}
+function tfRefresh(){const y=scrollY;render();scrollTo(0,y);}
 function tabDeberes(){
-  const t=todayStr(),gens=Object.keys(MATH_LABELS),D=state.dictados;
+  if(!ui.tf)ui.tf=tfDef();
+  const f=ui.tf,t=todayStr(),D=state.dictados,X=state.examenes.filter(e=>e.status==='ready');
+  const tomorrow=new Date(t+'T12:00:00');tomorrow.setDate(tomorrow.getDate()+1);const tm=tomorrow.toLocaleDateString('sv-SE');
+  const chip=(on,act,attrs,label)=>`<button class="chip${on?' on':''}" data-act="${act}" ${attrs}>${label}</button>`;
   const byDate={};state.tareas.forEach(x=>(byDate[x.date]=byDate[x.date]||[]).push(x));
   const dates=Object.keys(byDate).sort(),up=dates.filter(d=>d>=t),past=dates.filter(d=>d<t).reverse();
-  const card=d=>`<div class="panel"><b>${esc(fmtDay(d))}</b>${d===t?' <span class="mute">· hoy</span>':''}${byDate[d].map(x=>x.items.map(it=>`<div style="margin-top:8px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div>${it.type==='dictado'?'✏️':it.type==='examen'?'📝':'➗'} ${esc(itemTitle(it))}${it.type==='mates'?`<br><small class="mute">${it.cfg.n} ejercicios${it.cfg.tablas&&it.cfg.tablas.length?' · tablas del '+it.cfg.tablas.join(', '):''}</small><details><summary class="mute" style="font-size:.85rem">Ver ejercicios y soluciones</summary><small>${makeExercises(it.cfg,it.seed).map((e,i)=>`${i+1}. ${esc(e.q)} <b>${esc(e.txt)}</b>`).join('<br>')}</small></details>`:''}</div></div>`).join('')+`<div style="text-align:right;margin-top:6px"><button class="btn danger" data-act="delTask" data-id="${esc(x.id)}">🗑 Borrar</button></div>`).join('<hr style="border:0;border-top:1px solid var(--line)">')}</div>`;
-  $('#tab').innerHTML=`<div class="panel"><h3 style="margin-top:0">＋ Poner deberes</h3>
-  <div class="grid2"><label class="f">Desde el día<input type="date" id="tfDate" value="${t}"></label>
-  <label class="f">Para cuántos días (mismos tipos, ejercicios distintos cada día)<input type="number" id="tfDays" value="1" min="1" max="30"></label></div>
-  <label class="f"><input type="checkbox" id="tfSkip" checked> Saltar sábados y domingos</label>
-  <h4 style="margin:14px 0 4px"><label class="f"><input type="checkbox" id="tfDict" checked> ✏️ Dictado</label></h4>
-  ${D.length?`<div class="mute" style="font-size:.9rem">Marca uno o varios. Si marcas varios y pones varios días, se reparten por orden (un dictado distinto cada día).</div>${D.map((d,i)=>`<label class="f" style="display:block"><input type="checkbox" data-dd="${esc(d.id)}" ${i===0?'checked':''}> ${esc(d.title)}</label>`).join('')}`:'<p class="mute">Aún no hay dictados (créalos en la pestaña Dictados).</p>'}
-  <h4 style="margin:14px 0 4px"><label class="f"><input type="checkbox" id="tfMath" checked> ➗ Matemáticas</label></h4>
-  <div class="grid2" style="margin-bottom:6px">${gens.map(g=>`<label class="f" style="display:block"><input type="checkbox" data-g="${g}" ${['suma','resta','multi','divi'].includes(g)?'checked':''}> ${esc(MATH_LABELS[g])}</label>`).join('')}</div>
-  <div class="grid2"><label class="f">Nivel<select id="tfLv">${[1,2,3].map(l=>`<option value="${l}" ${l===2?'selected':''}>${MATH_LEVELS[l]}</option>`).join('')}</select></label>
-  <label class="f">Número de ejercicios<input type="number" id="tfN" value="10" min="1" max="40"></label>
-  <label class="f">Tablas concretas (solo para «Tablas de multiplicar»)<input type="text" id="tfTab" placeholder="Ej.: 6,7,8 (vacío = todas)" inputmode="numeric"></label></div>
-  ${(()=>{const X=state.examenes.filter(e=>e.status==='ready');return X.length?`<h4 style="margin:14px 0 4px"><label class="f"><input type="checkbox" id="tfEx"> 📝 Practicar un examen</label></h4><select id="tfExId">${X.map(e=>`<option value="${esc(e.id)}">${esc(e.title)} (${esc(exShortDate(e.date))})</option>`).join('')}</select><p class="mute" style="margin:4px 0">Cada día que se ponga saldrán preguntas distintas del banco.</p>`:''})()}
-  <p class="mute" style="margin:6px 0">Los ejercicios los genera la app sola, sin gastar IA. Nivel pensado para Year 6.</p>
-  <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="createTask">💾 Crear deberes</button></div></div>
-  <h3>📅 Próximos deberes</h3>${up.map(card).join('')||'<p class="mute">No hay deberes puestos.</p>'}
-  ${past.length?`<details><summary class="mute">Deberes de días pasados (${past.length})</summary>${past.map(card).join('')}</details>`:''}`;
+  const label=d=>d===t?'Hoy':d===tm?'Mañana':fmtDay(d);
+  const row=d=>`<div class="agrow"><div class="agd"><b>${esc(label(d))}</b>${d===t||d===tm?`<br><small class="mute">${esc(fmtDay(d))}</small>`:''}</div><div class="agi">${byDate[d].map(x=>`<div class="agt">${x.items.map(it=>`<span class="tag">${it.type==='dictado'?'✏️':it.type==='examen'?'📝':'➗'} ${esc(itemTitle(it).replace(/^(Dictado|Mates|Examen): /,''))}</span>`).join('')}<button class="xbtn" title="Borrar" data-act="delTask" data-id="${esc(x.id)}">🗑</button></div>${x.items.filter(i=>i.type==='mates').map(it=>`<details><summary class="mute" style="font-size:.8rem">Ver ejercicios y soluciones</summary><small>${makeExercises(it.cfg,it.seed).map((e,i)=>`${i+1}. ${esc(e.q)} <b>${esc(e.txt)}</b>`).join('<br>')}</small></details>`).join('')}`).join('')}</div></div>`;
+  $('#tab').innerHTML=`<div class="step"><h4><span class="n">1</span> ¿Cuándo?</h4>
+   <div class="chips">${chip(f.date===t,'tfDate',`data-v="${t}"`,'Hoy')}${chip(f.date===tm,'tfDate',`data-v="${tm}"`,'Mañana')}<input type="date" data-tf="date" value="${esc(f.date)}" style="width:auto;padding:8px 10px;font-size:1rem;border-radius:999px"></div>
+   <div class="lbl">¿Cuántos días seguidos?</div><div class="chips">${[1,3,5,10,15].map(n=>chip(f.days===n,'tfDays',`data-v="${n}"`,n===1?'Solo ese día':n+' días')).join('')}</div>
+   ${f.days>1?`<div class="chips" style="margin-top:8px">${chip(f.skip,'tfSkip','',f.skip?'✓ Sin sábados ni domingos':'Sin sábados ni domingos')}</div><p class="mute" style="margin:8px 0 0;font-size:.85rem">Cada día tendrá ejercicios distintos del mismo tipo.</p>`:''}</div>
+  <div class="step"><h4><span class="n">2</span> ¿Qué tiene que hacer Julia?</h4>
+   <div class="acts"><button class="act${f.useD?' on':''}" data-act="tfAct" data-k="D"><span>✏️</span><b>Dictado</b></button><button class="act${f.useM?' on':''}" data-act="tfAct" data-k="M"><span>➗</span><b>Matemáticas</b></button><button class="act${f.useE?' on':''}${X.length?'':' dis'}" data-act="tfAct" data-k="E"><span>📝</span><b>Examen</b></button></div>
+   ${f.useD?`<div class="sub"><b>Dictado</b> <span class="mute">${f.dd.length>1?'· se reparten por orden entre los días':'· elige uno o varios'}</span><div class="chips" style="margin-top:8px">${D.map(d=>chip(f.dd.includes(d.id),'tfDd',`data-id="${esc(d.id)}"`,esc(d.title))).join('')||'<span class="mute">Aún no hay dictados: créalos en la pestaña Dictados.</span>'}</div></div>`:''}
+   ${f.useM?`<div class="sub"><b>Matemáticas</b> <span class="mute">· los ejercicios los genera la app (nivel Year 6)</span>
+     ${TF_GROUPS.map(([g,l])=>`<div class="lbl">${g}</div><div class="chips">${l.map(k=>chip(f.gens.includes(k),'tfGen',`data-k="${k}"`,esc(MATH_LABELS[k]))).join('')}</div>`).join('')}
+     ${f.gens.includes('tablas')?`<div class="lbl">Tablas concretas <span class="mute">(vacío = todas)</span></div><input type="text" data-tf="tablas" value="${esc(f.tablas)}" placeholder="Ej.: 6, 7, 8" inputmode="numeric" style="max-width:220px">`:''}
+     <div class="lbl">Nivel</div><div class="chips">${[1,2,3].map(l=>chip(f.lv===l,'tfLv',`data-v="${l}"`,MATH_LEVELS[l])).join('')}</div>
+     <div class="lbl">Ejercicios por día</div><div class="chips">${[5,10,15,20].map(n=>chip(f.n===n,'tfN',`data-v="${n}"`,n)).join('')}</div></div>`:''}
+   ${f.useE&&X.length?`<div class="sub"><b>Examen a practicar</b><select data-tf="eid" style="margin-top:8px">${X.map(e=>`<option value="${esc(e.id)}" ${f.eid===e.id?'selected':''}>${esc(e.title)} (${esc(exShortDate(e.date))})</option>`).join('')}</select><p class="mute" style="margin:6px 0 0;font-size:.85rem">Cada día saldrán preguntas distintas del banco.</p></div>`:''}
+   ${!X.length?`<p class="mute" style="margin:8px 0 0;font-size:.85rem">Para poder elegir «Examen», primero crea y publica uno en la pestaña Exámenes.</p>`:''}</div>
+  <div class="sumbar"><div id="tfSum">${tfSummaryHTML()}</div><div class="row" style="margin-top:10px"><button class="btn primary big" data-act="createTask" ${tfProblem(f)?'disabled':''} id="tfGo">💾 Crear deberes</button></div></div>
+  <h3 style="margin-top:24px">📅 Deberes puestos</h3>
+  <div class="agenda">${up.map(row).join('')||'<p class="mute">Todavía no hay deberes para hoy ni para los próximos días.</p>'}</div>
+  ${past.length?`<details style="margin-top:10px"><summary class="mute">Días pasados (${past.length})</summary><div class="agenda">${past.map(row).join('')}</div></details>`:''}`;
+}
+function tfInput(t){
+  if(!t.dataset.tf)return false;
+  if(!ui.tf)ui.tf=tfDef();
+  ui.tf[t.dataset.tf]=t.value;
+  if(t.dataset.tf==='date'&&!t.value)ui.tf.date=todayStr();
+  const s=$('#tfSum');if(s){s.innerHTML=tfSummaryHTML();const g=$('#tfGo');if(g)g.disabled=!!tfProblem(ui.tf);}
+  return true;
 }
 function tabActividad(){
   const S=state.sesiones.slice().sort((a,b)=>a.id<b.id?1:-1);
   $('#tab').innerHTML=S.length?`<p class="mute" style="margin-top:0">Lo que Julia ha hecho cada día: hora, tiempo, aciertos y fallos.</p>${S.map(s=>reportHTML(s,true)).join('')}`:'<p class="mute">Todavía no hay actividad. Cuando Julia haga sus deberes de hoy, aparecerá aquí.</p>';
 }
+const tog=(arr,v)=>arr.includes(v)?arr.filter(x=>x!==v):arr.concat(v);
 const deberesActions={
+  tfDate(b){ui.tf.date=b.dataset.v;tfRefresh();},
+  tfDays(b){ui.tf.days=+b.dataset.v;tfRefresh();},
+  tfSkip(){ui.tf.skip=!ui.tf.skip;tfRefresh();},
+  tfAct(b){const k=b.dataset.k,f=ui.tf;if(k==='E'&&!state.examenes.some(e=>e.status==='ready'))return toast('Primero publica un examen');
+    if(k==='D')f.useD=!f.useD;if(k==='M')f.useM=!f.useM;if(k==='E'){f.useE=!f.useE;if(f.useE&&!f.eid)f.eid=state.examenes.find(e=>e.status==='ready').id;}tfRefresh();},
+  tfDd(b){ui.tf.dd=tog(ui.tf.dd,b.dataset.id);tfRefresh();},
+  tfGen(b){ui.tf.gens=tog(ui.tf.gens,b.dataset.k);tfRefresh();},
+  tfLv(b){ui.tf.lv=+b.dataset.v;tfRefresh();},
+  tfN(b){ui.tf.n=+b.dataset.v;tfRefresh();},
   createTask(){
-    const d0=$('#tfDate').value,nd=Math.max(1,Math.min(30,+$('#tfDays').value||1)),skip=$('#tfSkip').checked;
-    const useD=$('#tfDict').checked,dd=[...document.querySelectorAll('[data-dd]:checked')].map(x=>x.dataset.dd);
-    const useM=$('#tfMath').checked,gens=[...document.querySelectorAll('[data-g]:checked')].map(x=>x.dataset.g);
-    if(!d0)return toast('Elige un día');
-    const useE=!!($('#tfEx')&&$('#tfEx').checked),eid=useE?$('#tfExId').value:null;
-    if(!useD&&!useM&&!useE)return toast('Marca al menos una actividad');
-    if(useD&&!dd.length)return toast('Marca qué dictado(s) poner');
-    if(useM&&!gens.length)return toast('Marca al menos un tipo de matemáticas');
-    const tablas=($('#tfTab').value||'').split(/[^0-9]+/).filter(Boolean).map(Number).filter(x=>x>=1&&x<=20);
-    const cfg={gens,n:Math.max(1,Math.min(40,+$('#tfN').value||10)),level:+$('#tfLv').value,tablas};
-    const dt=new Date(d0+'T12:00:00'),made=[];let k=0;
-    while(made.length<nd&&k<400){const ds=dt.toLocaleDateString('sv-SE'),wd=dt.getDay();
-      if(!(skip&&(wd===0||wd===6)))made.push(ds);dt.setDate(dt.getDate()+1);k++;}
-    made.forEach((date,i)=>{
+    const f=ui.tf,pr=tfProblem(f);if(pr)return toast(pr);
+    const ds=tfDates(f),cfg=tfCfg(f);
+    ds.forEach((date,i)=>{
       const items=[];
-      if(useD)items.push({id:'i'+uid(),type:'dictado',did:dd[i%dd.length]});
-      if(useM)items.push({id:'i'+uid(),type:'mates',cfg:JSON.parse(JSON.stringify(cfg)),seed:'m'+date+'-'+uid()});
-      if(useE)items.push({id:'i'+uid(),type:'examen',eid});
+      if(f.useD)items.push({id:'i'+uid(),type:'dictado',did:f.dd[i%f.dd.length]});
+      if(f.useM)items.push({id:'i'+uid(),type:'mates',cfg:JSON.parse(JSON.stringify(cfg)),seed:'m'+date+'-'+uid()});
+      if(f.useE)items.push({id:'i'+uid(),type:'examen',eid:f.eid});
       state.tareas.push({id:'t'+uid(),date,items});
     });
-    save();render();toast(`Deberes creados para ${made.length} ${made.length===1?'día':'días'} ✅`);
+    save();ui.tf=tfDef();render();toast(`Deberes creados para ${ds.length} ${ds.length===1?'día':'días'} ✅`);
   },
-  delTask(b){if(confirm('¿Borrar estos deberes?')){state.tareas=state.tareas.filter(x=>x.id!==b.dataset.id);save();render();}}
+  delTask(b){if(confirm('¿Borrar estos deberes?')){state.tareas=state.tareas.filter(x=>x.id!==b.dataset.id);save();tfRefresh();}}
 };
 /* ================= exámenes: motor puro (sin IA) ================= */
 const EX_STOP=new Set('el la los las un una unos unas de del al y o u en a que se es son por para con sin sobre como su sus lo le les mas muy este esta estos estas cual cuales cuando donde quien cuanto cuantos cuantas the a an of to in on at and or is are was were be by for with from as that this these those which what who whom when where how many much its it their his her'.split(' '));
@@ -1589,7 +1652,7 @@ function tabAjustes(){
   <label class="f">Repetir cada trozo <span class="v" id="v_repeat">${s.repeat} ${s.repeat>1?'veces':'vez'}</span><input type="range" min="1" max="3" value="${s.repeat}" data-set="repeat"></label>
   <label class="f" id="gapBox" style="${s.repeat>1?'':'display:none'}">Segundos entre repeticiones <span class="v" id="v_gap">${s.gap} s</span><input type="range" min="1" max="20" value="${s.gap}" data-set="gap"></label>
   <label class="f"><input type="checkbox" data-set="punct" ${s.punct?'checked':''}> Dictar los signos de puntuación</label><br>
-  <label class="f"><input type="checkbox" data-set="showOrig" ${s.showOrig!==false?'checked':''}> Al corregir, mostrar el texto original del dictado para comparar</label>
+  <label class="f"><input type="checkbox" data-set="showOrig" ${s.showOrig!==false?'checked':''}> Al corregir, permitir ver el texto original del dictado (Julia necesita el PIN de tutor)</label>
   <label class="f">Pausa después de cada signo<select data-set="ppause"><option value="0.6" ${s.ppause==0.6?'selected':''}>Corta</option><option value="1" ${s.ppause==1?'selected':''}>Normal</option><option value="1.6" ${s.ppause==1.6?'selected':''}>Larga</option><option value="2.2" ${s.ppause==2.2?'selected':''}>Muy larga</option></select></label>
   ${Dict.voices().length?`<label class="f">Voz<select data-set="voice">${Dict.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.voice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en español en este dispositivo.</p>'}</div>
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
@@ -1668,7 +1731,7 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
   if(t.id==='exans'&&ui.ex){ui.ex.ans[ui.ex.i]=t.value;return;}
-  if(exInput(t))return;
+  if(exInput(t)||tfInput(t))return;
   if(t.dataset.set){const k=t.dataset.set;state.settings[k]=t.type==='checkbox'?t.checked:(t.type==='range'||k==='ppause')?+t.value:t.value;save();
     if(k==='repeat'){const gb=$('#gapBox');if(gb)gb.style.display=state.settings.repeat>1?'':'none';}
     const lab=$('#v_'+k);if(lab)lab.textContent=k==='rate'?rateLabel(state.settings.rate):k==='pause'||k==='gap'?state.settings[k]+' s':k==='repeat'?state.settings.repeat+(state.settings.repeat>1?' veces':' vez'):state.settings[k];}
@@ -1676,7 +1739,7 @@ document.addEventListener('input',e=>{const t=e.target;
   if(t.dataset.cr){state.customRules[+t.dataset.i][t.dataset.cr]=t.value;save();}
 });
 document.addEventListener('change',e=>{const t=e.target;
-  if(exInput(t))return;
+  if(exInput(t)||tfInput(t))return;
   if(t.dataset.set==='voice'){state.settings.voice=t.value;save();}
   if(t.id==='photoIn'&&t.files[0]){const f=t.files[0];t.value='';handlePhoto(f);return;}
   if(t.id==='dictPhoto'&&t.files.length){readDictPhotos([...t.files]);t.value='';return;}
@@ -1685,6 +1748,7 @@ document.addEventListener('change',e=>{const t=e.target;
 document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.target;
   if(t.dataset.enter==='word')fixActions.word({dataset:{i:t.dataset.i}});
   if(t.dataset.enter==='mans')taskActions.mcheck();
+  if(t.dataset.enter==='opin')fixActions.origGo();
   if(t.dataset.enter==='pin')tutorActions.pinEnter();});
 render();
 async function readDictPhotos(files){
