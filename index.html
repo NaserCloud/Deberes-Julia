@@ -440,7 +440,7 @@ const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tar
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
   const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[]};
-  s=Object.assign(d,s);s.ai=Object.assign({on:false,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:''},s.sync||{});
+  s=Object.assign(d,s);s.ai=Object.assign({on:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:''},s.sync||{});
   if(!s.dictados)s.dictados=[SAMPLE];
   return s;
 }
@@ -504,13 +504,18 @@ const Dict=(()=>{
 const AI_STYLE='v1';
 const AI_INSTR='Habla en español de España, como una maestra de primaria dictando a una niña de diez años: voz cálida, clara y pausada, con muy buena dicción. Pronuncia cada palabra con calma, sin prisa y sin añadir ni quitar nada del texto. Los signos de puntuación escritos como palabras (coma, punto, punto y aparte, abrir exclamación…) dilos de forma natural, como hace una profesora al dictar.';
 const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-const apiErr=s=>s===401?'La clave de OpenAI no es correcta':s===429?'Límite de uso o saldo agotado en OpenAI':s===403?'La clave no tiene permiso para esto':s===413?'La foto es demasiado grande':'Error de OpenAI ('+s+')';
+const apiErr=s=>s===401?'La clave de OpenAI no es correcta o no está configurada':s===429?'Límite de uso o saldo agotado en OpenAI':s===403?'Esta web no tiene permiso para usar la IA':s===413?'La foto es demasiado grande':'Error de OpenAI ('+s+')';
 const VISION_SYS='Eres un transcriptor literal de texto manuscrito (OCR). La imagen es la hoja de cuaderno de una niña de primaria que ha escrito un dictado y puede tener faltas de ortografía. Tu única tarea es copiar EXACTAMENTE lo que hay escrito, letra por letra, sin corregir NADA: no corrijas la ortografía, ni las tildes (si falta una tilde, no la pongas; si hay una tilde de más, déjala), ni las mayúsculas o minúsculas, ni los signos de puntuación, ni las palabras mal separadas o pegadas. Si una letra está equivocada, escríbela tal como está. Conserva los saltos de línea. Ignora los tachones y lo tachado. Si una palabra es totalmente ilegible, escribe [?] en su lugar. Incluye la fecha o el título si los ha escrito. Responde SOLO con el texto transcrito, sin comillas, sin comentarios y sin explicaciones.';
+const useKey=()=>!!(state.ai.key&&state.ai.key.trim());
+async function aiCall(kind,path,payload){
+  if(useKey())return fetch('https://api.openai.com'+path,{method:'POST',headers:{'Authorization':'Bearer '+state.ai.key.trim(),'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  return fetch(SB_URL+'/functions/v1/openai-proxy',{method:'POST',headers:{apikey:SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({kind,payload})});
+}
 async function readNotebook(dataUrl){
   const a=state.ai;
   const body={model:a.visionModel||'gpt-4o',temperature:0,messages:[{role:'system',content:VISION_SYS},{role:'user',content:[{type:'text',text:'Transcribe literalmente el texto manuscrito de esta foto, sin corregir ninguna falta.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}]};
-  let r;try{r=await fetch('https://api.openai.com/v1/chat/completions',{method:'POST',headers:{'Authorization':'Bearer '+a.key.trim(),'Content-Type':'application/json'},body:JSON.stringify(body)});}
-  catch(e){throw new Error('Sin conexión con OpenAI');}
+  let r;try{r=await aiCall('vision','/v1/chat/completions',body);}
+  catch(e){throw new Error('Sin conexión con el servidor de voz');}
   if(!r.ok)throw new Error(apiErr(r.status));
   const j=await r.json();const t=(j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||'').trim();
   if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja bien recta.');
@@ -528,12 +533,12 @@ const Voz=(()=>{
   const db=()=>dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('deberesJulia',1);r.onupgradeneeded=()=>r.result.createObjectStore('audio');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}));
   const idb=async(mode,fn)=>{const d=await db();return new Promise((res,rej)=>{const t=d.transaction('audio',mode),r=fn(t.objectStore('audio'));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error);});};
   const K=t=>[AI_STYLE,state.ai.model,state.ai.voice,t].join('|');
-  const ready=()=>!!(state.ai.on&&state.ai.key&&state.ai.key.trim());
+  const ready=()=>!!state.ai.on;
   async function gen(text){
     const a=state.ai,body={model:a.model,voice:a.voice,input:text,response_format:'mp3'};
     if(/^gpt-4o/.test(a.model))body.instructions=AI_INSTR;
-    let r;try{r=await fetch('https://api.openai.com/v1/audio/speech',{method:'POST',headers:{'Authorization':'Bearer '+a.key.trim(),'Content-Type':'application/json'},body:JSON.stringify(body)});}
-    catch(e){throw new Error('Sin conexión con OpenAI');}
+    let r;try{r=await aiCall('tts','/v1/audio/speech',body);}
+    catch(e){throw new Error('Sin conexión con el servidor de voz');}
     if(!r.ok)throw new Error(apiErr(r.status));
     return await r.blob();
   }
@@ -564,11 +569,11 @@ const Voz=(()=>{
 /* ================= sincronización con Supabase ================= */
 const SB_URL='https://rzzaizkzszgiirwmilyq.supabase.co',SB_KEY='sb_publishable_xdaxsZhA3FDyGWsMeT2pLA_4TSyUvpl';
 const Cloud=(()=>{
-  const K=['dictados','customRules','rulesMode','pin','settings'],hdr={apikey:SB_KEY,'Content-Type':'application/json'};
-  const part=k=>{if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;return o;}return state[k];};
+  const K=['dictados','customRules','rulesMode','pin','settings','ai'],hdr={apikey:SB_KEY,'Content-Type':'application/json'};
+  const part=k=>{if(k==='ai'){const o=Object.assign({},state.ai);delete o.key;return o;}if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;return o;}return state[k];};
   const js=k=>JSON.stringify(part(k)===undefined?null:part(k));
   const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':(v&&typeof v==='object')?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
-  const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
+  const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
     if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;return canon(o)===canon(d);}return false;};
   let timer=null,busy=false,again=false,started=false;
   const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
@@ -590,7 +595,7 @@ const Cloud=(()=>{
         let lt=first&&rv?0:(s.t[k]||0);let rt=rv?(rv.t&&rv.t[k]||0):-1;
         if(first&&rv&&rv.d&&rv.d[k]!==undefined&&pristine(k,rv.d[k])&&!pristine(k,part(k)))rt=0;
         if(rv&&rv.d&&rv.d[k]!==undefined&&rt>lt){
-          if(k==='settings')state.settings=Object.assign({},DEF_SETTINGS,rv.d[k],{voice:state.settings.voice});else state[k]=rv.d[k];
+          if(k==='settings')state.settings=Object.assign({},DEF_SETTINGS,rv.d[k],{voice:state.settings.voice});else if(k==='ai')state.ai=Object.assign({},state.ai,rv.d[k],{key:state.ai.key});else state[k]=rv.d[k];
           if(k==='dictados')adoptedD=true;
           s.t[k]=rt;s.j[k]=js(k);changed=true;out.t[k]=rt;out.d[k]=rv.d[k];
         }else{out.t[k]=lt||Date.now();s.t[k]=out.t[k];out.d[k]=part(k)===undefined?null:part(k);}
@@ -693,7 +698,7 @@ function photoHTML(){
   return `<div class="panel"><div class="row" style="flex-wrap:nowrap;align-items:flex-start"><img src="${ui.photo}" alt="Tu cuaderno" style="width:130px;border-radius:10px;border:2px solid var(--line)"><div>✅ <b>He leído tu cuaderno.</b> Comprueba que el texto de arriba es lo que tú escribiste: si la app ha leído mal una letra, cámbiala, pero <b>no corrijas tus faltas</b>. Si aparece el título o la fecha, no pasa nada.${/\[\?\]/.test(ui.answer)?'<br><span class="wrong">Hay partes que no se han podido leer ([?]): escríbelas tú.</span>':''}</div></div></div>`;
 }
 async function handlePhoto(file){
-  if(!state.ai.key.trim())return toast('El tutor tiene que poner la clave de OpenAI en Ajustes para leer fotos');
+  if(!state.ai.on)return toast('El tutor tiene que activar la IA en Ajustes para leer fotos');
   const box=$('#photoBox');if(box)box.innerHTML='<div class="status"><span class="ico">🔎</span><div>Leyendo tu letra… unos segundos</div></div>';
   try{
     const data=await fileToJpeg(file),txt=await readNotebook(data);
@@ -899,9 +904,10 @@ function tabAjustes(){
   ${Dict.voices().length?`<label class="f">Voz<select data-set="voice">${Dict.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.voice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en español en este dispositivo.</p>'}</div>
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
   <div class="panel"><h3>🎙 IA de OpenAI: voz y lectura de fotos</h3>
-  <p class="mute" style="margin-top:0">Usa la voz de OpenAI para dictar como una profesora. El audio se genera <b>una sola vez</b> al guardar cada dictado (cuesta unos céntimos) y queda guardado en este iPad. La clave solo se guarda en este dispositivo.</p>
+  <p class="mute" style="margin-top:0">Usa la voz de OpenAI para dictar como una profesora. El audio se genera <b>una sola vez</b> al guardar cada dictado (cuesta unos céntimos) y queda guardado en este iPad. El audio queda guardado en cada dispositivo.</p>
   <label class="f"><input type="checkbox" data-ai="on" ${state.ai.on?'checked':''}> Usar voz IA</label><br>
-  <label class="f">Clave API de OpenAI<input type="password" data-ai="key" value="${esc(state.ai.key)}" placeholder="sk-..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label>
+  <p class="mute" style="margin:6px 0">🔒 La clave de OpenAI está guardada en el servidor, no en este dispositivo.</p>
+  <details><summary class="mute">Usar una clave propia solo en este dispositivo (opcional)</summary><label class="f">Clave API de OpenAI<input type="password" data-ai="key" value="${esc(state.ai.key)}" placeholder="sk-... (déjalo vacío para usar la del servidor)" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label></details>
   <div class="grid2" style="margin-top:12px">
    <label class="f">Voz<select data-ai="voice">${['coral','nova','shimmer','sage','ballad','alloy','ash','echo','fable','onyx','verse'].map(v=>`<option ${state.ai.voice===v?'selected':''}>${v}</option>`).join('')}</select></label>
    <label class="f">Modelo<select data-ai="model"><option value="gpt-4o-mini-tts" ${state.ai.model==='gpt-4o-mini-tts'?'selected':''}>gpt-4o-mini-tts (recomendado)</option><option value="tts-1-hd" ${state.ai.model==='tts-1-hd'?'selected':''}>tts-1-hd</option></select></label>
@@ -948,7 +954,6 @@ const tutorActions={
   testVoice(){Dict.test(state.settings);},
   async genVoice(b){const id=b.dataset.id;await genVoiceFor(id,true);},
   async testAI(){
-    if(!state.ai.key.trim())return toast('Pega primero tu clave de OpenAI');
     Voz.unlock();toast('Generando muestra…');
     try{const blob=await Voz.gen('Hola Julia. Título. Un día de lluvia. Ayer por la tarde llovió mucho en Madrid, coma, y volvimos a casa, punto.');Voz.playUrl(URL.createObjectURL(blob),state.ai.speed,()=>{},()=>toast('No se pudo reproducir'));}
     catch(e){toast(e.message);}
