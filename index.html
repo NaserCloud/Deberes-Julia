@@ -463,7 +463,7 @@ const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:tru
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
-  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[]};
+  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[]};
   s=Object.assign(d,s);s.ai=Object.assign({on:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:''},s.sync||{});
   if(!s.dictados)s.dictados=[SAMPLE];
   return s;
@@ -471,7 +471,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -604,11 +604,11 @@ const Voz=(()=>{
 /* ================= sincronización con Supabase ================= */
 const SB_URL='https://rzzaizkzszgiirwmilyq.supabase.co',SB_KEY='sb_publishable_xdaxsZhA3FDyGWsMeT2pLA_4TSyUvpl';
 const Cloud=(()=>{
-  const K=['dictados','customRules','rulesMode','pin','settings','ai','tareas'],hdr={apikey:SB_KEY,'Content-Type':'application/json'};
+  const K=['dictados','customRules','rulesMode','pin','settings','ai','tareas','examenes'],hdr={apikey:SB_KEY,'Content-Type':'application/json'};
   const part=k=>{if(k==='ai'){const o=Object.assign({},state.ai);delete o.key;return o;}if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;return o;}return state[k];};
   const js=k=>JSON.stringify(part(k)===undefined?null:part(k));
   const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':(v&&typeof v==='object')?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
-  const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='tareas')return !v||!v.length;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
+  const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='tareas'||k==='examenes')return !v||!v.length;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
     if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;return canon(o)===canon(d);}return false;};
   let timer=null,busy=false,again=false,started=false;
   const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
@@ -673,7 +673,7 @@ const Cloud=(()=>{
       }catch(e){C.set('err',e&&e.message&&!/fetch|network|load/i.test(e.message)?e.message:'sin internet');if(manual)toast('Sin conexión con el servidor');}
       busy=false;if(again){again=false;setTimeout(()=>C.sync(),500);}
     },
-    idle(){const a=document.activeElement;return !(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&ui.screen!=='run'&&ui.screen!=='fix'&&ui.screen!=='mrun'&&!ui.editId&&!ui.preparing;},
+    idle(){const a=document.activeElement;return !(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&ui.screen!=='run'&&ui.screen!=='fix'&&ui.screen!=='mrun'&&ui.screen!=='exrun'&&!ui.exId&&!ui.editId&&!ui.preparing;},
     start(){
       if(!C.on||started)return;started=true;C.sync();
       setInterval(()=>{if(!document.hidden&&navigator.onLine!==false)C.sync();},25000);
@@ -688,7 +688,7 @@ function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
-  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum}[ui.screen]||renderHome)();
+  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres}[ui.screen]||renderHome)();
 }
 function renderList(){
   const L=state.dictados;
@@ -1004,6 +1004,7 @@ function getSes(date,create){
 }
 function mathTitle(cfg){const l=(cfg.gens||[]).map(g=>MATH_LABELS[g]||g);return 'Mates: '+(l.length>3?l.slice(0,3).join(', ')+'…':l.join(', '))+' · '+MATH_LEVELS[cfg.level||1];}
 function itemTitle(it){
+  if(it.type==='examen'){const e=exGet(it.eid);return 'Examen: '+(e?e.title:'(examen borrado)');}
   if(it.type==='dictado'){const d=state.dictados.find(x=>x.id===it.did);return 'Dictado: '+(d?d.title:'(dictado borrado)');}
   return mathTitle(it.cfg);
 }
@@ -1027,26 +1028,27 @@ function recordDictado(){
 function sessionReport(s){
   const rows=[];
   const one=(r,extra)=>{
-    const o={title:r.title,done:!!r.done||extra,secs:r.secs||0,at:r.start,line:'',det:[]};
+    const o={title:r.title,done:!!r.done||extra,secs:r.secs||0,at:r.start,line:'',det:[],src:r};
     if(r.kind==='dictado'&&r.res){const x=r.res;o.line=`${x.total-x.wrong} de ${x.total} palabras bien (${x.total?Math.round(100*(x.total-x.wrong)/x.total):100}%)`+(x.punct?` · ${x.punct} fallos de puntuación`:'')+(x.photo?' · con foto del cuaderno':'');
       o.det=x.errs.map(e=>e.type==='sub'?`${e.typed} → ${e.correct}`:`falta «${e.correct}»`);}
     else if(r.kind==='mates'&&r.res){const x=r.res;o.line=`${x.first} de ${x.n} a la primera · ${x.ok} de ${x.n} correctos`;
       o.det=x.wrong.map(w=>`${w.q.replace(/\s*=\s*$/,'')} = ${w.a}${w.given&&w.given.length?' (puso '+w.given.join(', ')+')':''}`);}
+    else if(r.kind==='examen'&&r.res){const x=r.res;o.line=`${(Math.round(x.score*10)/10).toString().replace('.',',')} de ${x.n} puntos (${Math.round(100*x.score/x.n)}%)`;o.det=x.qa.filter(a=>exEff(a)<0.7).map(a=>`${a.q} → ${a.correct}`);}
     else o.line=r.done?'Hecho':'Empezado, sin terminar';
     return o;
   };
   const plan=itemsOf(s.date);
   const seen=new Set();
-  plan.forEach(it=>{seen.add(it.id);const r=s.items[it.id];rows.push(r?one(r):{title:itemTitle(it),done:false,secs:0,line:'Sin hacer',det:[],todo:true});});
-  Object.keys(s.items).filter(k=>!seen.has(k)).forEach(k=>rows.push(one(s.items[k])));
-  (s.extra||[]).forEach(r=>rows.push(Object.assign(one(r,true),{loose:true})));
+  plan.forEach(it=>{seen.add(it.id);const r=s.items[it.id];rows.push(r?Object.assign(one(r),{rid:it.id}):{title:itemTitle(it),done:false,secs:0,line:'Sin hacer',det:[],todo:true});});
+  Object.keys(s.items).filter(k=>!seen.has(k)).forEach(k=>rows.push(Object.assign(one(s.items[k]),{rid:k})));
+  (s.extra||[]).forEach(r=>rows.push(Object.assign(one(r,true),{loose:true,rid:r.id})));
   const secs=rows.reduce((a,r)=>a+r.secs,0);
   return {date:s.date,started:s.started,finished:s.finished,secs,rows,pending:rows.filter(r=>r.todo).length};
 }
 function reportHTML(s,tutor){
   const R=sessionReport(s);
   return `<div class="panel"><b>${esc(fmtDay(R.date))}</b><br><small class="mute">${R.started?`Empezó a las ${fmtHM(R.started)}`:'No ha empezado'}${R.finished?` · Finalizó a las ${fmtHM(R.finished)}`:R.started?' · <b style="color:var(--bad)">Sin finalizar</b>':''} · Tiempo trabajando: ${fmtDur(R.secs)}${R.pending?` · ${R.pending} sin hacer`:''}</small>
-  ${R.rows.map(r=>`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">${r.todo?'⬜':'✅'} <b>${esc(r.title)}</b>${r.loose?' <small class="mute">(suelto)</small>':''}<br><small>${esc(r.line)}${r.secs?` · ⏱ ${fmtDur(r.secs)}`:''}${r.at&&tutor?` · ${fmtHM(r.at)}`:''}</small>${r.det.length?`<br><small class="wrong">${r.det.slice(0,15).map(esc).join(' · ')}${r.det.length>15?` · …y ${r.det.length-15} más`:''}</small>`:''}</div>`).join('')||'<small class="mute">Sin actividad.</small>'}</div>`;
+  ${R.rows.map(r=>`<div style="border-top:1px solid var(--line);margin-top:8px;padding-top:8px">${r.todo?'⬜':'✅'} <b>${esc(r.title)}</b>${r.loose?' <small class="mute">(suelto)</small>':''}<br><small>${esc(r.line)}${r.secs?` · ⏱ ${fmtDur(r.secs)}`:''}${r.at&&tutor?` · ${fmtHM(r.at)}`:''}</small>${tutor&&r.src&&r.src.kind==='examen'&&r.src.res?examDetailHTML(s,r.src,r.rid):''}${r.det.length&&!(tutor&&r.src&&r.src.kind==='examen')?`<br><small class="wrong">${r.det.slice(0,15).map(esc).join(' · ')}${r.det.length>15?` · …y ${r.det.length-15} más`:''}</small>`:''}</div>`).join('')||'<small class="mute">Sin actividad.</small>'}</div>`;
 }
 /* ---- pantallas ---- */
 function renderHome(){
@@ -1055,6 +1057,7 @@ function renderHome(){
   app.innerHTML=`<h1>¡Hola, Julia! 👋</h1><p class="mute">¿Qué deberes toca hoy?</p>
   <div class="tiles"><button class="tile" data-act="goToday" style="border-color:var(--pri)"><span class="ico">📅</span><b>Deberes de hoy</b><small>${sub}</small></button>
   <button class="tile" data-act="goList"><span class="ico">✏️</span><b>Dictados</b><small>Escucha y escribe lo que oyes</small></button>
+  ${state.examenes.some(e=>e.status==='ready')?`<button class="tile" data-act="goExams"><span class="ico">📝</span><b>Exámenes</b><small>${(()=>{const n=state.examenes.filter(e=>e.status==='ready'&&e.date>=t).sort((a,b)=>a.date<b.date?-1:1)[0];return n?'Próximo: '+esc(n.title)+' ('+exDaysTxt(n.date)+')':'Practica para tus exámenes';})()}</small></button>`:''}
   <button class="tile" data-act="goMlist"><span class="ico">➗</span><b>Matemáticas</b><small>Practica cuando quieras</small></button></div>`;
 }
 function renderToday(){
@@ -1130,6 +1133,7 @@ const taskActions={
     const it=itemsOf(todayStr()).find(x=>x.id===b.dataset.id);if(!it)return;
     const [s]=recItem(it);touchSes(s);ui.item=it.id;
     if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.screen='run';render();}
+    else if(it.type==='examen')startExam(it.eid,it.id);
     else startMath(it.cfg,it.seed,it.id);
   },
   mexit(){if(confirm('¿Salir? Perderás lo que llevas de esta serie.')){ui.mrun=null;ui.screen=ui.item?'today':'mlist';render();}},
@@ -1156,7 +1160,7 @@ function tabDeberes(){
   const t=todayStr(),gens=Object.keys(MATH_LABELS),D=state.dictados;
   const byDate={};state.tareas.forEach(x=>(byDate[x.date]=byDate[x.date]||[]).push(x));
   const dates=Object.keys(byDate).sort(),up=dates.filter(d=>d>=t),past=dates.filter(d=>d<t).reverse();
-  const card=d=>`<div class="panel"><b>${esc(fmtDay(d))}</b>${d===t?' <span class="mute">· hoy</span>':''}${byDate[d].map(x=>x.items.map(it=>`<div style="margin-top:8px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div>${it.type==='dictado'?'✏️':'➗'} ${esc(itemTitle(it))}${it.type==='mates'?`<br><small class="mute">${it.cfg.n} ejercicios${it.cfg.tablas&&it.cfg.tablas.length?' · tablas del '+it.cfg.tablas.join(', '):''}</small><details><summary class="mute" style="font-size:.85rem">Ver ejercicios y soluciones</summary><small>${makeExercises(it.cfg,it.seed).map((e,i)=>`${i+1}. ${esc(e.q)} <b>${esc(e.txt)}</b>`).join('<br>')}</small></details>`:''}</div></div>`).join('')+`<div style="text-align:right;margin-top:6px"><button class="btn danger" data-act="delTask" data-id="${esc(x.id)}">🗑 Borrar</button></div>`).join('<hr style="border:0;border-top:1px solid var(--line)">')}</div>`;
+  const card=d=>`<div class="panel"><b>${esc(fmtDay(d))}</b>${d===t?' <span class="mute">· hoy</span>':''}${byDate[d].map(x=>x.items.map(it=>`<div style="margin-top:8px;display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><div>${it.type==='dictado'?'✏️':it.type==='examen'?'📝':'➗'} ${esc(itemTitle(it))}${it.type==='mates'?`<br><small class="mute">${it.cfg.n} ejercicios${it.cfg.tablas&&it.cfg.tablas.length?' · tablas del '+it.cfg.tablas.join(', '):''}</small><details><summary class="mute" style="font-size:.85rem">Ver ejercicios y soluciones</summary><small>${makeExercises(it.cfg,it.seed).map((e,i)=>`${i+1}. ${esc(e.q)} <b>${esc(e.txt)}</b>`).join('<br>')}</small></details>`:''}</div></div>`).join('')+`<div style="text-align:right;margin-top:6px"><button class="btn danger" data-act="delTask" data-id="${esc(x.id)}">🗑 Borrar</button></div>`).join('<hr style="border:0;border-top:1px solid var(--line)">')}</div>`;
   $('#tab').innerHTML=`<div class="panel"><h3 style="margin-top:0">＋ Poner deberes</h3>
   <div class="grid2"><label class="f">Desde el día<input type="date" id="tfDate" value="${t}"></label>
   <label class="f">Para cuántos días (mismos tipos, ejercicios distintos cada día)<input type="number" id="tfDays" value="1" min="1" max="30"></label></div>
@@ -1168,6 +1172,7 @@ function tabDeberes(){
   <div class="grid2"><label class="f">Nivel<select id="tfLv">${[1,2,3].map(l=>`<option value="${l}" ${l===2?'selected':''}>${MATH_LEVELS[l]}</option>`).join('')}</select></label>
   <label class="f">Número de ejercicios<input type="number" id="tfN" value="10" min="1" max="40"></label>
   <label class="f">Tablas concretas (solo para «Tablas de multiplicar»)<input type="text" id="tfTab" placeholder="Ej.: 6,7,8 (vacío = todas)" inputmode="numeric"></label></div>
+  ${(()=>{const X=state.examenes.filter(e=>e.status==='ready');return X.length?`<h4 style="margin:14px 0 4px"><label class="f"><input type="checkbox" id="tfEx"> 📝 Practicar un examen</label></h4><select id="tfExId">${X.map(e=>`<option value="${esc(e.id)}">${esc(e.title)} (${esc(exShortDate(e.date))})</option>`).join('')}</select><p class="mute" style="margin:4px 0">Cada día que se ponga saldrán preguntas distintas del banco.</p>`:''})()}
   <p class="mute" style="margin:6px 0">Los ejercicios los genera la app sola, sin gastar IA. Nivel pensado para Year 6.</p>
   <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="createTask">💾 Crear deberes</button></div></div>
   <h3>📅 Próximos deberes</h3>${up.map(card).join('')||'<p class="mute">No hay deberes puestos.</p>'}
@@ -1183,7 +1188,8 @@ const deberesActions={
     const useD=$('#tfDict').checked,dd=[...document.querySelectorAll('[data-dd]:checked')].map(x=>x.dataset.dd);
     const useM=$('#tfMath').checked,gens=[...document.querySelectorAll('[data-g]:checked')].map(x=>x.dataset.g);
     if(!d0)return toast('Elige un día');
-    if(!useD&&!useM)return toast('Marca al menos dictado o matemáticas');
+    const useE=!!($('#tfEx')&&$('#tfEx').checked),eid=useE?$('#tfExId').value:null;
+    if(!useD&&!useM&&!useE)return toast('Marca al menos una actividad');
     if(useD&&!dd.length)return toast('Marca qué dictado(s) poner');
     if(useM&&!gens.length)return toast('Marca al menos un tipo de matemáticas');
     const tablas=($('#tfTab').value||'').split(/[^0-9]+/).filter(Boolean).map(Number).filter(x=>x>=1&&x<=20);
@@ -1195,20 +1201,335 @@ const deberesActions={
       const items=[];
       if(useD)items.push({id:'i'+uid(),type:'dictado',did:dd[i%dd.length]});
       if(useM)items.push({id:'i'+uid(),type:'mates',cfg:JSON.parse(JSON.stringify(cfg)),seed:'m'+date+'-'+uid()});
+      if(useE)items.push({id:'i'+uid(),type:'examen',eid});
       state.tareas.push({id:'t'+uid(),date,items});
     });
     save();render();toast(`Deberes creados para ${made.length} ${made.length===1?'día':'días'} ✅`);
   },
   delTask(b){if(confirm('¿Borrar estos deberes?')){state.tareas=state.tareas.filter(x=>x.id!==b.dataset.id);save();render();}}
 };
+/* ================= exámenes: motor puro (sin IA) ================= */
+const EX_STOP=new Set('el la los las un una unos unas de del al y o u en a que se es son por para con sin sobre como su sus lo le les mas muy este esta estos estas cual cuales cuando donde quien cuanto cuantos cuantas the a an of to in on at and or is are was were be by for with from as that this these those which what who whom when where how many much its it their his her'.split(' '));
+const exNorm=s=>String(s==null?'':s).normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/[^a-z0-9ñ\s]/g,' ').replace(/\s+/g,' ').trim();
+const exStem=w=>w.length>5&&/es$/.test(w)?w.slice(0,-2):w.length>4&&/s$/.test(w)?w.slice(0,-1):w;
+const exToks=s=>exNorm(s).split(' ').filter(w=>w&&(w.length>2||/^\d+$/.test(w))&&!EX_STOP.has(w)).map(exStem);
+function exJac(a,b){const A=new Set(a),B=new Set(b);if(!A.size||!B.size)return 0;let i=0;A.forEach(x=>{if(B.has(x))i++;});return i/(A.size+B.size-i);}
+const EX_YN=new Set(['si','no','true','false','verdadero','falso','yes','cierto']);
+function exAnswerKey(q){return q.t==='test'?exNorm(q.o[q.c]):exNorm((q.k||[]).slice().sort().join(' ')||q.a||'');}
+/* validar y normalizar una pregunta salida de la IA; devuelve null si no vale */
+function exClean(raw,src,rng){
+  if(!raw||typeof raw!=='object')return null;
+  const q=String(raw.q||raw.question||'').trim();if(q.length<8)return null;
+  const fact=String(raw.fact||'').trim().slice(0,80),expl=String(raw.e||raw.explanation||'').trim().slice(0,300);
+  const isT=raw.t==='test'||Array.isArray(raw.o||raw.options);
+  if(isT){
+    let o=(raw.o||raw.options||[]).map(x=>String(x).replace(/^\s*[A-Da-d][\).:\-]\s+/,'').trim()).filter(Boolean);
+    let c=Number.isInteger(raw.c)?raw.c:Number.isInteger(raw.correct)?raw.correct:-1;
+    if(o.length<3||o.length>5||c<0||c>=o.length)return null;
+    if(new Set(o.map(exNorm)).size!==o.length)return null;
+    if(o.some(x=>x.length>160))return null;
+    if(o.some(x=>/todas las anteriores|ninguna de las anteriores|all of the above|none of the above/i.test(x)))return null;
+    const ok=o[c],idx=o.map((x,i)=>i);for(let i=idx.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[idx[i],idx[j]]=[idx[j],idx[i]];}
+    o=idx.map(i=>o[i]);c=o.indexOf(ok);
+    return {id:'q'+Math.floor(rng()*1e9).toString(36)+Date.now().toString(36).slice(-3),t:'test',q,o,c,e:expl,fact,src,off:false};
+  }
+  const a=String(raw.a||raw.answer||'').trim();let k=(raw.k||raw.keywords||[]);if(typeof k==='string')k=k.split(/[,;]/);
+  k=k.map(x=>String(x).trim()).filter(Boolean).slice(0,6);
+  if(a.length<2||!k.length)return null;
+  return {id:'q'+Math.floor(rng()*1e9).toString(36)+Date.now().toString(36).slice(-3),t:'red',q,a,k,e:expl,fact,src,off:false};
+}
+/* rescatar preguntas de un JSON posiblemente cortado */
+function exParse(text){
+  let t=String(text||'').replace(/```[a-z]*/gi,'').trim();
+  try{const j=JSON.parse(t);if(Array.isArray(j))return j;if(j&&Array.isArray(j.questions))return j.questions;}catch(e){}
+  const i=t.indexOf('['),out=[];if(i<0)return out;
+  let depth=0,st=-1,inS=false,esc=false;
+  for(let p=t.indexOf('{',i);p<t.length&&p>=0;p++){
+    const ch=t[p];
+    if(inS){if(esc)esc=false;else if(ch==='\\')esc=true;else if(ch==='"')inS=false;continue;}
+    if(ch==='"'){inS=true;continue;}
+    if(ch==='{'){if(depth===0)st=p;depth++;}
+    else if(ch==='}'){depth--;if(depth===0&&st>=0){try{out.push(JSON.parse(t.slice(st,p+1)));}catch(e){}st=-1;}}
+  }
+  return out;
+}
+/* curar: quita repetidas, casi-repetidas y las de misma respuesta */
+function exCurate(existing,fresh){
+  const kept=existing.filter(q=>!q.off||true).slice(),dropped=[],add=[];
+  const info=q=>({qt:exToks(q.q),ft:exToks(q.fact||''),ak:exAnswerKey(q),at:exToks(exAnswerKey(q))});
+  const infos=kept.map(info);
+  fresh.forEach(q=>{
+    const n=info(q);let why='';
+    for(let i=0;i<kept.length&&!why;i++){const m=infos[i],p=kept[i];
+      if(exJac(n.qt,m.qt)>=0.55)why=`Casi igual que otra: «${p.q}»`;
+      else if(n.ft.length>=2&&m.ft.length>=2&&exJac(n.ft,m.ft)>=0.7)why=`Evalúa lo mismo que: «${p.q}»`;
+      else if(n.ak&&n.ak===m.ak&&!EX_YN.has(n.ak))why=`Misma respuesta que: «${p.q}»`;
+      else if(n.at.length>=2&&exJac(n.at,m.at)>=0.8)why=`Respuesta casi idéntica a: «${p.q}»`;
+    }
+    if(why)dropped.push({q:q.q,why});else{kept.push(q);infos.push(n);add.push(q);}
+  });
+  return {add,dropped};
+}
+/* sorteo de un examen: reparte por trozos de apuntes, mezcla opciones */
+function exSample(exam,seed,n){
+  const r=seedRng(String(seed)),P=exam.pool.filter(q=>!q.off);
+  const shuf=a=>{a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;};
+  const pick=(list,k)=>{const g={};shuf(list).forEach(q=>(g[q.src]=g[q.src]||[]).push(q));const keys=shuf(Object.keys(g)),out=[];
+    while(out.length<k&&keys.some(x=>g[x].length)){for(const x of keys){if(out.length>=k)break;if(g[x].length)out.push(g[x].pop());}}return out;};
+  let sel;
+  if(exam.mode==='mixto'){const T=P.filter(q=>q.t==='test'),R=P.filter(q=>q.t==='red'),a=Math.ceil(n/2);sel=pick(T,a).concat(pick(R,n-a));
+    if(sel.length<n){const have=new Set(sel.map(q=>q.id));sel=sel.concat(pick(P.filter(q=>!have.has(q.id)),n-sel.length));}}
+  else sel=pick(P,n);
+  return shuf(sel).map(q=>{if(q.t!=='test')return Object.assign({},q);
+    const idx=q.o.map((x,i)=>i),ok=q.o[q.c];for(let i=idx.length-1;i>0;i--){const j=Math.floor(r()*(i+1));[idx[i],idx[j]]=[idx[j],idx[i]];}
+    const o=idx.map(i=>q.o[i]);return Object.assign({},q,{o,c:o.indexOf(ok)});});
+}
+/* corrección automática de respuesta redactada por palabras clave */
+function exGrade(q,ans){
+  const A=exNorm(ans),At=A.split(' ').filter(Boolean);
+  if(!A)return {score:0,ok:'ko',hits:[],miss:(q.k||[]).slice()};
+  const hits=[],miss=[];
+  (q.k||[]).forEach(kw=>{
+    const kt=exNorm(kw).split(' ').filter(Boolean);
+    const has=w=>At.some(x=>x===w||exStem(x)===exStem(w)||(w.length>=6&&x.length>=6&&lev(x,w)<=1)||(w.length>=4&&/^\d+$/.test(w)&&x===w));
+    (kt.length&&kt.every(has)?hits:miss).push(kw);
+  });
+  const tot=hits.length+miss.length,score=tot?hits.length/tot:0;
+  return {score,ok:score>=0.7?'ok':score>=0.4?'part':'ko',hits,miss};
+}
+function exChunks(notes,size=1300){
+  const paras=String(notes||'').split(/\n{2,}|\n(?=[A-ZÁÉÍÓÚ#\d])/).map(s=>s.trim()).filter(Boolean),out=[];let cur='';
+  paras.forEach(p=>{if(cur&&(cur.length+p.length)>size){out.push(cur);cur='';}cur+=(cur?'\n':'')+p;});
+  if(cur)out.push(cur);
+  return out.flatMap(c=>{if(c.length<=size*1.6)return [c];const a=[];for(let i=0;i<c.length;i+=size)a.push(c.slice(i,i+size));return a;});
+}
+// </PURE3>
+/* ================= exámenes: IA de ingesta, tutor y Julia ================= */
+const EX_MODES={test:'Tipo test',red:'Respuesta redactada',mixto:'Mixto (test + redactada)'};
+const exDaysTxt=d=>{const n=Math.round((new Date(d+'T12:00:00')-new Date(todayStr()+'T12:00:00'))/864e5);return n===0?'hoy':n===1?'mañana':n>1?`en ${n} días`:n===-1?'ayer':`hace ${-n} días`;};
+const exShortDate=d=>new Date(d+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'});
+const exGet=id=>state.examenes.find(e=>e.id===id);
+const langRule=l=>l==='es'?'Escribe todo en español.':l==='en'?'Write everything in English.':'Escribe las preguntas y respuestas en el MISMO idioma en que están escritos los apuntes (si están en inglés, en inglés; si están en español, en español).';
+const NOTES_SYS='Eres un transcriptor fiel de apuntes escolares (teoría de una asignatura de primaria, Year 6 de un colegio británico). Copia el contenido de la imagen como texto limpio: títulos, definiciones, datos, fechas, cifras, listas y vocabulario clave. Si hay esquemas, tablas o dibujos con información, descríbelos brevemente con palabras. Conserva el idioma original, no traduzcas, no resumas y no inventes nada. Ignora números de página y decoración. Separa los apartados con una línea en blanco. Responde SOLO con el texto.';
+async function aiText(messages,max){
+  let r;try{r=await aiCall('vision','/v1/chat/completions',{model:state.ai.visionModel||'gpt-4o',temperature:0,max_tokens:max||1500,messages});}catch(e){throw new Error('Sin conexión con el servidor');}
+  if(!r.ok)throw new Error(apiErr(r.status));
+  const j=await r.json();return (j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||'').trim();
+}
+async function readNotesPhoto(dataUrl){
+  const t=await aiText([{role:'system',content:NOTES_SYS},{role:'user',content:[{type:'text',text:'Transcribe estos apuntes.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}],1500);
+  if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja recta.');
+  return t.replace(/^```[a-z]*\n?|```$/g,'').trim();
+}
+function genPrompt(exam,chunk,ci,nc,k){
+  const mixed=exam.mode==='mixto',tt=exam.mode==='test'?'tipo test':exam.mode==='red'?'de respuesta redactada':`mixtas (${Math.ceil(k/2)} tipo test y ${Math.floor(k/2)} de respuesta redactada)`;
+  const facts=exam.pool.slice(-60).map(q=>q.fact||q.q.slice(0,50)).join(' | ');
+  return [{role:'system',content:`Eres un profesor de primaria (Year 6, 10-11 años, colegio británico) que redacta preguntas de examen usando ÚNICAMENTE los apuntes que se te dan. Reglas estrictas:
+1) Cada pregunta evalúa UN dato distinto. Nunca dos preguntas con la misma respuesta ni reformulaciones de la misma idea.
+2) Solo información presente en los apuntes; no inventes ni añadas datos externos.
+3) Preguntas claras y autocontenidas, adecuadas a 10-11 años. Sin «según el texto». Sin verdadero/falso ni sí/no.
+4) Test: 4 opciones plausibles y claramente distintas, solo una correcta, sin «todas las anteriores». La opción correcta no debe ser siempre la más larga.
+5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una).
+6) ${langRule(exam.lang)}
+Devuelve SOLO un JSON válido: {"questions":[...]} con objetos de estos formatos:
+test: {"t":"test","q":"...","o":["...","...","...","..."],"c":0,"e":"explicación breve","fact":"dato evaluado en 3-6 palabras"}
+redactada: {"t":"red","q":"...","a":"respuesta modelo","k":["clave1","clave2"],"e":"","fact":"dato evaluado en 3-6 palabras"}
+En test, "c" es la posición (0-3) de la opción correcta dentro de "o".`},
+   {role:'user',content:`APUNTES (trozo ${ci+1} de ${nc}):\n"""\n${chunk}\n"""\n\nGenera ${k} preguntas ${tt}.${facts?`\nYa existen preguntas sobre estos datos; NO los repitas ni evalúes lo mismo: ${facts}`:''}`}];
+}
+async function genQuestions(exam,onProg){
+  const chunks=exChunks(exam.notes);if(!chunks.length)throw new Error('Primero añade los apuntes');
+  const target=Math.max(6,Math.min(80,exam.bank||40)),rng=seedRng('g'+Date.now());
+  let calls=0,dry=0,err='';const maxCalls=Math.min(16,Math.ceil(target/4)+chunks.length);
+  const start=exam.pool.length;
+  while(exam.pool.length-start<target&&calls<maxCalls&&dry<2){
+    const ci=calls%chunks.length;
+    onProg&&onProg(`Generando preguntas… ${exam.pool.length-start} de ${target}`);
+    let txt;try{txt=await aiText(genPrompt(exam,chunks[ci],ci,chunks.length,6),1500);}catch(e){err=e.message;break;}
+    calls++;
+    const fresh=exParse(txt).map(x=>exClean(x,ci,rng)).filter(Boolean).filter(q=>exam.mode==='mixto'||q.t===exam.mode);
+    const {add,dropped}=exCurate(exam.pool,fresh);
+    exam.pool=exam.pool.concat(add);exam.dropped=(exam.dropped||[]).concat(dropped).slice(-40);
+    dry=add.length?0:dry+1;save();
+  }
+  return {added:exam.pool.length-start,calls,err};
+}
+async function aiGradeWritten(qa){
+  const t=await aiText([{role:'system',content:'Eres un profesor que corrige la respuesta de una niña de 10-11 años. Compara con la respuesta modelo: valora si expresa las ideas clave, aunque use otras palabras o tenga faltas de ortografía. Devuelve SOLO JSON: {"score":0 a 1 (puedes usar 0, 0.5 o 1 o valores intermedios),"comment":"una frase en español para el tutor"}.'},
+    {role:'user',content:JSON.stringify({pregunta:qa.q,respuesta_modelo:qa.correct,palabras_clave:qa.hits.concat(qa.miss),respuesta_alumna:qa.given})}],400);
+  const m=t.match(/\{[\s\S]*\}/);if(!m)throw new Error('La IA no devolvió una nota válida');
+  const j=JSON.parse(m[0]);const s=Math.max(0,Math.min(1,Number(j.score)));if(!isFinite(s))throw new Error('Nota no válida');
+  return {score:s,comment:String(j.comment||'').slice(0,240)};
+}
+/* ---- notas efectivas y recálculo ---- */
+function exEff(a){return a.man!==undefined?a.man:a.ai?a.ai.score:a.score;}
+function exRecalc(res){res.score=res.qa.reduce((s,a)=>s+exEff(a),0);return res;}
+/* ---- tutor: pestaña ---- */
+function tabExamenes(){
+  const t=$('#tab');
+  if(ui.exId){const e=exGet(ui.exId);if(e)return exEditView(t,e);ui.exId=null;}
+  const L=state.examenes.slice().sort((a,b)=>a.date<b.date?1:-1);
+  t.innerHTML=`<div class="row" style="margin:6px 0"><button class="btn primary" data-act="exNew">＋ Nuevo examen</button></div>
+  ${L.map(e=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(e.title||'(sin título)')}</b> ${e.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicado</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · ${e.n} preguntas por examen · banco de ${e.pool.filter(q=>!q.off).length}</small></span><span class="row"><button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay exámenes. Crea uno, sube fotos de la teoría y la app generará el banco de preguntas.</p>'}`;
+}
+function qCard(q,i){
+  const on=!q.off;
+  let body=`<textarea class="short" data-exq="q" data-i="${i}" placeholder="Pregunta">${esc(q.q)}</textarea>`;
+  if(q.t==='test')body+=q.o.map((o,k)=>`<div class="row" style="flex-wrap:nowrap;margin-top:6px"><input type="radio" name="qc${i}" data-exq="c" data-i="${i}" data-k="${k}" ${q.c===k?'checked':''} style="width:24px;height:24px;flex:none"><input type="text" data-exq="o" data-i="${i}" data-k="${k}" value="${esc(o)}" style="${q.c===k?'border-color:var(--ok);background:var(--okbg)':''}"></div>`).join('');
+  else body+=`<label class="f" style="margin-top:6px">Respuesta modelo<textarea class="short" data-exq="a" data-i="${i}">${esc(q.a)}</textarea></label><label class="f">Palabras clave (separadas por comas)<input type="text" data-exq="k" data-i="${i}" value="${esc((q.k||[]).join(', '))}"></label>`;
+  body+=`<label class="f" style="margin-top:6px"><small class="mute">Explicación (opcional)</small><input type="text" data-exq="e" data-i="${i}" value="${esc(q.e||'')}"></label>`;
+  return `<div class="panel" style="${on?'':'opacity:.5'}"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span><b>#${i+1}</b> <small class="mute">${q.t==='test'?'Test':'Redactada'}${q.fact?' · '+esc(q.fact):''}</small></span><span class="row"><label class="f" style="margin:0"><input type="checkbox" data-exq="on" data-i="${i}" ${on?'checked':''}> Incluir</label><button class="btn danger" data-act="exQDel" data-i="${i}">🗑</button></span></div>${body}</div>`;
+}
+function exEditView(t,e){
+  const act=e.pool.filter(q=>!q.off).length;
+  t.innerHTML=`<button class="link" data-act="exBack">← Todos los exámenes</button>
+  <div class="panel"><h3 style="margin-top:0">📝 Datos del examen</h3>
+  <div class="grid2"><label class="f">Título<input type="text" data-exf="title" value="${esc(e.title)}" placeholder="Ej.: Los romanos — Year 6"></label>
+  <label class="f">Fecha del examen<input type="date" data-exf="date" value="${esc(e.date)}"></label>
+  <label class="f">Tipo de preguntas<select data-exf="mode">${Object.entries(EX_MODES).map(([k,v])=>`<option value="${k}" ${e.mode===k?'selected':''}>${v}</option>`).join('')}</select></label>
+  <label class="f">Preguntas por examen<input type="number" data-exf="n" min="3" max="40" value="${e.n}"></label>
+  <label class="f">Tamaño del banco a generar<input type="number" data-exf="bank" min="10" max="80" value="${e.bank}"></label>
+  <label class="f">Idioma<select data-exf="lang"><option value="auto" ${e.lang==='auto'?'selected':''}>El de los apuntes</option><option value="es" ${e.lang==='es'?'selected':''}>Español</option><option value="en" ${e.lang==='en'?'selected':''}>English</option></select></label></div>
+  <p class="mute" style="margin:6px 0 0">El banco se genera una sola vez con IA; cada examen sortea preguntas distintas del banco sin gastar más.</p></div>
+  <div class="panel"><h3 style="margin-top:0">📷 Teoría a estudiar</h3>
+  <div class="row"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label></div><div id="exSt" class="mute" style="margin:6px 0"></div>
+  <label class="f">Texto de los apuntes (revísalo y corrígelo si hace falta)<textarea data-exf="notes" style="min-height:200px" placeholder="Sube fotos o pega aquí el texto de la teoría.">${esc(e.notes)}</textarea></label></div>
+  <div class="panel"><h3 style="margin-top:0">🧠 Preguntas <small class="mute">(${act} activas de ${e.pool.length})</small></h3>
+  <div class="row"><button class="btn primary" data-act="exGen" id="exGenB">${e.pool.length?'➕ Generar más preguntas':'🧠 Generar preguntas'}</button></div><div id="exGst" class="mute" style="margin:6px 0">${e.pool.length?'Revisa la lista: corrige, quita o desmarca las que no quieras.':'Se generan con IA a partir del texto de arriba (unos céntimos).'}</div>
+  ${(e.dropped||[]).length?`<details><summary class="mute">La app ha descartado ${e.dropped.length} preguntas repetidas o casi iguales</summary><small class="mute">${e.dropped.map(d=>`• ${esc(d.q)}<br>&nbsp;&nbsp;<i>${esc(d.why)}</i>`).join('<br>')}</small></details>`:''}</div>
+  ${e.pool.map((q,i)=>qCard(q,i)).join('')}
+  <div class="panel" style="${e.status==='ready'?'border-color:var(--ok);background:var(--okbg)':''}"><b>${e.status==='ready'?'✅ Publicado: Julia puede practicar este examen':'Sin publicar: Julia todavía no lo ve'}</b><div class="row" style="margin-top:8px"><button class="btn ${e.status==='ready'?'':'success big'}" data-act="exPub">${e.status==='ready'?'Retirar (volver a borrador)':'✅ Publicar examen'}</button></div></div>`;
+}
+function exInput(t){
+  if(t.id==='exPhotos'){if(t.type==='file'&&t.files&&t.files.length){const f=[...t.files];t.value='';readNotesPhotos(f);}return true;}
+  if(t.dataset.exf){const e=exGet(ui.exId);if(!e)return true;const k=t.dataset.exf;e[k]=(k==='n'||k==='bank')?Math.max(3,Math.min(80,+t.value||10)):t.value;save();return true;}
+  if(t.dataset.exq){const e=exGet(ui.exId);if(!e)return true;const q=e.pool[+t.dataset.i];if(!q)return true;const k=t.dataset.exq;
+    if(k==='q'||k==='a'||k==='e')q[k]=t.value;
+    else if(k==='o')q.o[+t.dataset.k]=t.value;
+    else if(k==='c'){if(t.checked){q.c=+t.dataset.k;const card=t.closest('.panel');if(card)card.querySelectorAll('input[type=text][data-exq=o]').forEach(inp=>{const ok=+inp.dataset.k===q.c;inp.style.borderColor=ok?'var(--ok)':'';inp.style.background=ok?'var(--okbg)':'';});}}
+    else if(k==='k')q.k=t.value.split(/[,;]/).map(s=>s.trim()).filter(Boolean);
+    else if(k==='on'){q.off=!t.checked;const card=t.closest('.panel');if(card)card.style.opacity=q.off?.5:1;}
+    save();return true;}
+  return false;
+}
+async function readNotesPhotos(files){
+  const e=exGet(ui.exId),st=()=>$('#exSt');if(!e)return;
+  if(!state.ai.on){if(st())st.textContent='';return toast('Activa la IA en Ajustes para leer fotos');}
+  files=files.slice(0,8);const out=[];
+  try{
+    for(let i=0;i<files.length;i++){if(st())st().innerHTML=`🔎 Leyendo la foto ${i+1} de ${files.length}…`;out.push(await readNotesPhoto(await fileToJpeg(files[i],2000)));}
+    e.notes=(e.notes.trim()?e.notes.trim()+'\n\n':'')+out.join('\n\n');save();
+    const ta=$('[data-exf=notes]');if(ta)ta.value=e.notes;
+    if(st())st().innerHTML='✅ <b>Apuntes leídos.</b> Revisa el texto por si la IA se ha equivocado y luego pulsa «Generar preguntas».';
+  }catch(er){if(e&&out.length){e.notes=(e.notes.trim()?e.notes.trim()+'\n\n':'')+out.join('\n\n');save();const ta=$('[data-exf=notes]');if(ta)ta.value=e.notes;}if(st())st().textContent='';toast(er.message);}
+}
+const examActions={
+  exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',pool:[],dropped:[],status:'draft'};state.examenes.push(e);save();ui.exId=e.id;render();},
+  exOpen(b){ui.exId=b.dataset.id;render();},
+  exBack(){ui.exId=null;render();},
+  exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
+  exQDel(b){const e=exGet(ui.exId);e.pool.splice(+b.dataset.i,1);save();const y=scrollY;render();scrollTo(0,y);},
+  exPub(b){const e=exGet(ui.exId);
+    if(e.status!=='ready'){if(!e.title.trim())return toast('Ponle un título al examen');if(e.pool.filter(q=>!q.off).length<Math.min(e.n,3))return toast('Faltan preguntas: genera o activa más');
+      const act=e.pool.filter(q=>!q.off).length;if(act<e.n&&!confirm(`Solo hay ${act} preguntas activas y cada examen lleva ${e.n}. Julia hará exámenes de ${act}. ¿Publicar?`))return;e.status='ready';}
+    else e.status='draft';save();render();},
+  async exGen(){
+    const e=exGet(ui.exId);if(!e||ui.exBusy)return;
+    if(!state.ai.on)return toast('Activa la IA en Ajustes');
+    if(!exChunks(e.notes).length)return toast('Primero sube fotos o escribe los apuntes');
+    if(!e.title.trim())return toast('Ponle un título al examen');
+    ui.exBusy=true;const B=$('#exGenB');if(B)B.disabled=true;const g=$('#exGst');
+    try{const r=await genQuestions(e,m=>{const x=$('#exGst');if(x)x.textContent='⏳ '+m;});
+      ui.exBusy=false;render();
+      const x=$('#exGst');if(x)x.innerHTML=(r.err?`⚠️ ${esc(r.err)}. `:'')+`✅ Se han añadido <b>${r.added}</b> preguntas nuevas${e.dropped.length?' (las repetidas se han descartado solas)':''}. Revísalas abajo.`;
+    }catch(er){ui.exBusy=false;render();toast(er.message);}
+  },
+  async exAI(b){
+    const s=state.sesiones.find(x=>x.id===b.dataset.sid);if(!s)return;
+    const it=(s.extra||[]).find(x=>x.id===b.dataset.rid)||s.items[b.dataset.rid];if(!it||!it.res)return;
+    const a=it.res.qa[+b.dataset.qi];b.disabled=true;b.textContent='⏳ Corrigiendo…';
+    try{a.ai=await aiGradeWritten(a);exRecalc(it.res);touchSes(s);const y=scrollY,dk=b.dataset.sid+'|'+b.dataset.rid;render();const dd=document.querySelector(`details[data-dk="${dk}"]`);if(dd)dd.open=true;scrollTo(0,y);}catch(e){toast(e.message);b.disabled=false;b.textContent='🤖 Corregir con IA';}
+  },
+  exMan(b){
+    const s=state.sesiones.find(x=>x.id===b.dataset.sid);if(!s)return;
+    const it=(s.extra||[]).find(x=>x.id===b.dataset.rid)||s.items[b.dataset.rid];if(!it||!it.res)return;
+    it.res.qa[+b.dataset.qi].man=+b.dataset.v;exRecalc(it.res);touchSes(s);const y=scrollY,dk=b.dataset.sid+'|'+b.dataset.rid;render();const dd=document.querySelector(`details[data-dk="${dk}"]`);if(dd)dd.open=true;scrollTo(0,y);
+  },
+  /* Julia */
+  goExams(){ui.screen='exlist';ui.item=null;render();},
+  exStart(b){startExam(b.dataset.id,null);},
+  exPick(b){ui.ex.ans[ui.ex.i]=+b.dataset.k;const y=scrollY;render();scrollTo(0,y);},
+  exPrev(){if(ui.ex.i>0){ui.ex.i--;render();}},
+  exNext(){if(ui.ex.i<ui.ex.qs.length-1){ui.ex.i++;render();}else exSubmit();},
+  exSubmit(){exSubmit();},
+  exQuit(){if(confirm('¿Salir del examen? Perderás las respuestas.')){ui.ex=null;ui.screen=ui.item?'today':'exlist';render();}}
+};
+/* ---- Julia ---- */
+function startExam(eid,itemId){
+  const e=exGet(eid);if(!e||e.status!=='ready')return toast('Este examen todavía no está disponible');
+  const n=Math.min(e.n,e.pool.filter(q=>!q.off).length),qs=exSample(e,'x'+Date.now()+eid,n);
+  if(!qs.length)return toast('Este examen no tiene preguntas');
+  ui.ex={eid,qs,ans:[],i:0,itemId,t0:Date.now()};ui.t0=Date.now();ui.screen='exrun';render();
+}
+function renderExlist(){
+  const L=state.examenes.filter(e=>e.status==='ready').sort((a,b)=>a.date<b.date?-1:1);
+  app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>📝 Exámenes</h2>`+
+  (L.length?`<div class="list">${L.map(e=>`<button class="item" data-act="exStart" data-id="${esc(e.id)}"><span><b>${esc(e.title)}</b><br><small class="mute">Examen ${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${Math.min(e.n,e.pool.filter(q=>!q.off).length)} preguntas · ${e.mode==='test'?'test':e.mode==='red'?'redactadas':'test y redactadas'}</small></span><span style="font-size:1.6rem">▶️</span></button>`).join('')}</div><p class="mute">Cada vez que practiques saldrán preguntas distintas.</p>`
+  :`<div class="panel">Todavía no hay exámenes preparados. Tu tutor los añadirá aquí.</div>`);
+}
+function renderExrun(){
+  const x=ui.ex;if(!x){ui.screen='home';return render();}
+  const e=exGet(x.eid),q=x.qs[x.i],last=x.i===x.qs.length-1,ans=x.ans[x.i];
+  const dots=x.qs.map((_,k)=>`<i style="display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:4px;background:${k===x.i?'var(--pri)':x.ans[k]!==undefined&&x.ans[k]!==''?'var(--ok)':'var(--line)'}"></i>`).join('');
+  app.innerHTML=`<button class="link" data-act="exQuit">← Salir</button><h2 style="margin:0">${esc(e?e.title:'Examen')}</h2>
+  <div class="status"><span class="ico">📝</span><div style="flex:1"><div>Pregunta ${x.i+1} de ${x.qs.length}</div><div style="margin-top:6px">${dots}</div></div></div>
+  <div class="panel"><div style="font-size:1.25rem;font-weight:800;line-height:1.45;margin-bottom:12px">${esc(q.q)}</div>
+  ${q.t==='test'?q.o.map((o,k)=>`<button class="item" style="display:block;width:100%;text-align:left;font:inherit;background:${ans===k?'#ece9fb':'#fff'};border:2px solid ${ans===k?'var(--pri)':'var(--line)'};border-radius:var(--r);padding:14px 16px;margin:8px 0;cursor:pointer;color:var(--ink)" data-act="exPick" data-k="${k}"><b style="color:var(--pri2)">${'ABCDE'[k]}.</b> ${esc(o)}</button>`).join('')
+   :`<textarea id="exans" placeholder="Escribe tu respuesta con tus palabras…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:130px">${esc(ans||'')}</textarea>`}</div>
+  <div class="row"><button class="btn" data-act="exPrev" ${x.i?'':'disabled'}>⬅ Anterior</button><button class="btn ${last?'success':'primary'} big" data-act="exNext">${last?'🏁 Entregar examen':'Siguiente ➜'}</button></div>`;
+}
+function exSubmit(){
+  const x=ui.ex,un=x.qs.filter((q,i)=>x.ans[i]===undefined||x.ans[i]==='').length;
+  if(un&&!confirm(`Te faltan ${un} ${un===1?'pregunta':'preguntas'} sin contestar. ¿Entregar de todas formas?`))return;
+  const e=exGet(x.eid),secs=Math.round((Date.now()-x.t0)/1000);
+  const qa=x.qs.map((q,i)=>{const a=x.ans[i];
+    if(q.t==='test'){const ok=a===q.c;return {id:q.id,t:'test',q:q.q,given:a===undefined?'':q.o[a],correct:q.o[q.c],score:ok?1:0,ok:ok?'ok':'ko',hits:[],miss:[],e:q.e||''};}
+    const g=exGrade(q,a||'');return {id:q.id,t:'red',q:q.q,given:a||'',correct:q.a,score:g.score,ok:g.ok,hits:g.hits,miss:g.miss,e:q.e||''};});
+  const res=exRecalc({eid:x.eid,n:qa.length,qa,secs});
+  const title='Examen: '+(e?e.title:'');
+  let s=null;
+  if(x.itemId){const it=itemsOf(todayStr()).find(z=>z.id===x.itemId);if(it){const [ss,r]=recItem(it);r.secs=(r.secs||0)+secs;r.end=Date.now();r.done=true;r.res=res;s=ss;}}
+  if(!s){s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;s.extra.push({id:uid(),kind:'examen',title,start:Date.now()-secs*1000,end:Date.now(),secs,res,done:true});}
+  touchSes(s);ui.exres={res,title:e?e.title:'',itemId:x.itemId};ui.ex=null;ui.screen='exres';render();
+}
+function renderExres(){
+  const R=ui.exres;if(!R){ui.screen='home';return render();}
+  const r=R.res,pct=Math.round(100*r.score/r.n),hasRed=r.qa.some(a=>a.t==='red');
+  app.innerHTML=`<h2>${pct>=80?'🎉 ¡Genial, Julia!':pct>=50?'👍 ¡Buen trabajo!':'💪 ¡A repasar un poco más!'}</h2>
+  <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${(Math.round(r.score*10)/10).toString().replace('.',',')} de ${r.n} (${pct}%)</div><small class="mute">⏱ ${fmtDur(r.secs)}${hasRed?' · Las preguntas redactadas las ha corregido la app por palabras clave; tu tutor las revisará.':''}</small></div>
+  ${r.qa.map((a,i)=>{const ic=a.ok==='ok'?'✅':a.ok==='part'?'🟡':'❌';return `<div class="panel"><b>${ic} ${i+1}. ${esc(a.q)}</b><br>
+   <small>Tu respuesta: ${a.given?esc(a.given):'<i>(sin contestar)</i>'}</small>
+   ${a.ok!=='ok'?`<br><small style="color:var(--ok);font-weight:800">Respuesta correcta: ${esc(a.correct)}</small>`:''}
+   ${a.t==='red'&&(a.hits.length||a.miss.length)?`<br><small class="mute">${a.hits.length?'Ideas que has puesto: '+a.hits.map(esc).join(', ')+'. ':''}${a.miss.length?'Te han faltado: '+a.miss.map(esc).join(', ')+'.':''}</small>`:''}
+   ${a.e&&a.ok!=='ok'?`<br><small class="mute">💡 ${esc(a.e)}</small>`:''}</div>`;}).join('')}
+  <div class="row"><button class="btn primary big" data-act="${R.itemId?'goToday':'goExams'}">${R.itemId?'📅 Volver a los deberes':'🔁 Practicar otra vez'}</button><button class="btn" data-act="goHome">Inicio</button></div>`;
+}
+/* detalle para el tutor dentro de Actividad */
+function examDetailHTML(s,r,rid){
+  const x=r.res;
+  return `<details data-dk="${esc(s.id)}|${esc(rid)}" style="margin-top:6px"><summary class="mute" style="font-size:.9rem">Ver respuestas pregunta a pregunta${x.qa.some(a=>a.t==='red')?' y corregir':''}</summary>${x.qa.map((a,i)=>{const eff=exEff(a),ic=eff>=0.7?'✅':eff>=0.4?'🟡':'❌';
+    return `<div style="border-top:1px dashed var(--line);margin-top:6px;padding-top:6px"><small><b>${ic} ${esc(a.q)}</b><br>Puso: ${a.given?esc(a.given):'<i>(nada)</i>'}<br><span style="color:var(--ok)">Correcta: ${esc(a.correct)}</span>
+    ${a.t==='red'?`<br><span class="mute">Palabras clave: ${a.hits.map(h=>'✔'+esc(h)).concat(a.miss.map(h=>'✘'+esc(h))).join(' ')} · nota automática ${Math.round(a.score*100)}%${a.ai?` · IA: ${Math.round(a.ai.score*100)}% — ${esc(a.ai.comment)}`:''}${a.man!==undefined?` · tu nota: ${Math.round(a.man*100)}%`:''}</span><br>
+    <span class="row" style="gap:6px;margin-top:4px"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exAI" data-sid="${esc(s.id)}" data-rid="${esc(rid)}" data-qi="${i}">🤖 Corregir con IA</button>${[[1,'✅ Bien'],[0.5,'🟡 Regular'],[0,'❌ Mal']].map(([v,l])=>`<button class="btn" style="min-height:36px;padding:4px 12px" data-act="exMan" data-sid="${esc(s.id)}" data-rid="${esc(rid)}" data-qi="${i}" data-v="${v}">${l}</button>`).join('')}</span>`:''}</small></div>`;}).join('')}</details>`;
+}
 /* ================= área tutor ================= */
 function renderTutor(){
   if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
   if(!ui.unlocked){app.innerHTML=`<h2>🔐 Área de tutor</h2><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" data-enter="pin" placeholder="PIN"><br><br><button class="btn primary big" data-act="pinEnter">Entrar</button></div>`;return;}
-  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['ajustes','⚙️ Dictado y ajustes']];
+  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['examenes','📝 Exámenes'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['ajustes','⚙️ Dictado y ajustes']];
   app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><button class="btn" data-act="lock">🔒 Bloquear</button></div>
   <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>`;
-  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,reglas:tabReglas,historial:tabHistorial,ajustes:tabAjustes}[ui.tab])();
+  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,reglas:tabReglas,historial:tabHistorial,ajustes:tabAjustes}[ui.tab])();
 }
 function tabDictados(){
   const t=$('#tab');
@@ -1342,10 +1663,12 @@ const studentActions={
   again(){ui.t0=Date.now();ui.answer='';ui.photo=null;ui.fix=null;ui.screen='run';render();},
   setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();}
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions);
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
+  if(t.id==='exans'&&ui.ex){ui.ex.ans[ui.ex.i]=t.value;return;}
+  if(exInput(t))return;
   if(t.dataset.set){const k=t.dataset.set;state.settings[k]=t.type==='checkbox'?t.checked:(t.type==='range'||k==='ppause')?+t.value:t.value;save();
     if(k==='repeat'){const gb=$('#gapBox');if(gb)gb.style.display=state.settings.repeat>1?'':'none';}
     const lab=$('#v_'+k);if(lab)lab.textContent=k==='rate'?rateLabel(state.settings.rate):k==='pause'||k==='gap'?state.settings[k]+' s':k==='repeat'?state.settings.repeat+(state.settings.repeat>1?' veces':' vez'):state.settings[k];}
@@ -1353,6 +1676,7 @@ document.addEventListener('input',e=>{const t=e.target;
   if(t.dataset.cr){state.customRules[+t.dataset.i][t.dataset.cr]=t.value;save();}
 });
 document.addEventListener('change',e=>{const t=e.target;
+  if(exInput(t))return;
   if(t.dataset.set==='voice'){state.settings.voice=t.value;save();}
   if(t.id==='photoIn'&&t.files[0]){const f=t.files[0];t.value='';handlePhoto(f);return;}
   if(t.id==='dictPhoto'&&t.files.length){readDictPhotos([...t.files]);t.value='';return;}
