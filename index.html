@@ -440,12 +440,13 @@ const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tar
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
   const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[]};
-  s=Object.assign(d,s);s.ai=Object.assign({on:false,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});
+  s=Object.assign(d,s);s.ai=Object.assign({on:false,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:''},s.sync||{});
   if(!s.dictados)s.dictados=[SAMPLE];
   return s;
 }
 let state=loadState();
-const save=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
+const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
+const save=()=>{persist();try{Cloud.mark();}catch(e){}};
 const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -489,7 +490,8 @@ const Dict=(()=>{
   function finish(s){s.phase='finishing';s.h.onPhase(s);s.cancel=speak(FIN,s.st,()=>{s.dead=true;s.phase='done';wl(false);s.h.onPhase(s);});}
   return{
     supported:!!synth,voices:()=>voices,
-    test(st){try{synth.cancel();}catch(e){}Voz.stop();say('Hola Julia. Así suena el dictado. Escribe con mucha atención.',st,()=>{});},get cur(){return cur;},
+    prime(){try{if(!synth)return;const u=new SpeechSynthesisUtterance('.');u.volume=0;u.rate=2;synth.speak(u);}catch(e){}},
+    test(st){try{synth.cancel();}catch(e){}Voz.stop();this.prime();say('Hola Julia. Así suena el dictado. Escribe con mucha atención.',st,()=>{});},get cur(){return cur;},
     start(chunks,st,h){this.stop();const s=cur={chunks,st,h,i:0,rep:0,phase:'speaking',paused:false,left:0,total:0,dead:false};wl(true);wait(s,START_DELAY,play,'starting');},
     stop(){if(cur){cur.dead=true;halt(cur);cur.phase='stopped';cur=null;wl(false);}else{try{synth&&synth.cancel();}catch(e){}}},
     pause(){const s=cur;if(!s||s.dead||s.paused)return;s.pp=s.phase;s.rest=s.left;s.paused=true;halt(s);s.phase='paused';s.h.onPhase(s);},
@@ -559,6 +561,76 @@ const Voz=(()=>{
   }
   return{ready,gen,missing,prepare,load,unlock,has:t=>map.has(t),play:(t,sp,cb,fail)=>playUrl(map.get(t),sp,cb,fail),playUrl,stop(){try{el.pause();}catch(e){}}};
 })();
+/* ================= sincronización con Supabase ================= */
+const SB_URL='https://rzzaizkzszgiirwmilyq.supabase.co',SB_KEY='sb_publishable_xdaxsZhA3FDyGWsMeT2pLA_4TSyUvpl';
+const Cloud=(()=>{
+  const K=['dictados','customRules','rulesMode','pin','settings'],hdr={apikey:SB_KEY,'Content-Type':'application/json'};
+  const part=k=>{if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;return o;}return state[k];};
+  const js=k=>JSON.stringify(part(k)===undefined?null:part(k));
+  const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':(v&&typeof v==='object')?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
+  let timer=null,busy=false,again=false,started=false;
+  const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
+    set(s,e){C.status=s;C.err=e||'';const el=$('#cloudSt');if(el)el.innerHTML=C.html();},
+    html(){const l=state.sync.last?new Date(state.sync.last).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'';
+      if(C.status==='sync')return '🔄 Sincronizando…';
+      if(C.status==='err')return `⚠️ No se ha podido conectar con el servidor (${esc(C.err)}). Todo se sigue guardando en este dispositivo y se sincronizará cuando vuelva la conexión.`;
+      return l?`✅ Sincronizado con el servidor a las ${l}`:'Todavía sin sincronizar';},
+    mark(){
+      if(!C.on)return;const s=state.sync;let d=false;
+      K.forEach(k=>{const j=js(k);if(s.j[k]!==j){s.j[k]=j;s.t[k]=Date.now();d=true;}});
+      const hj=state.history.map(h=>h.id).join(',');if(s.hj!==hj){s.hj=hj;d=true;}
+      if(d){s.dirty=true;persist();clearTimeout(timer);timer=setTimeout(()=>C.sync(),1200);}
+    },
+    merge(rv){
+      const s=state.sync,first=!s.init,out={v:1,t:{},d:{},history:[],hclear:0};let changed=false;
+      K.forEach(k=>{
+        let lt=first&&rv?0:(s.t[k]||0);const rt=rv?(rv.t&&rv.t[k]||0):-1;
+        if(rv&&rv.d&&rv.d[k]!==undefined&&rt>lt){
+          if(k==='settings')state.settings=Object.assign({},DEF_SETTINGS,rv.d[k],{voice:state.settings.voice});else state[k]=rv.d[k];
+          s.t[k]=rt;s.j[k]=js(k);changed=true;out.t[k]=rt;out.d[k]=rv.d[k];
+        }else{out.t[k]=lt||Date.now();s.t[k]=out.t[k];out.d[k]=part(k)===undefined?null:part(k);}
+      });
+      if(first&&rv&&rv.d&&Array.isArray(rv.d.dictados)){
+        const extra=state.dictados.filter(d=>d.id!=='demo'&&!rv.d.dictados.some(x=>x.id===d.id));
+        if(extra.length){state.dictados=state.dictados.concat(extra);s.j.dictados=js('dictados');s.t.dictados=Date.now();out.t.dictados=s.t.dictados;out.d.dictados=state.dictados;changed=true;}
+      }
+      const hc=Math.max(s.hclear||0,rv&&rv.hclear||0),map={};
+      (rv&&rv.history||[]).concat(state.history).forEach(h=>{if(h.id>hc)map[h.id]=h;});
+      const H=Object.values(map).sort((a,b)=>b.id-a.id).slice(0,500);
+      if(H.map(h=>h.id).join()!==state.history.map(h=>h.id).join()){state.history=H;changed=true;}
+      s.hclear=hc;s.hj=H.map(h=>h.id).join(',');out.history=H;out.hclear=hc;
+      return {out,changed,push:!rv||canon(out)!==canon({v:rv.v,t:rv.t,d:rv.d,history:rv.history||[],hclear:rv.hclear||0})};
+    },
+    async sync(manual){
+      if(!C.on)return;if(busy){again=true;return;}
+      busy=true;C.set('sync');
+      try{
+        C.mark();
+        const r=await fetch(SB_URL+'/rest/v1/app_data?id=eq.julia&select=value',{headers:hdr});
+        if(!r.ok)throw new Error('error '+r.status);
+        const rows=await r.json(),rv=rows[0]&&rows[0].value&&rows[0].value.d?rows[0].value:null;
+        const m=C.merge(rv);
+        if(m.push){
+          const w=await fetch(SB_URL+'/rest/v1/app_data?on_conflict=id',{method:'POST',headers:Object.assign({Prefer:'resolution=merge-duplicates,return=minimal'},hdr),body:JSON.stringify([{id:'julia',value:m.out,updated_at:new Date().toISOString()}])});
+          if(!w.ok)throw new Error('error '+w.status);
+        }
+        state.sync.init=true;state.sync.dirty=false;state.sync.last=Date.now();persist();
+        C.set('ok');
+        if(m.changed&&C.idle())render();
+        if(manual)toast('Sincronizado ✅');
+      }catch(e){C.set('err',e&&e.message&&!/fetch|network|load/i.test(e.message)?e.message:'sin internet');if(manual)toast('Sin conexión con el servidor');}
+      busy=false;if(again){again=false;setTimeout(()=>C.sync(),500);}
+    },
+    idle(){const a=document.activeElement;return !(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&ui.screen!=='run'&&ui.screen!=='fix'&&!ui.editId&&!ui.preparing;},
+    start(){
+      if(!C.on||started)return;started=true;C.sync();
+      setInterval(()=>{if(!document.hidden&&navigator.onLine!==false)C.sync();},25000);
+      document.addEventListener('visibilitychange',()=>{if(!document.hidden)C.sync();});
+      window.addEventListener('online',()=>C.sync());
+    }
+  };
+  return C;
+})();
 /* ================= pantallas alumna ================= */
 function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
@@ -585,6 +657,7 @@ function renderRun(){
   <div class="row"><button class="btn primary big" data-act="start" id="bStart">▶ Empezar dictado</button>
   <button class="btn" data-act="pause" id="bPause">⏸ Pausa</button><button class="btn" data-act="repeat" id="bRepeat">🔁 Repetir</button>
   <button class="btn" data-act="skip" id="bSkip">⏭ Siguiente</button><button class="btn danger" data-act="stop" id="bStop">⏹ Parar</button></div>
+  <p class="mute" style="margin:6px 0;font-size:.85rem">🔈 ¿No oyes nada? Sube el volumen y desactiva el modo silencio del iPhone/iPad (interruptor lateral).</p>
   <div class="status"><span class="ico" id="stIco">🎧</span><div style="flex:1"><div id="stTxt">Pulsa «Empezar dictado» cuando estés lista.</div><div class="bar"><i id="stBar"></i></div></div></div>
   <textarea id="answer" placeholder="Escribe aquí lo que oigas…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-gramm="false">${esc(ui.answer)}</textarea>
   <div class="row" style="margin-top:10px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Lo he escrito en el cuaderno: subir foto<input type="file" accept="image/*" id="photoIn" hidden></label></div>
@@ -636,7 +709,7 @@ function voiceTexts(chunks){
 async function startDictado(){
   const d=state.dictados.find(x=>x.id===ui.dict);if(!d||ui.preparing)return;
   const chunks=dictChunks(d);if(chunks.length<2)return toast('Este dictado está vacío');
-  Voz.unlock();
+  Voz.unlock();Dict.prime();
   const ai=Voz.ready(),st=Object.assign({},state.settings,{ai,aiSpeed:state.ai.speed});
   if(ai){
     ui.preparing=true;const texts=voiceTexts(chunks),info=(m)=>{const e=$('#stTxt');if(e){e.textContent=m;$('#stIco').textContent='🎙';}};
@@ -663,8 +736,8 @@ function goCorrect(){
   r.errors.forEach(e=>{e.stage=e.type==='extra'?'ack':'word';e.fails=0;e.done=false;
     if(e.type==='sub'){e.opts=state.rulesMode==='test'?makeOptions(e.a):null;e.wrongPicks=[];e.manual=state.rulesMode!=='test';}});
   ui.fix=r;ui.screen='fix';
-  state.history.unshift({id:Date.now(),date:new Date().toISOString(),title:d.title,total:r.total,wrong:r.wrong,errs:r.errors.map(e=>({type:e.type,typed:e.typed||'',correct:e.correct||''}))});
-  state.history=state.history.slice(0,100);save();render();
+  state.history.unshift({id:Date.now(),did:d.id,photo:!!ui.photo,date:new Date().toISOString(),title:d.title,total:r.total,wrong:r.wrong,punct:r.punct.length,errs:r.errors.map(e=>({type:e.type,typed:e.typed||'',correct:e.correct||'',rule:e.rule||''}))});
+  state.history=state.history.slice(0,500);save();render();
 }
 /* ================= corrección ================= */
 function markedHTML(r){
@@ -777,8 +850,34 @@ function tabReglas(){
 }
 function tabHistorial(){
   const H=state.history,fd=d=>new Date(d).toLocaleString('es-ES',{dateStyle:'medium',timeStyle:'short'});
-  $('#tab').innerHTML=H.length?`<div class="list">${H.map(h=>{const pct=h.total?Math.round(100*(h.total-h.wrong)/h.total):100;const w=h.errs.filter(e=>e.type!=='extra').map(e=>e.type==='sub'?`${esc(e.typed)} → <b>${esc(e.correct)}</b>`:`falta <b>${esc(e.correct)}</b>`);
-    return `<div class="panel"><b>${esc(h.title)}</b> <span class="mute">· ${fd(h.date)}</span><br>${h.total-h.wrong} de ${h.total} palabras bien (${pct}%)${w.length?`<br><small>${w.join(' · ')}</small>`:''}</div>`;}).join('')}</div><button class="btn danger" data-act="clearHist">Borrar historial</button>`:'<p class="mute">Todavía no hay correcciones.</p>';
+  if(!H.length){$('#tab').innerHTML='<p class="mute">Todavía no hay correcciones. Cuando Julia haga un dictado y pulse «Corregir», aquí verás sus estadísticas.</p>';return;}
+  const pct=h=>h.total?Math.round(100*(h.total-h.wrong)/h.total):100,avg=a=>a.length?Math.round(a.reduce((s,h)=>s+pct(h),0)/a.length):0;
+  const chr=H.slice().reverse(),n=H.length,totErr=H.reduce((s,h)=>s+h.wrong,0),totW=H.reduce((s,h)=>s+h.total,0);
+  const last5=avg(H.slice(0,5)),prev5=avg(H.slice(5,10)),trend=H.length>5?(last5-prev5>=3?`📈 mejora (+${last5-prev5} puntos)`:prev5-last5>=3?`📉 baja (${last5-prev5} puntos)`:'➡️ estable'):'';
+  /* palabras */
+  const W={};H.forEach(h=>h.errs.forEach(e=>{if(e.type==='extra'||!e.correct)return;const k=e.correct.toLowerCase(),o=W[k]||(W[k]={w:e.correct,n:0,miss:0,typed:{},last:h.date,rule:''});o.n++;if(e.type==='missing')o.miss++;else{o.typed[e.typed]=(o.typed[e.typed]||0)+1;if(e.rule)o.rule=e.rule;}if(h.date>o.last)o.last=h.date;}));
+  const words=Object.values(W).sort((a,b)=>b.n-a.n||a.w.localeCompare(b.w,'es'));
+  /* reglas */
+  const R={};H.forEach(h=>h.errs.forEach(e=>{if(e.type==='sub'&&e.rule)R[e.rule]=(R[e.rule]||0)+1;}));
+  const rules=Object.entries(R).sort((a,b)=>b[1]-a[1]).slice(0,6),maxR=rules.length?rules[0][1]:1;
+  /* por dictado */
+  const D={};chr.forEach(h=>{const k=h.did||h.title,o=D[k]||(D[k]={t:h.title,list:[]});o.list.push(h);o.t=h.title;});
+  const dicts=Object.values(D).sort((a,b)=>b.list[b.list.length-1].date.localeCompare(a.list[a.list.length-1].date));
+  const stat=(v,l)=>`<div style="flex:1;min-width:120px;background:#f3f0ff;border-radius:14px;padding:12px;text-align:center"><div style="font-size:1.7rem;font-weight:800;color:var(--pri2)">${v}</div><small class="mute">${l}</small></div>`;
+  const spark=list=>list.slice(-12).map(h=>{const p=pct(h);return `<i title="${p}%" style="display:inline-block;width:12px;height:${8+p*.3}px;background:${p>=90?'var(--ok)':p>=70?'var(--warn)':'var(--bad)'};border-radius:3px;margin-right:3px;vertical-align:bottom"></i>`;}).join('');
+  $('#tab').innerHTML=`<div class="row" style="gap:10px;flex-wrap:wrap">${stat(n,'dictados hechos')}${stat(avg(H)+'%','acierto medio')}${stat(totErr,'palabras falladas')}${stat(H.reduce((s,h)=>s+(h.punct||0),0),'fallos de puntuación')}</div>
+  ${trend?`<p class="mute" style="margin:8px 0">Últimos 5 dictados: <b>${last5}%</b> de acierto · ${trend}</p>`:''}
+  <h3>🔴 Palabras que más falla</h3>
+  ${words.length?`<div class="panel" style="padding:8px 16px"><table style="width:100%;border-collapse:collapse;font-size:1rem">
+   <tr class="mute" style="text-align:left"><th>Palabra</th><th>Veces</th><th>Cómo la escribe</th></tr>
+   ${words.slice(0,25).map(w=>`<tr style="border-top:1px solid var(--line)"><td style="padding:8px 0"><b>${esc(w.w)}</b>${w.rule?`<br><small class="mute">${esc(w.rule)}</small>`:''}</td><td style="text-align:center"><span class="wrong">${w.n}</span></td><td><small>${Object.entries(w.typed).sort((a,b)=>b[1]-a[1]).map(([t,c])=>`${esc(t)}${c>1?' ×'+c:''}`).join(', ')}${w.miss?`${Object.keys(w.typed).length?', ':''}se la deja ×${w.miss}`:''}</small></td></tr>`).join('')}</table>${words.length>25?`<small class="mute">…y ${words.length-25} palabras más.</small>`:''}</div>`:'<p class="mute">Sin fallos todavía. ¡Genial! 🎉</p>'}
+  ${rules.length?`<h3>📘 Reglas que más se le atragantan</h3><div class="panel">${rules.map(([t,c])=>`<div style="margin:6px 0"><small>${esc(t)}</small><div class="bar"><i style="width:${Math.round(100*c/maxR)}%;background:var(--bad)"></i></div><small class="mute">${c} ${c===1?'vez':'veces'}</small></div>`).join('')}</div>`:''}
+  <h3>📝 Por dictado</h3>
+  ${dicts.map(g=>{const l=g.list;return `<div class="panel"><b>${esc(g.t)}</b><br><small class="mute">${l.length} ${l.length===1?'vez':'veces'} · media ${avg(l)}% · mejor ${Math.max(...l.map(pct))}% · último ${pct(l[l.length-1])}% (${l[l.length-1].wrong} ${l[l.length-1].wrong===1?'fallo':'fallos'})</small><div style="margin-top:6px;height:50px;display:flex;align-items:flex-end">${spark(l)}</div></div>`;}).join('')}
+  <h3>🕒 Cada intento</h3>
+  <div class="list">${H.map(h=>{const w=h.errs.filter(e=>e.type!=='extra').map(e=>e.type==='sub'?`${esc(e.typed)} → <b>${esc(e.correct)}</b>`:`falta <b>${esc(e.correct)}</b>`);
+    return `<div class="panel"><b>${esc(h.title)}</b> <span class="mute">· ${fd(h.date)}${h.photo?' · 📷':''}</span><br>${h.total-h.wrong} de ${h.total} palabras bien (${pct(h)}%)${h.punct?` · ${h.punct} de puntuación`:''}${w.length?`<br><small>${w.join(' · ')}</small>`:''}</div>`;}).join('')}</div>
+  <button class="btn danger" data-act="clearHist">Borrar historial</button>`;
 }
 function tabAjustes(){
   const s=state.settings;
@@ -804,6 +903,7 @@ function tabAjustes(){
   <div class="row" style="margin-top:12px"><button class="btn primary" data-act="testAI">🔊 Probar voz IA</button></div>
   <p class="mute" style="margin-bottom:0">Si cambias la voz, el modelo o el largo de las frases, hay que pulsar «Generar voz» en cada dictado (o se genera sola la primera vez que Julia lo empieza). Si falla algo, la app usa la voz del iPad.</p></div>
   <div class="panel"><h3>PIN</h3><button class="btn" data-act="changePin">Cambiar PIN</button></div>
+  <div class="panel"><h3>☁️ Sincronización</h3><p class="mute" style="margin-top:0">Los dictados, las reglas, los ajustes y el historial se guardan en el servidor y aparecen en todos los dispositivos (iPad, iPhone, ordenador). La voz elegida y la clave de OpenAI se quedan en cada dispositivo.</p><div id="cloudSt" style="margin:8px 0;font-weight:700">${Cloud.html()}</div><button class="btn" data-act="syncNow">🔄 Sincronizar ahora</button></div>
   <div class="panel"><h3>Copia de seguridad</h3><p class="mute" style="margin-top:0">Los datos se guardan en este iPad. Descarga una copia o pásala a otro dispositivo.</p><div class="row"><button class="btn" data-act="export">⬇️ Descargar copia</button><label class="btn" style="display:inline-flex;align-items:center">⬆️ Restaurar copia<input type="file" accept="application/json,.json" id="imp" hidden></label></div></div>`;
 }
 async function voiceMissing(d){return Voz.missing(voiceTexts(dictChunks(d)));}
@@ -835,7 +935,8 @@ const tutorActions={
   delDict(b){if(confirm('¿Borrar este dictado?')){state.dictados=state.dictados.filter(d=>d.id!==b.dataset.id);save();render();}},
   addRule(){state.customRules.push({word:'',rule:''});save();render();},
   delRule(b){state.customRules.splice(+b.dataset.i,1);save();render();},
-  clearHist(){if(confirm('¿Borrar todo el historial?')){state.history=[];save();render();}},
+  clearHist(){if(confirm('¿Borrar todo el historial en todos los dispositivos?')){state.history=[];state.sync.hclear=Date.now();save();render();}},
+  syncNow(){Cloud.sync(true);},
   changePin(){const p=prompt('Nuevo PIN (4 a 8 números):');if(p===null)return;if(!/^\d{4,8}$/.test(p))return toast('PIN no válido');state.pin=p;save();toast('PIN cambiado');},
   testVoice(){Dict.test(state.settings);},
   async genVoice(b){const id=b.dataset.id;await genVoiceFor(id,true);},
@@ -873,12 +974,13 @@ document.addEventListener('input',e=>{const t=e.target;
 document.addEventListener('change',e=>{const t=e.target;
   if(t.dataset.set==='voice'){state.settings.voice=t.value;save();}
   if(t.id==='photoIn'&&t.files[0]){const f=t.files[0];t.value='';handlePhoto(f);return;}
-  if(t.id==='imp'&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const s=JSON.parse(fr.result);if(!Array.isArray(s.dictados))throw 0;if(confirm('Esto reemplazará los datos actuales. ¿Continuar?')){const oldKey=state.ai.key;localStorage.setItem(KEY,JSON.stringify(s));state=loadState();if(!state.ai.key)state.ai.key=oldKey;save();ui.tab='dictados';render();toast('Copia restaurada');}}catch(x){toast('Archivo no válido');}};fr.readAsText(t.files[0]);}
+  if(t.id==='imp'&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const s=JSON.parse(fr.result);if(!Array.isArray(s.dictados))throw 0;if(confirm('Esto reemplazará los datos actuales. ¿Continuar?')){const oldKey=state.ai.key;localStorage.setItem(KEY,JSON.stringify(s));state=loadState();if(!state.ai.key)state.ai.key=oldKey;state.sync={t:{},j:{},init:true,last:0,dirty:true,hclear:0,hj:''};save();ui.tab='dictados';render();toast('Copia restaurada');}}catch(x){toast('Archivo no válido');}};fr.readAsText(t.files[0]);}
 });
 document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.target;
   if(t.dataset.enter==='word')fixActions.word({dataset:{i:t.dataset.i}});
   if(t.dataset.enter==='pin')tutorActions.pinEnter();});
 render();
+Cloud.start();
 </script>
 </body>
 </html>
