@@ -568,6 +568,8 @@ const Cloud=(()=>{
   const part=k=>{if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;return o;}return state[k];};
   const js=k=>JSON.stringify(part(k)===undefined?null:part(k));
   const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':(v&&typeof v==='object')?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
+  const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
+    if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;return canon(o)===canon(d);}return false;};
   let timer=null,busy=false,again=false,started=false;
   const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
     set(s,e){C.status=s;C.err=e||'';const el=$('#cloudSt');if(el)el.innerHTML=C.html();},
@@ -583,15 +585,18 @@ const Cloud=(()=>{
     },
     merge(rv){
       const s=state.sync,first=!s.init,out={v:1,t:{},d:{},history:[],hclear:0};let changed=false;
+      const localD=state.dictados.slice();let adoptedD=false;
       K.forEach(k=>{
-        let lt=first&&rv?0:(s.t[k]||0);const rt=rv?(rv.t&&rv.t[k]||0):-1;
+        let lt=first&&rv?0:(s.t[k]||0);let rt=rv?(rv.t&&rv.t[k]||0):-1;
+        if(first&&rv&&rv.d&&rv.d[k]!==undefined&&pristine(k,rv.d[k])&&!pristine(k,part(k)))rt=0;
         if(rv&&rv.d&&rv.d[k]!==undefined&&rt>lt){
           if(k==='settings')state.settings=Object.assign({},DEF_SETTINGS,rv.d[k],{voice:state.settings.voice});else state[k]=rv.d[k];
+          if(k==='dictados')adoptedD=true;
           s.t[k]=rt;s.j[k]=js(k);changed=true;out.t[k]=rt;out.d[k]=rv.d[k];
         }else{out.t[k]=lt||Date.now();s.t[k]=out.t[k];out.d[k]=part(k)===undefined?null:part(k);}
       });
-      if(first&&rv&&rv.d&&Array.isArray(rv.d.dictados)){
-        const extra=state.dictados.filter(d=>d.id!=='demo'&&!rv.d.dictados.some(x=>x.id===d.id));
+      if(first&&rv&&adoptedD&&Array.isArray(rv.d.dictados)){
+        const extra=localD.filter(d=>d.id!=='demo'&&!rv.d.dictados.some(x=>x.id===d.id));
         if(extra.length){state.dictados=state.dictados.concat(extra);s.j.dictados=js('dictados');s.t.dictados=Date.now();out.t.dictados=s.t.dictados;out.d.dictados=state.dictados;changed=true;}
       }
       const hc=Math.max(s.hclear||0,rv&&rv.hclear||0),map={};
@@ -599,7 +604,8 @@ const Cloud=(()=>{
       const H=Object.values(map).sort((a,b)=>b.id-a.id).slice(0,500);
       if(H.map(h=>h.id).join()!==state.history.map(h=>h.id).join()){state.history=H;changed=true;}
       s.hclear=hc;s.hj=H.map(h=>h.id).join(',');out.history=H;out.hclear=hc;
-      return {out,changed,push:!rv||canon(out)!==canon({v:rv.v,t:rv.t,d:rv.d,history:rv.history||[],hclear:rv.hclear||0})};
+      const allP=K.every(k=>pristine(k,part(k)))&&!state.history.length;
+      return {out,changed,skip:!rv&&allP&&first,push:!rv||canon(out)!==canon({v:rv.v,t:rv.t,d:rv.d,history:rv.history||[],hclear:rv.hclear||0})};
     },
     async sync(manual){
       if(!C.on)return;if(busy){again=true;return;}
@@ -610,6 +616,7 @@ const Cloud=(()=>{
         if(!r.ok)throw new Error('error '+r.status);
         const rows=await r.json(),rv=rows[0]&&rows[0].value&&rows[0].value.d?rows[0].value:null;
         const m=C.merge(rv);
+        if(m.skip){state.sync.last=Date.now();persist();C.set('ok');busy=false;return;}
         if(m.push){
           const w=await fetch(SB_URL+'/rest/v1/app_data?on_conflict=id',{method:'POST',headers:Object.assign({Prefer:'resolution=merge-duplicates,return=minimal'},hdr),body:JSON.stringify([{id:'julia',value:m.out,updated_at:new Date().toISOString()}])});
           if(!w.ok)throw new Error('error '+w.status);
