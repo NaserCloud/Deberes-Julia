@@ -81,6 +81,12 @@ input:focus,textarea:focus,select:focus{outline:3px solid #c9c2f7;border-color:v
 .tag{background:#f3f0ff;color:var(--pri2);border-radius:999px;padding:4px 12px;font-size:.9rem;font-weight:700}
 .xbtn{margin-left:auto;border:0;background:none;font-size:1.1rem;cursor:pointer;padding:6px;opacity:.6}
 @media(max-width:560px){.agrow{grid-template-columns:1fr;gap:4px}.acts{gap:6px}}
+.exph-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px;margin-top:10px}
+.exph-item{position:relative;padding:0;border:2px solid var(--line);border-radius:12px;overflow:hidden;cursor:pointer;aspect-ratio:1;background:#fff}
+.exph-item img{width:100%;height:100%;object-fit:cover;display:block}
+.exph-warn{position:absolute;top:2px;right:2px;background:var(--bad);color:#fff;border-radius:50%;width:20px;height:20px;font-size:.8rem;display:flex;align-items:center;justify-content:center}
+.exph-ov{position:fixed;inset:0;background:rgba(20,16,40,.82);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+.exph-box{background:#fff;border-radius:var(--r);padding:16px;max-width:640px;width:100%;max-height:90vh;overflow:auto}
 .tgrid{display:grid;grid-template-columns:1fr;gap:8px}
 @media(min-width:760px){.tgrid{grid-template-columns:1fr 1fr;gap:12px}}
 .tbox .marked.orig{background:#eaf2ff;border-color:#3b82f6;color:#1e3a8a}
@@ -480,7 +486,7 @@ const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:tru
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
-  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[]};
+  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{}};
   s=Object.assign(d,s);s.ai=Object.assign({on:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:''},s.sync||{});
   if(!s.dictados)s.dictados=[SAMPLE];
   return s;
@@ -488,7 +494,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -1455,8 +1461,11 @@ function exEditView(t,e){
   <label class="f">Idioma<select data-exf="lang"><option value="auto" ${e.lang==='auto'?'selected':''}>El de los apuntes</option><option value="es" ${e.lang==='es'?'selected':''}>Español</option><option value="en" ${e.lang==='en'?'selected':''}>English</option></select></label></div>
   <p class="mute" style="margin:6px 0 0">El banco se genera una sola vez con IA; cada examen sortea preguntas distintas del banco sin gastar más.</p></div>
   <div class="panel"><h3 style="margin-top:0">📷 Teoría a estudiar</h3>
-  <div class="row"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label></div><div id="exSt" class="mute" style="margin:6px 0"></div>
+  <div class="row" style="align-items:center;gap:12px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label><small class="mute">Hasta ${EX_MAXPH} fotos por tanda; puedes subir varias tandas seguidas.</small></div>
+  <div id="exSt" class="mute" style="margin:6px 0"></div>
+  ${examPhotosHTML(e.id)}
   <label class="f">Texto de los apuntes (revísalo y corrígelo si hace falta)<textarea data-exf="notes" style="min-height:200px" placeholder="Sube fotos o pega aquí el texto de la teoría.">${esc(e.notes)}</textarea></label></div>
+  ${exPhotoOverlay(e.id)}
   <div class="panel"><h3 style="margin-top:0">🧠 Preguntas <small class="mute">(${act} activas de ${e.pool.length})</small></h3>
   <div class="row"><button class="btn primary" data-act="exGen" id="exGenB">${e.pool.length?'➕ Generar más preguntas':'🧠 Generar preguntas'}</button></div><div id="exGst" class="mute" style="margin:6px 0">${e.pool.length?'Revisa la lista: corrige, quita o desmarca las que no quieras.':'Se generan con IA a partir del texto de arriba (unos céntimos).'}</div>
   ${(e.dropped||[]).length?`<details><summary class="mute">La app ha descartado ${e.dropped.length} preguntas repetidas o casi iguales</summary><small class="mute">${e.dropped.map(d=>`• ${esc(d.q)}<br>&nbsp;&nbsp;<i>${esc(d.why)}</i>`).join('<br>')}</small></details>`:''}</div>
@@ -1475,22 +1484,56 @@ function exInput(t){
     save();return true;}
   return false;
 }
+const EX_MAXPH=8;
+function examPhotosHTML(id){
+  const L=state.examFotos[id]||[];if(!L.length)return '';
+  return `<div style="margin:8px 0"><b>${L.length} ${L.length===1?'foto subida':'fotos subidas'}</b> <span class="mute" style="font-size:.85rem">· toca una para ampliarla y ver solo su texto</span>
+  <div class="exph-grid">${L.map(p=>`<button class="exph-item" data-act="exPhotoOpen" data-id="${esc(p.id)}" title="Ver esta foto"><img src="${p.thumb}" alt="Foto de apuntes">${p.err?'<span class="exph-warn">⚠</span>':''}</button>`).join('')}</div></div>`;
+}
+function exPhotoOverlay(examId){
+  if(!ui.exPhotoView)return '';
+  const L=state.examFotos[examId]||[],p=L.find(x=>x.id===ui.exPhotoView);if(!p)return '';
+  return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.exPhotoClose()"><div class="exph-box">
+  <div class="row" style="justify-content:space-between;align-items:center"><b>Foto ${L.indexOf(p)+1} de ${L.length}</b><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></div>
+  <img src="${p.full||p.thumb}" alt="Foto de apuntes" style="max-width:100%;max-height:48vh;border-radius:12px;margin-top:10px;display:block">
+  <div class="mute" style="margin:10px 0 4px;font-weight:800">Lo que ha leído la IA en esta foto:</div>
+  <div class="marked" style="max-height:26vh;overflow:auto;font-size:.95rem;line-height:1.6">${p.err?`<span class="wrong">${esc(p.err)}</span>`:esc(p.text||'(sin texto)')}</div></div></div>`;
+}
 async function readNotesPhotos(files){
   const e=exGet(ui.exId),st=()=>$('#exSt');if(!e)return;
-  if(!state.ai.on){if(st())st.textContent='';return toast('Activa la IA en Ajustes para leer fotos');}
-  files=files.slice(0,8);const out=[];
-  try{
-    for(let i=0;i<files.length;i++){if(st())st().innerHTML=`🔎 Leyendo la foto ${i+1} de ${files.length}…`;out.push(await readNotesPhoto(await fileToJpeg(files[i],2000)));}
-    e.notes=(e.notes.trim()?e.notes.trim()+'\n\n':'')+out.join('\n\n');save();
-    const ta=$('[data-exf=notes]');if(ta)ta.value=e.notes;
-    if(st())st().innerHTML='✅ <b>Apuntes leídos.</b> Revisa el texto por si la IA se ha equivocado y luego pulsa «Generar preguntas».';
-  }catch(er){if(e&&out.length){e.notes=(e.notes.trim()?e.notes.trim()+'\n\n':'')+out.join('\n\n');save();const ta=$('[data-exf=notes]');if(ta)ta.value=e.notes;}if(st())st().textContent='';toast(er.message);}
+  if(!state.ai.on){if(st())st().textContent='';return toast('Activa la IA en Ajustes para leer fotos');}
+  const total=files.length;files=files.slice(0,EX_MAXPH);
+  const gallery=state.examFotos[e.id]=(state.examFotos[e.id]||[]);
+  const out=[];let okN=0,errN=0;
+  for(let i=0;i<files.length;i++){
+    if(st())st().innerHTML=`🔎 Leyendo la foto ${i+1} de ${files.length}…`;
+    const entry={id:uid(),thumb:'',full:'',text:'',err:''};
+    try{
+      const full=await fileToJpeg(files[i],1800),thumb=await fileToJpeg(files[i],260);
+      entry.full=full;entry.thumb=thumb;
+      entry.text=await readNotesPhoto(full);out.push(entry.text);okN++;
+    }catch(er){entry.err=er.message;errN++;}
+    gallery.push(entry);
+  }
+  state.examFotos[e.id]=gallery.slice(-40);
+  if(out.length){e.notes=(e.notes.trim()?e.notes.trim()+'\n\n':'')+out.join('\n\n');const ta=$('[data-exf=notes]');if(ta)ta.value=e.notes;}
+  save();
+  const y=scrollY;render();scrollTo(0,y);
+  const s2=$('#exSt');
+  if(s2){
+    let msg=okN?`✅ <b>${okN} ${okN===1?'foto leída':'fotos leídas'}.</b> Revisa el texto por si la IA se ha equivocado y luego pulsa «Generar preguntas».`:'';
+    if(errN)msg+=(msg?' ':'')+`⚠️ ${errN} ${errN===1?'foto no se pudo leer':'fotos no se pudieron leer'} (toca su miniatura para ver el motivo).`;
+    if(total>EX_MAXPH)msg+=` <br><small>Has subido ${total}; solo se procesan ${EX_MAXPH} de golpe. Sube el resto en otra tanda: se añadirá a lo que ya tienes.</small>`;
+    s2.innerHTML=msg;
+  }
 }
 const examActions={
   exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',pool:[],dropped:[],status:'draft'};state.examenes.push(e);save();ui.exId=e.id;render();},
   exOpen(b){ui.exId=b.dataset.id;render();},
   exBack(){ui.exId=null;render();},
-  exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
+  exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){delete state.examFotos[b.dataset.id];state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
+  exPhotoOpen(b){ui.exPhotoView=b.dataset.id;render();},
+  exPhotoClose(){ui.exPhotoView=null;render();},
   exQDel(b){const e=exGet(ui.exId);e.pool.splice(+b.dataset.i,1);save();const y=scrollY;render();scrollTo(0,y);},
   exPub(b){const e=exGet(ui.exId);
     if(e.status!=='ready'){if(!e.title.trim())return toast('Ponle un título al examen');if(e.pool.filter(q=>!q.off).length<Math.min(e.n,3))return toast('Faltan preguntas: genera o activa más');
