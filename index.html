@@ -1407,6 +1407,36 @@ async function readNotesPhoto(dataUrl){
   if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja recta.');
   return t.replace(/^```[a-z]*\n?|```$/g,'').trim();
 }
+/* Gira una imagen (dataURL) un número de grados en sentido horario y devuelve la nueva dataURL. */
+function rotateDataUrl(dataUrl,deg){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const swap=deg===90||deg===270,w=swap?img.height:img.width,h=swap?img.width:img.height;
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);
+      x.translate(w/2,h/2);x.rotate(deg*Math.PI/180);x.drawImage(img,-img.width/2,-img.height/2);
+      res(c.toDataURL('image/jpeg',0.6));
+    };
+    img.onerror=()=>rej(new Error('No se ha podido girar la foto'));
+    img.src=dataUrl;
+  });
+}
+/* En vez de pedirle a la IA que "calcule" el ángulo de giro (poco fiable), le enseñamos la MISMA
+   foto ya girada en las 4 orientaciones posibles y le pedimos que elija cuál se lee bien: para un
+   modelo de visión, elegir entre 4 opciones es mucho más fiable que razonar un ángulo de memoria. */
+const ROT_SYS='Vas a ver 4 imágenes numeradas del 1 al 4. Son la MISMA foto de una página de apuntes escolares, girada en 4 ángulos distintos. Solo UNA de las 4 tiene el texto de pie, en la orientación normal de lectura (se puede leer de corrido de izquierda a derecha sin ladear la cabeza ni el móvil). Mira con atención la orientación de las letras (no la del papel, la mesa o el fondo) y responde ÚNICAMENTE con una línea exacta: "CORRECTA: N" donde N es 1, 2, 3 o 4. No escribas nada más.';
+async function detectPhotoRot(dataUrl){
+  const angles=[0,90,180,270];
+  let variants;
+  try{variants=await Promise.all(angles.map(a=>rotateDataUrl(dataUrl,a)));}catch(e){return 0;}
+  const content=[{type:'text',text:'¿Cuál de estas 4 imágenes (1, 2, 3 o 4, en ese orden) tiene el texto en la orientación correcta para leerlo normal?'}];
+  variants.forEach((v,i)=>{content.push({type:'text',text:`Imagen ${i+1}:`});content.push({type:'image_url',image_url:{url:v,detail:'low'}});});
+  let t;
+  try{t=await aiText([{role:'system',content:ROT_SYS},{role:'user',content}],20);}catch(e){return 0;}
+  const m=(t||'').match(/CORRECTA:\s*([1-4])/i);
+  return m?angles[parseInt(m[1],10)-1]:0;
+}
 function genPrompt(exam,chunk,ci,nc,k){
   const mixed=exam.mode==='mixto',tt=exam.mode==='test'?'tipo test':exam.mode==='red'?'de respuesta redactada':`mixtas (${Math.ceil(k/2)} tipo test y ${Math.floor(k/2)} de respuesta redactada)`;
   const facts=exam.pool.slice(-60).map(q=>q.fact||q.q.slice(0,50)).join(' | ');
@@ -1532,8 +1562,9 @@ async function readNotesPhotos(files){
     const entry={id:uid(),thumb:'',full:'',text:'',err:'',rot:0};
     try{
       const info=await fileToJpegInfo(files[i],1800),thumb=await fileToJpeg(files[i],260);
-      entry.full=info.url;entry.thumb=thumb;entry.rot=0;
-      entry.text=await readNotesPhoto(entry.full);out.push(entry.text);okN++;
+      entry.full=info.url;entry.thumb=thumb;
+      const [rot,text]=await Promise.all([detectPhotoRot(entry.full).catch(()=>0),readNotesPhoto(entry.full)]);
+      entry.rot=rot;entry.text=text;out.push(text);okN++;
     }catch(er){entry.err=er.message;errN++;}
     gallery.push(entry);
   }
