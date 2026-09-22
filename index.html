@@ -1490,14 +1490,23 @@ function examPhotosHTML(id){
   return `<div style="margin:8px 0"><b>${L.length} ${L.length===1?'foto subida':'fotos subidas'}</b> <span class="mute" style="font-size:.85rem">· toca una para ampliarla y ver solo su texto</span>
   <div class="exph-grid">${L.map(p=>`<button class="exph-item" data-act="exPhotoOpen" data-id="${esc(p.id)}" title="Ver esta foto"><img src="${p.thumb}" alt="Foto de apuntes">${p.err?'<span class="exph-warn">⚠</span>':''}</button>`).join('')}</div></div>`;
 }
+function imgDims(dataUrl){return new Promise(res=>{const im=new Image();im.onload=()=>res({w:im.naturalWidth||1,h:im.naturalHeight||1});im.onerror=()=>res({w:1,h:1});im.src=dataUrl;});}
+function rotBox(w,h,rot,maxW,maxH){
+  const sw=(rot===90||rot===270)?h:w,sh=(rot===90||rot===270)?w:h;
+  const k=Math.min(maxW/sw,maxH/sh,1);
+  return {boxW:Math.round(sw*k),boxH:Math.round(sh*k),imgW:Math.round(w*k),imgH:Math.round(h*k)};
+}
 function exPhotoOverlay(examId){
   if(!ui.exPhotoView)return '';
   const L=state.examFotos[examId]||[],p=L.find(x=>x.id===ui.exPhotoView);if(!p)return '';
+  const rot=p.rot||0,w=p.w||1,h=p.h||1,maxW=Math.max(240,Math.min(680,innerWidth-72)),maxH=Math.round(innerHeight*0.5);
+  const bx=rotBox(w,h,rot,maxW,maxH);
   return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.exPhotoClose()"><div class="exph-box">
-  <div class="row" style="justify-content:space-between;align-items:center"><b>Foto ${L.indexOf(p)+1} de ${L.length}</b><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></div>
-  <img src="${p.full||p.thumb}" alt="Foto de apuntes" style="max-width:100%;max-height:48vh;border-radius:12px;margin-top:10px;display:block">
+  <div class="row" style="justify-content:space-between;align-items:center"><b>Foto ${L.indexOf(p)+1} de ${L.length}</b><span class="row" style="gap:6px"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exPhotoRotate" data-id="${esc(p.id)}">🔄 Girar</button><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></span></div>
+  <div style="width:${bx.boxW}px;height:${bx.boxH}px;margin:10px auto 0;display:flex;align-items:center;justify-content:center;overflow:hidden">
+  <img src="${p.full||p.thumb}" alt="Foto de apuntes" style="width:${bx.imgW}px;height:${bx.imgH}px;transform:rotate(${rot}deg);border-radius:10px;display:block"></div>
   <div class="mute" style="margin:10px 0 4px;font-weight:800">Lo que ha leído la IA en esta foto:</div>
-  <div class="marked" style="max-height:26vh;overflow:auto;font-size:.95rem;line-height:1.6">${p.err?`<span class="wrong">${esc(p.err)}</span>`:esc(p.text||'(sin texto)')}</div></div></div>`;
+  <div class="marked" style="max-height:22vh;overflow:auto;font-size:.95rem;line-height:1.6">${p.err?`<span class="wrong">${esc(p.err)}</span>`:esc(p.text||'(sin texto)')}</div></div></div>`;
 }
 async function readNotesPhotos(files){
   const e=exGet(ui.exId),st=()=>$('#exSt');if(!e)return;
@@ -1507,10 +1516,11 @@ async function readNotesPhotos(files){
   const out=[];let okN=0,errN=0;
   for(let i=0;i<files.length;i++){
     if(st())st().innerHTML=`🔎 Leyendo la foto ${i+1} de ${files.length}…`;
-    const entry={id:uid(),thumb:'',full:'',text:'',err:''};
+    const entry={id:uid(),thumb:'',full:'',text:'',err:'',w:1,h:1,rot:0};
     try{
       const full=await fileToJpeg(files[i],1800),thumb=await fileToJpeg(files[i],260);
       entry.full=full;entry.thumb=thumb;
+      const dm=await imgDims(full);entry.w=dm.w;entry.h=dm.h;entry.rot=dm.h>dm.w?90:0;
       entry.text=await readNotesPhoto(full);out.push(entry.text);okN++;
     }catch(er){entry.err=er.message;errN++;}
     gallery.push(entry);
@@ -1534,6 +1544,7 @@ const examActions={
   exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){delete state.examFotos[b.dataset.id];state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
   exPhotoOpen(b){ui.exPhotoView=b.dataset.id;render();},
   exPhotoClose(){ui.exPhotoView=null;render();},
+  exPhotoRotate(b){const e=exGet(ui.exId);const L=e&&state.examFotos[e.id]||[];const p=L.find(x=>x.id===b.dataset.id);if(!p)return;p.rot=((p.rot||0)+90)%360;save();render();},
   exQDel(b){const e=exGet(ui.exId);e.pool.splice(+b.dataset.i,1);save();const y=scrollY;render();scrollTo(0,y);},
   exPub(b){const e=exGet(ui.exId);
     if(e.status!=='ready'){if(!e.title.trim())return toast('Ponle un título al examen');if(e.pool.filter(q=>!q.off).length<Math.min(e.n,3))return toast('Faltan preguntas: genera o activa más');
