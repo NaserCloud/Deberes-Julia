@@ -585,6 +585,12 @@ function fileToJpeg(file,max=1800){
       const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res(c.toDataURL('image/jpeg',0.85));};
     img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('No se ha podido abrir la foto'));};img.src=url;});
 }
+function fileToJpegInfo(file,max=1800){
+  return new Promise((res,rej)=>{const url=URL.createObjectURL(file),img=new Image();
+    img.onload=()=>{const w=img.width,h=img.height,k=Math.min(1,max/Math.max(w,h)),c=document.createElement('canvas');c.width=Math.round(w*k);c.height=Math.round(h*k);
+      const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);x.drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);res({url:c.toDataURL('image/jpeg',0.85),w,h});};
+    img.onerror=()=>{URL.revokeObjectURL(url);rej(new Error('No se ha podido abrir la foto'));};img.src=url;});
+}
 const Voz=(()=>{
   const el=new Audio();el.preload='auto';el.preservesPitch=true;el.webkitPreservesPitch=true;
   const map=new Map();let dbp=null;
@@ -833,7 +839,8 @@ function toksOf(T,W){
 }
 const origOn=()=>state.settings.showOrig!==false&&!!ui.origOK;
 function origBar(){
-  if(state.settings.showOrig===false||ui.origOK)return '<span class="mute">🔴 por corregir · 🟢 corregida</span>';
+  if(state.settings.showOrig===false)return '<span class="mute">🔴 por corregir · 🟢 corregida</span>';
+  if(ui.origOK)return '<span class="row" style="gap:8px;flex-wrap:nowrap;align-items:center"><span class="mute" style="font-size:.85rem">🔴 por corregir · 🟢 corregida</span><button class="btn" style="min-height:32px;padding:4px 12px;font-size:.85rem" data-act="origHide">🙈 Ocultar original</button></span>';
   if(ui.pinAsk)return '<span class="row" style="gap:6px;flex-wrap:nowrap"><input type="password" inputmode="numeric" id="opin" data-enter="opin" placeholder="PIN tutor" style="width:110px;padding:6px 8px;font-size:1rem"><button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="origGo">Ver</button><button class="btn" style="min-height:36px;padding:4px 10px" data-act="origNo">✕</button></span>';
   return '<button class="btn" style="min-height:36px;padding:4px 12px;font-size:.85rem" data-act="origAsk">🔒 Ver original (tutor)</button>';
 }
@@ -929,6 +936,7 @@ const fixActions={
   origAsk(){if(!state.pin){ui.origOK=true;return origRefresh();}ui.pinAsk=true;origRefresh();const i=$('#opin');if(i)i.focus();},
   origGo(){const i=$('#opin');if(!state.pin||(i&&i.value===state.pin)){ui.origOK=true;ui.pinAsk=false;origRefresh();}else{toast('PIN incorrecto');if(i){i.value='';i.focus();}}},
   origNo(){ui.pinAsk=false;origRefresh();},
+  origHide(){ui.origOK=false;origRefresh();},
   word(b){const i=+b.dataset.i,e=ui.fix.errors[i],v=($(`#w${i}`).value||'').trim().normalize('NFC');
     if(v===e.correct.normalize('NFC')){e.msg='';e.reveal=false;if(e.type==='sub')e.stage='rule';else{e.stage='done';e.done=true;}}
     else{e.fails++;e.msg='No es exacta todavía. Fíjate en cada letra, en las tildes y en las mayúsculas.';
@@ -1490,21 +1498,17 @@ function examPhotosHTML(id){
   return `<div style="margin:8px 0"><b>${L.length} ${L.length===1?'foto subida':'fotos subidas'}</b> <span class="mute" style="font-size:.85rem">· toca una para ampliarla y ver solo su texto</span>
   <div class="exph-grid">${L.map(p=>`<button class="exph-item" data-act="exPhotoOpen" data-id="${esc(p.id)}" title="Ver esta foto"><img src="${p.thumb}" alt="Foto de apuntes">${p.err?'<span class="exph-warn">⚠</span>':''}</button>`).join('')}</div></div>`;
 }
-function imgDims(dataUrl){return new Promise(res=>{const im=new Image();im.onload=()=>res({w:im.naturalWidth||1,h:im.naturalHeight||1});im.onerror=()=>res({w:1,h:1});im.src=dataUrl;});}
-function rotBox(w,h,rot,maxW,maxH){
-  const sw=(rot===90||rot===270)?h:w,sh=(rot===90||rot===270)?w:h;
-  const k=Math.min(maxW/sw,maxH/sh,1);
-  return {boxW:Math.round(sw*k),boxH:Math.round(sh*k),imgW:Math.round(w*k),imgH:Math.round(h*k)};
-}
 function exPhotoOverlay(examId){
   if(!ui.exPhotoView)return '';
   const L=state.examFotos[examId]||[],p=L.find(x=>x.id===ui.exPhotoView);if(!p)return '';
-  const rot=p.rot||0,w=p.w||1,h=p.h||1,maxW=Math.max(240,Math.min(680,innerWidth-72)),maxH=Math.round(innerHeight*0.5);
-  const bx=rotBox(w,h,rot,maxW,maxH);
+  const rot=p.rot||0,turned=rot===90||rot===270;
+  const imgStyle=turned
+    ?'max-width:52vh;max-height:80vw;width:auto;height:auto'
+    :'max-width:100%;max-height:52vh;width:auto;height:auto';
   return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.exPhotoClose()"><div class="exph-box">
   <div class="row" style="justify-content:space-between;align-items:center"><b>Foto ${L.indexOf(p)+1} de ${L.length}</b><span class="row" style="gap:6px"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exPhotoRotate" data-id="${esc(p.id)}">🔄 Girar</button><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></span></div>
-  <div style="width:${bx.boxW}px;height:${bx.boxH}px;margin:10px auto 0;display:flex;align-items:center;justify-content:center;overflow:hidden">
-  <img src="${p.full||p.thumb}" alt="Foto de apuntes" style="width:${bx.imgW}px;height:${bx.imgH}px;transform:rotate(${rot}deg);border-radius:10px;display:block"></div>
+  <div style="text-align:center;padding:${turned?'26px 0':'0'};margin-top:10px">
+  <img src="${p.full||p.thumb}" alt="Foto de apuntes" style="${imgStyle};transform:rotate(${rot}deg);border-radius:10px;display:inline-block"></div>
   <div class="mute" style="margin:10px 0 4px;font-weight:800">Lo que ha leído la IA en esta foto:</div>
   <div class="marked" style="max-height:22vh;overflow:auto;font-size:.95rem;line-height:1.6">${p.err?`<span class="wrong">${esc(p.err)}</span>`:esc(p.text||'(sin texto)')}</div></div></div>`;
 }
@@ -1516,12 +1520,11 @@ async function readNotesPhotos(files){
   const out=[];let okN=0,errN=0;
   for(let i=0;i<files.length;i++){
     if(st())st().innerHTML=`🔎 Leyendo la foto ${i+1} de ${files.length}…`;
-    const entry={id:uid(),thumb:'',full:'',text:'',err:'',w:1,h:1,rot:0};
+    const entry={id:uid(),thumb:'',full:'',text:'',err:'',rot:0};
     try{
-      const full=await fileToJpeg(files[i],1800),thumb=await fileToJpeg(files[i],260);
-      entry.full=full;entry.thumb=thumb;
-      const dm=await imgDims(full);entry.w=dm.w;entry.h=dm.h;entry.rot=dm.h>dm.w?90:0;
-      entry.text=await readNotesPhoto(full);out.push(entry.text);okN++;
+      const info=await fileToJpegInfo(files[i],1800),thumb=await fileToJpeg(files[i],260);
+      entry.full=info.url;entry.thumb=thumb;entry.rot=info.h>info.w?90:0;
+      entry.text=await readNotesPhoto(entry.full);out.push(entry.text);okN++;
     }catch(er){entry.err=er.message;errN++;}
     gallery.push(entry);
   }
