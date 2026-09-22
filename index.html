@@ -1387,16 +1387,19 @@ const exDaysTxt=d=>{const n=Math.round((new Date(d+'T12:00:00')-new Date(todaySt
 const exShortDate=d=>new Date(d+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'});
 const exGet=id=>state.examenes.find(e=>e.id===id);
 const langRule=l=>l==='es'?'Escribe todo en español.':l==='en'?'Write everything in English.':'Escribe las preguntas y respuestas en el MISMO idioma en que están escritos los apuntes (si están en inglés, en inglés; si están en español, en español).';
-const NOTES_SYS='Eres un transcriptor fiel de apuntes escolares (teoría de una asignatura de primaria, Year 6 de un colegio británico). Copia el contenido de la imagen como texto limpio: títulos, definiciones, datos, fechas, cifras, listas y vocabulario clave. Si hay esquemas, tablas o dibujos con información, descríbelos brevemente con palabras. Conserva el idioma original, no traduzcas, no resumas y no inventes nada. Ignora números de página y decoración. Separa los apartados con una línea en blanco. Responde SOLO con el texto.';
+const NOTES_SYS='Eres un transcriptor fiel de apuntes escolares (teoría de una asignatura de primaria, Year 6 de un colegio británico). Antes de nada, mira si la foto está girada y escribe en la primera línea EXACTAMENTE una de estas cuatro opciones, la que haga que el texto quede recto (0 = ya está recto; 90, 180 o 270 = grados que hay que girar la imagen en el sentido de las agujas del reloj para enderezarla): "ROT:0", "ROT:90", "ROT:180" o "ROT:270". Dedica atención especial a distinguir 90 de 270: mira hacia qué lado quedan las cabezas de las letras. Deja una línea en blanco y a continuación copia el contenido de la imagen como texto limpio: títulos, definiciones, datos, fechas, cifras, listas y vocabulario clave. Si hay esquemas, tablas o dibujos con información, descríbelos brevemente con palabras. Conserva el idioma original, no traduzcas, no resumas y no inventes nada. Ignora números de página y decoración. Separa los apartados con una línea en blanco. No incluyas nada más antes de la línea ROT.';
 async function aiText(messages,max){
   let r;try{r=await aiCall('vision','/v1/chat/completions',{model:state.ai.visionModel||'gpt-4o',temperature:0,max_tokens:max||1500,messages});}catch(e){throw new Error('Sin conexión con el servidor');}
   if(!r.ok)throw new Error(apiErr(r.status));
   const j=await r.json();return (j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||'').trim();
 }
 async function readNotesPhoto(dataUrl){
-  const t=await aiText([{role:'system',content:NOTES_SYS},{role:'user',content:[{type:'text',text:'Transcribe estos apuntes.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}],1500);
+  let t=await aiText([{role:'system',content:NOTES_SYS},{role:'user',content:[{type:'text',text:'Transcribe estos apuntes.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}],1500);
   if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja recta.');
-  return t.replace(/^```[a-z]*\n?|```$/g,'').trim();
+  t=t.replace(/^```[a-z]*\n?|```$/g,'').trim();
+  let rot=null;const m=t.match(/^ROT:\s*(0|90|180|270)\s*\n+/i);if(m){rot=+m[1];t=t.slice(m[0].length).trim();}
+  if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja recta.');
+  return {text:t,rot};
 }
 function genPrompt(exam,chunk,ci,nc,k){
   const mixed=exam.mode==='mixto',tt=exam.mode==='test'?'tipo test':exam.mode==='red'?'de respuesta redactada':`mixtas (${Math.ceil(k/2)} tipo test y ${Math.floor(k/2)} de respuesta redactada)`;
@@ -1524,7 +1527,7 @@ async function readNotesPhotos(files){
     try{
       const info=await fileToJpegInfo(files[i],1800),thumb=await fileToJpeg(files[i],260);
       entry.full=info.url;entry.thumb=thumb;entry.rot=info.h>info.w?90:0;
-      entry.text=await readNotesPhoto(entry.full);out.push(entry.text);okN++;
+      const r=await readNotesPhoto(entry.full);entry.text=r.text;if(r.rot!==null)entry.rot=r.rot;out.push(entry.text);okN++;
     }catch(er){entry.err=er.message;errN++;}
     gallery.push(entry);
   }
