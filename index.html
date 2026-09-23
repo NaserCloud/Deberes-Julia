@@ -1545,21 +1545,34 @@ function exPhotoOverlay(examId){
     ?'max-width:52vh;max-height:80vw;width:auto;height:auto'
     :'max-width:100%;max-height:52vh;width:auto;height:auto';
   return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.exPhotoClose()"><div class="exph-box">
-  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b>Foto ${L.indexOf(p)+1} de ${L.length}</b><span class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exPhotoRotate" data-id="${esc(p.id)}">🔄 Girar</button><button class="btn danger" style="min-height:36px;padding:4px 12px" data-act="exPhotoDel" data-id="${esc(p.id)}">🗑 Eliminar</button><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></span></div>
+  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><span><b>Foto ${L.indexOf(p)+1} de ${L.length}</b>${p.name?`<br><small class="mute" style="font-size:.8rem;word-break:break-all">📄 ${esc(p.name)}</small>`:''}</span><span class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exPhotoRotate" data-id="${esc(p.id)}">🔄 Girar</button><button class="btn danger" style="min-height:36px;padding:4px 12px" data-act="exPhotoDel" data-id="${esc(p.id)}">🗑 Eliminar</button><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></span></div>
   <div style="text-align:center;padding:${turned?'26px 0':'0'};margin-top:10px">
   <img src="${p.full||p.thumb}" alt="Foto de apuntes" style="${imgStyle};transform:rotate(${rot}deg);border-radius:10px;display:inline-block"></div>
   <div class="mute" style="margin:10px 0 4px;font-weight:800">Lo que ha leído la IA en esta foto:</div>
   <div class="marked" style="max-height:22vh;overflow:auto;font-size:.95rem;line-height:1.6">${p.err?`<span class="wrong">${esc(p.err)}</span>`:esc(p.text||'(sin texto)')}</div></div></div>`;
+}
+/* Huella digital exacta del archivo (SHA-256 de sus bytes), para detectar por código -sin IA- si
+   dos fotos subidas son literalmente el mismo archivo (la misma foto subida dos veces). */
+async function fileHash(file){
+  try{
+    const buf=await file.arrayBuffer();
+    const digest=await crypto.subtle.digest('SHA-256',buf);
+    return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }catch(e){return '';}
 }
 async function readNotesPhotos(files){
   const e=exGet(ui.exId),st=()=>$('#exSt');if(!e)return;
   if(!state.ai.on){if(st())st().textContent='';return toast('Activa la IA en Ajustes para leer fotos');}
   const total=files.length;files=files.slice(0,EX_MAXPH);
   const gallery=state.examFotos[e.id]=(state.examFotos[e.id]||[]);
-  const out=[];let okN=0,errN=0;
+  const out=[];let okN=0,errN=0,dupN=0;
+  const seenHashes=new Set(gallery.map(p=>p.hash).filter(Boolean));
   for(let i=0;i<files.length;i++){
+    const hash=await fileHash(files[i]);
+    if(hash&&seenHashes.has(hash)){dupN++;continue;}
+    if(hash)seenHashes.add(hash);
     if(st())st().innerHTML=`🔎 Leyendo la foto ${i+1} de ${files.length}…`;
-    const entry={id:uid(),thumb:'',full:'',text:'',err:'',rot:0};
+    const entry={id:uid(),thumb:'',full:'',text:'',err:'',rot:0,hash,name:files[i].name||''};
     try{
       const info=await fileToJpegInfo(files[i],1800),thumb=await fileToJpeg(files[i],260);
       entry.full=info.url;entry.thumb=thumb;
@@ -1575,8 +1588,10 @@ async function readNotesPhotos(files){
   const s2=$('#exSt');
   if(s2){
     let msg=okN?`✅ <b>${okN} ${okN===1?'foto leída':'fotos leídas'}.</b> Revisa el texto por si la IA se ha equivocado y luego pulsa «Generar preguntas».`:'';
+    if(dupN)msg+=(msg?' ':'')+`♻️ ${dupN} ${dupN===1?'foto estaba repetida (ya la tenías subida) y no se ha vuelto a contar':'fotos estaban repetidas (ya las tenías subidas) y no se han vuelto a contar'}.`;
     if(errN)msg+=(msg?' ':'')+`⚠️ ${errN} ${errN===1?'foto no se pudo leer':'fotos no se pudieron leer'} (toca su miniatura para ver el motivo).`;
     if(total>EX_MAXPH)msg+=` <br><small>Has subido ${total}; solo se procesan ${EX_MAXPH} de golpe. Sube el resto en otra tanda: se añadirá a lo que ya tienes.</small>`;
+    if(!msg)msg='Esa foto ya estaba subida, no se ha vuelto a añadir.';
     s2.innerHTML=msg;
   }
 }
