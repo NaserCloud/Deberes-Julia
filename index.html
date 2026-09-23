@@ -494,7 +494,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -1395,6 +1395,7 @@ const EX_MODES={test:'Tipo test',red:'Respuesta redactada',mixto:'Mixto (test + 
 const exDaysTxt=d=>{const n=Math.round((new Date(d+'T12:00:00')-new Date(todayStr()+'T12:00:00'))/864e5);return n===0?'hoy':n===1?'mañana':n>1?`en ${n} días`:n===-1?'ayer':`hace ${-n} días`;};
 const exShortDate=d=>new Date(d+'T12:00:00').toLocaleDateString('es-ES',{day:'numeric',month:'short'});
 const exGet=id=>state.examenes.find(e=>e.id===id);
+const exAddDays=(d,n)=>{const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()+n);return dt.toLocaleDateString('sv-SE');};
 const langRule=l=>l==='es'?'Escribe todo en español.':l==='en'?'Write everything in English.':'Escribe las preguntas y respuestas en el MISMO idioma en que están escritos los apuntes (si están en inglés, en inglés; si están en español, en español).';
 const NOTES_SYS='Eres un transcriptor fiel de apuntes escolares (teoría de una asignatura de primaria, Year 6 de un colegio británico). Copia el contenido de la imagen como texto limpio: títulos, definiciones, datos, fechas, cifras, listas y vocabulario clave. Si hay esquemas, tablas o dibujos con información, descríbelos brevemente con palabras. Conserva el idioma original, no traduzcas, no resumas y no inventes nada. Ignora números de página y decoración. Separa los apartados con una línea en blanco. Responde SOLO con el texto.';
 async function aiText(messages,max){
@@ -1496,9 +1497,26 @@ function qCard(q,i){
   body+=`<label class="f" style="margin-top:6px"><small class="mute">Explicación (opcional)</small><input type="text" data-exq="e" data-i="${i}" value="${esc(q.e||'')}"></label>`;
   return `<div class="panel" style="${on?'':'opacity:.5'}"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span><b>#${i+1}</b> <small class="mute">${q.t==='test'?'Test':'Redactada'}${q.fact?' · '+esc(q.fact):''}</small></span><span class="row"><label class="f" style="margin:0"><input type="checkbox" data-exq="on" data-i="${i}" ${on?'checked':''}> Incluir</label><button class="btn danger" data-act="exQDel" data-i="${i}">🗑</button></span></div>${body}</div>`;
 }
+function exCompactView(t,e){
+  const act=e.pool.filter(q=>!q.off).length;
+  const nph=(state.examFotos[e.id]||[]).length;
+  t.innerHTML=`<button class="link" data-act="exBack">← Todos los exámenes</button>
+  <div class="panel" style="border-color:var(--ok);background:var(--okbg)">
+  <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
+  <div><h3 style="margin:0 0 4px">✅ ${esc(e.title||'(sin título)')}</h3>
+  <small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · ${e.n} preguntas por examen · banco de ${act}${nph?` · ${nph} ${nph===1?'foto':'fotos'}`:''}</small></div>
+  <span class="row" style="gap:6px;flex-wrap:wrap">
+  <button class="btn" data-act="exExpand" data-id="${esc(e.id)}">✏️ Ver / editar</button>
+  <button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button>
+  </span></div>
+  <p class="mute" style="margin:8px 0 0">✅ Publicado: Julia ya puede practicar este examen. Minimizado para no llenar la pantalla si tienes varios a la vez.</p>
+  </div>`;
+}
 function exEditView(t,e){
+  if(e.status==='ready'&&ui.exExpand!==e.id)return exCompactView(t,e);
   const act=e.pool.filter(q=>!q.off).length;
   t.innerHTML=`<button class="link" data-act="exBack">← Todos los exámenes</button>
+  ${e.status==='ready'?'<div class="row" style="margin-bottom:6px"><button class="btn" data-act="exMinim">🙈 Minimizar</button></div>':''}
   <div class="panel"><h3 style="margin-top:0">📝 Datos del examen</h3>
   <div class="grid2"><label class="f">Título<input type="text" data-exf="title" value="${esc(e.title)}" placeholder="Ej.: Los romanos — Year 6"></label>
   <label class="f">Fecha del examen<input type="date" data-exf="date" value="${esc(e.date)}"></label>
@@ -1514,7 +1532,11 @@ function exEditView(t,e){
   <label class="f">Texto de los apuntes (revísalo y corrígelo si hace falta)<textarea data-exf="notes" style="min-height:200px" placeholder="Sube fotos o pega aquí el texto de la teoría.">${esc(e.notes)}</textarea></label></div>
   ${exPhotoOverlay(e.id)}
   <div class="panel"><h3 style="margin-top:0">🧠 Preguntas <small class="mute">(${act} activas de ${e.pool.length})</small></h3>
-  <div class="row"><button class="btn primary" data-act="exGen" id="exGenB">${e.pool.length?'➕ Generar más preguntas':'🧠 Generar preguntas'}</button></div><div id="exGst" class="mute" style="margin:6px 0">${e.pool.length?'Revisa la lista: corrige, quita o desmarca las que no quieras.':'Se generan con IA a partir del texto de arriba (unos céntimos).'}</div>
+  <div class="row" style="flex-wrap:wrap">
+  <button class="btn primary" data-act="exGen" id="exGenB">${e.pool.length?'➕ Generar más preguntas':'🧠 Generar preguntas'}</button>
+  ${act>=e.n*2?`<button class="btn" data-act="exSplit">✂️ Dividir en ${Math.floor(act/e.n)} exámenes de ${e.n}</button>`:''}
+  </div><div id="exGst" class="mute" style="margin:6px 0">${e.pool.length?'Revisa la lista: corrige, quita o desmarca las que no quieras.':'Se generan con IA a partir del texto de arriba (unos céntimos).'}</div>
+  ${act>=e.n*2?`<p class="mute" style="margin:0 0 6px;font-size:.85rem">Tienes preguntas de sobra: puedes dividirlas en varios exámenes distintos (uno para cada día, por ejemplo) en vez de un único examen con banco grande.</p>`:''}
   ${(e.dropped||[]).length?`<details><summary class="mute">La app ha descartado ${e.dropped.length} preguntas repetidas o casi iguales</summary><small class="mute">${e.dropped.map(d=>`• ${esc(d.q)}<br>&nbsp;&nbsp;<i>${esc(d.why)}</i>`).join('<br>')}</small></details>`:''}</div>
   ${e.pool.map((q,i)=>qCard(q,i)).join('')}
   <div class="panel" style="${e.status==='ready'?'border-color:var(--ok);background:var(--okbg)':''}"><b>${e.status==='ready'?'✅ Publicado: Julia puede practicar este examen':'Sin publicar: Julia todavía no lo ve'}</b><div class="row" style="margin-top:8px"><button class="btn ${e.status==='ready'?'':'success big'}" data-act="exPub">${e.status==='ready'?'Retirar (volver a borrador)':'✅ Publicar examen'}</button></div></div>`;
@@ -1596,9 +1618,31 @@ async function readNotesPhotos(files){
   }
 }
 const examActions={
-  exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',pool:[],dropped:[],status:'draft'};state.examenes.push(e);save();ui.exId=e.id;render();},
-  exOpen(b){ui.exId=b.dataset.id;render();},
-  exBack(){ui.exId=null;render();},
+  exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',pool:[],dropped:[],status:'draft'};state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;render();},
+  exOpen(b){ui.exId=b.dataset.id;ui.exExpand=null;render();},
+  exBack(){ui.exId=null;ui.exExpand=null;render();},
+  exExpand(b){ui.exExpand=b.dataset.id;render();},
+  exMinim(){ui.exExpand=null;render();},
+  exSplit(){
+    const e=exGet(ui.exId);if(!e)return;
+    const act=e.pool.filter(q=>!q.off);
+    const total=Math.floor(act.length/e.n);
+    if(total<2)return toast(`Necesitas al menos ${e.n*2} preguntas activas para dividir en varios exámenes (ahora tienes ${act.length}).`);
+    if(!confirm(`Esto convertirá este examen en ${total} exámenes de ${e.n} preguntas cada uno, en días consecutivos a partir del ${exShortDate(e.date)}. Las preguntas que sobren se quedarán guardadas (desmarcadas) por si las quieres usar luego. ¿Continuar?`))return;
+    const shuffled=act.slice();
+    for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
+    const usedIds=new Set(shuffled.slice(0,total*e.n).map(q=>q.id));
+    const leftover=e.pool.filter(q=>!usedIds.has(q.id)).map(q=>({...q,off:true}));
+    const baseTitle=e.title.replace(/\s*\(\d+\)\s*$/,'').trim();
+    e.title=`${baseTitle} (1)`;
+    e.pool=shuffled.slice(0,e.n).concat(leftover);
+    e.status='draft';
+    for(let k=1;k<total;k++){
+      state.examenes.push({id:'e'+uid(),title:`${baseTitle} (${k+1})`,date:exAddDays(e.date,k),mode:e.mode,n:e.n,bank:e.bank,lang:e.lang,notes:'',pool:shuffled.slice(k*e.n,(k+1)*e.n),dropped:[],status:'draft'});
+    }
+    ui.exExpand=null;save();render();
+    toast(`Creados ${total} exámenes de ${e.n} preguntas cada uno. Revísalos y publícalos.`);
+  },
   exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){delete state.examFotos[b.dataset.id];state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
   exPhotoOpen(b){ui.exPhotoView=b.dataset.id;render();},
   exPhotoClose(){ui.exPhotoView=null;render();},
