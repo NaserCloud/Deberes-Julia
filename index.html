@@ -1521,7 +1521,7 @@ function qCard(q,i){
 function exCompactView(t,e){
   const act=e.pool.filter(q=>!q.off).length;
   const nph=(state.examFotos[e.id]||[]).length;
-  t.innerHTML=`<button class="link" data-act="exBack">← Todos los exámenes</button>
+  t.innerHTML=`<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px"><button class="link" data-act="exBack">← Todos los exámenes</button><button class="btn" data-act="exNew">＋ Nuevo examen</button></div>
   <div class="panel" style="border-color:var(--ok);background:var(--okbg)">
   <div class="row" style="justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px">
   <div><h3 style="margin:0 0 4px">✅ ${esc(e.title||'(sin título)')}</h3>
@@ -1536,8 +1536,7 @@ function exCompactView(t,e){
 function exEditView(t,e){
   if(e.status==='ready'&&ui.exExpand!==e.id)return exCompactView(t,e);
   const act=e.pool.filter(q=>!q.off).length;
-  t.innerHTML=`<button class="link" data-act="exBack">← Todos los exámenes</button>
-  ${e.status==='ready'?'<div class="row" style="margin-bottom:6px"><button class="btn" data-act="exMinim">🙈 Minimizar</button></div>':''}
+  t.innerHTML=`<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px"><button class="link" data-act="exBack">← Todos los exámenes</button><span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="exNew">＋ Nuevo examen</button>${e.status==='ready'?'<button class="btn" data-act="exMinim">🙈 Minimizar</button>':''}</span></div>
   <div class="panel"><h3 style="margin-top:0">📝 Datos del examen</h3>
   <div class="grid2"><label class="f">Título<input type="text" data-exf="title" value="${esc(e.title)}" placeholder="Ej.: Los romanos — Year 6"></label>
   <label class="f">Fecha del examen<input type="date" data-exf="date" value="${esc(e.date)}"></label>
