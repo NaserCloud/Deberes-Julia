@@ -494,7 +494,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[]};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -1397,7 +1397,7 @@ const exShortDate=d=>new Date(d+'T12:00:00').toLocaleDateString('es-ES',{day:'nu
 const exGet=id=>state.examenes.find(e=>e.id===id);
 const exAddDays=(d,n)=>{const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()+n);return dt.toLocaleDateString('sv-SE');};
 const langRule=l=>l==='es'?'Escribe todo en español.':l==='en'?'Write everything in English.':'Escribe las preguntas y respuestas en el MISMO idioma en que están escritos los apuntes (si están en inglés, en inglés; si están en español, en español).';
-const NOTES_SYS='Eres un transcriptor fiel de apuntes escolares (teoría de una asignatura de primaria, Year 6 de un colegio británico). Copia el contenido de la imagen como texto limpio: títulos, definiciones, datos, fechas, cifras, listas y vocabulario clave. Si hay esquemas, tablas o dibujos con información, descríbelos brevemente con palabras. Conserva el idioma original, no traduzcas, no resumas y no inventes nada. Ignora números de página y decoración. Separa los apartados con una línea en blanco. Responde SOLO con el texto.';
+const NOTES_SYS='Eres un transcriptor fiel de apuntes escolares (teoría de una asignatura de primaria, Year 6 de un colegio británico). Copia el contenido de la imagen como texto limpio: títulos, definiciones, datos, fechas, cifras, listas y vocabulario clave. Si hay esquemas, tablas o dibujos con información, descríbelos brevemente con palabras. Si en la imagen hay ejercicios, problemas o preguntas de ejemplo (estén resueltos o no, con o sin la solución escrita), transcríbelos TAMBIÉN tal cual, aparte del resto, bajo un apartado final titulado exactamente "EJERCICIOS DE EJEMPLO:" (enunciado completo y su respuesta/solución si la hay) — sirven para saber qué tipo de preguntas se hacen sobre este tema. Conserva el idioma original, no traduzcas, no resumas y no inventes nada. Ignora números de página y decoración. Separa los apartados con una línea en blanco. Responde SOLO con el texto.';
 async function aiText(messages,max){
   let r;try{r=await aiCall('vision','/v1/chat/completions',{model:state.ai.visionModel||'gpt-4o',temperature:0,max_tokens:max||1500,messages});}catch(e){throw new Error('Sin conexión con el servidor');}
   if(!r.ok)throw new Error(apiErr(r.status));
@@ -1447,7 +1447,8 @@ function genPrompt(exam,chunk,ci,nc,k){
 3) Preguntas claras y autocontenidas, adecuadas a 10-11 años. Sin «según el texto». Sin verdadero/falso ni sí/no.
 4) Test: 4 opciones plausibles y claramente distintas, solo una correcta, sin «todas las anteriores». La opción correcta no debe ser siempre la más larga.
 5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una).
-6) ${langRule(exam.lang)}
+6) Si los apuntes incluyen un apartado "EJERCICIOS DE EJEMPLO", son ejercicios reales de este tema: úsalos como referencia del tipo de pregunta, el formato y la dificultad esperados (mismo estilo, pero no los copies literalmente ni reutilices los mismos números o datos si ya están cubiertos por otra pregunta).
+7) ${langRule(exam.lang)}
 Devuelve SOLO un JSON válido: {"questions":[...]} con objetos de estos formatos:
 test: {"t":"test","q":"...","o":["...","...","...","..."],"c":0,"e":"explicación breve","fact":"dato evaluado en 3-6 palabras"}
 redactada: {"t":"red","q":"...","a":"respuesta modelo","k":["clave1","clave2"],"e":"","fact":"dato evaluado en 3-6 palabras"}
@@ -1486,8 +1487,28 @@ function tabExamenes(){
   const t=$('#tab');
   if(ui.exId){const e=exGet(ui.exId);if(e)return exEditView(t,e);ui.exId=null;}
   const L=state.examenes.slice().sort((a,b)=>a.date<b.date?1:-1);
-  t.innerHTML=`<div class="row" style="margin:6px 0"><button class="btn primary" data-act="exNew">＋ Nuevo examen</button></div>
-  ${L.map(e=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(e.title||'(sin título)')}</b> ${e.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicado</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · ${e.n} preguntas por examen · banco de ${e.pool.filter(q=>!q.off).length}</small></span><span class="row"><button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay exámenes. Crea uno, sube fotos de la teoría y la app generará el banco de preguntas.</p>'}`;
+  const combOn=ui.exCombineOn,sel=ui.exCombineSel||[];
+  const combBar=combOn?`<div class="panel" style="border-color:var(--pri)">
+  <b>🔗 Combinar en examen final</b> <span class="mute">· marca los exámenes que quieres juntar (mínimo 2)</span>
+  <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
+  <button class="btn primary" data-act="exCombineGo" ${sel.length<2?'disabled':''}>✅ Crear examen final (${sel.length} seleccionados)</button>
+  <button class="btn" data-act="exCombineCancel">✕ Cancelar</button>
+  </div></div>`:'';
+  t.innerHTML=`<div class="row" style="margin:6px 0;flex-wrap:wrap;gap:8px">
+  <button class="btn primary" data-act="exNew">＋ Nuevo examen</button>
+  ${L.length>=2?`<button class="btn" data-act="${combOn?'exCombineCancel':'exCombineStart'}">${combOn?'✕ Cancelar combinar':'🔗 Combinar exámenes en uno final'}</button>`:''}
+  </div>
+  ${combBar}
+  ${L.map(e=>{
+    const act=e.pool.filter(q=>!q.off).length,checked=sel.includes(e.id);
+    return `<div class="panel row" style="justify-content:space-between;${checked?'border-color:var(--pri);background:#eef2ff':''}">
+    <span class="row" style="gap:10px;align-items:flex-start">
+    ${combOn?`<input type="checkbox" data-act="exCombineTog" data-id="${esc(e.id)}" ${checked?'checked':''} style="width:22px;height:22px;margin-top:2px;flex:none">`:''}
+    <span><b>${esc(e.title||'(sin título)')}</b> ${e.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicado</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · ${e.n} preguntas por examen · banco de ${act}</small></span>
+    </span>
+    ${combOn?'':`<span class="row"><button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span>`}
+    </div>`;
+  }).join('')||'<p class="mute">Aún no hay exámenes. Crea uno, sube fotos de la teoría y la app generará el banco de preguntas.</p>'}`;
 }
 function qCard(q,i){
   const on=!q.off;
@@ -1618,7 +1639,7 @@ async function readNotesPhotos(files){
   }
 }
 const examActions={
-  exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',pool:[],dropped:[],status:'draft'};state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;render();},
+  exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',pool:[],dropped:[],status:'draft'};state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;ui.exCombineOn=false;ui.exCombineSel=[];render();},
   exOpen(b){ui.exId=b.dataset.id;ui.exExpand=null;render();},
   exBack(){ui.exId=null;ui.exExpand=null;render();},
   exExpand(b){ui.exExpand=b.dataset.id;render();},
@@ -1644,6 +1665,28 @@ const examActions={
     toast(`Creados ${total} exámenes de ${e.n} preguntas cada uno. Revísalos y publícalos.`);
   },
   exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){delete state.examFotos[b.dataset.id];state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
+  exCombineStart(){ui.exCombineOn=true;ui.exCombineSel=[];render();},
+  exCombineCancel(){ui.exCombineOn=false;ui.exCombineSel=[];render();},
+  exCombineTog(b){ui.exCombineSel=ui.exCombineSel||[];const id=b.dataset.id;
+    if(b.checked){if(!ui.exCombineSel.includes(id))ui.exCombineSel.push(id);}
+    else ui.exCombineSel=ui.exCombineSel.filter(x=>x!==id);
+    render();},
+  exCombineGo(){
+    const sel=ui.exCombineSel||[];if(sel.length<2)return toast('Selecciona al menos 2 exámenes para combinar');
+    const exams=state.examenes.filter(x=>sel.includes(x.id)).sort((a,b)=>a.date<b.date?-1:1);
+    const seen=new Set(),pool=[];
+    exams.forEach(e=>e.pool.filter(q=>!q.off).forEach(q=>{if(!seen.has(q.id)){seen.add(q.id);pool.push(Object.assign({},q));}}));
+    if(!pool.length)return toast('Los exámenes seleccionados no tienen preguntas activas');
+    const mixed=exams.some(e=>e.mode==='mixto')||(exams.some(e=>e.mode==='test')&&exams.some(e=>e.mode==='red'));
+    const mode=mixed?'mixto':exams[0].mode;
+    let title='Examen final: '+exams.map(e=>e.title||'(sin título)').join(' + ');
+    if(title.length>120)title=title.slice(0,117)+'…';
+    const ne={id:'e'+uid(),title,date:todayStr(),mode,n:Math.min(pool.length,40),bank:pool.length,lang:exams[0].lang||'auto',notes:'',pool,dropped:[],status:'draft'};
+    state.examenes.push(ne);
+    ui.exCombineOn=false;ui.exCombineSel=[];ui.exId=ne.id;ui.exExpand=null;
+    save();render();
+    toast(`Examen final creado con ${pool.length} preguntas de ${exams.length} exámenes. Revísalo y publícalo.`);
+  },
   exPhotoOpen(b){ui.exPhotoView=b.dataset.id;render();},
   exPhotoClose(){ui.exPhotoView=null;render();},
   exPhotoRotate(b){const e=exGet(ui.exId);const L=e&&state.examFotos[e.id]||[];const p=L.find(x=>x.id===b.dataset.id);if(!p)return;p.rot=((p.rot||0)+90)%360;save();render();},
