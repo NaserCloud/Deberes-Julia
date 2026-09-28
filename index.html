@@ -478,6 +478,195 @@ function spokenSegs(tokens,punct){
   flush(0);return segs;
 }
 // </PURE>
+/* ================= teoría del dictado (código, sin IA) =================
+   Analiza el TEXTO CORRECTO de un dictado (sin compararlo con nada escrito)
+   y detecta con reglas/expresiones regulares qué normas ortográficas va a
+   encontrarse Julia, para poder estudiarlas antes de hacer el dictado. */
+const TEORIA_GROUP_LABEL={mayus:'✍️ Mayúsculas',tilde:'✨ Tildes y diéresis',h:'🔤 La letra H',bv:'🅱️ B y V',gj:'🅶 G y J',lly:'🇾 LL e Y',rr:'🇷 R y RR',czs:'🇨 C, Z, S, QU y K',x:'✖️ La letra X',mn:'🇲 M y N',otros:'❓ Palabras que se pueden confundir'};
+const TEORIA_GROUP_ORDER=['mayus','tilde','h','bv','gj','lly','rr','czs','x','mn','otros'];
+function ruleTextById(id){const r=RULES.find(rr=>rr.id===id);return r&&typeof r.text==='string'?r.text:null;}
+function idxOf(s,ch){const out=[];for(let i=0;i<s.length;i++)if(s[i]===ch)out.push(i);return out;}
+function classifyH(wcs){
+  if(!wcs.includes('h'))return null;
+  if(/^h(ue|ie|ia|ui)/.test(wcs))return 'h_hue';
+  if(HABER.includes(wcs))return 'h_haber';
+  if(/^hum[aeiou]/.test(wcs))return 'h_hum';
+  if(/^(hidr|hiper|hipo|hetero|homo|hepta|hexa|hemi|helio|hema|hemo)/.test(wcs))return 'h_griego';
+  if(/^(des|in|re|pro|ex|co|sobre|contra)h/.test(wcs))return 'h_pref';
+  return 'h_gen';
+}
+function classifyB(wcs){
+  if(!wcs.includes('b'))return null;
+  if(/^bibl/.test(wcs))return 'b_bibl';
+  if(/^(bien|bene)/.test(wcs))return 'b_bien';
+  if(/(aba|abas|abamos|abais|aban)$/.test(wcs))return 'b_aba';
+  if(/^(iba|ibas|ibamos|ibais|iban)$/.test(wcs))return 'b_iba';
+  if(/(bilidad|bundo|bunda)$/.test(wcs))return 'b_bilidad';
+  if(/bles?$/.test(wcs))return 'b_ble';
+  if(/bir$/.test(wcs))return 'b_bir';
+  if(/ber$/.test(wcs))return 'b_ber';
+  if(/^(sub|obs|ob|abs|ab)/.test(wcs))return 'b_pref';
+  if(/^bu/.test(wcs))return 'b_bu';
+  if(/^(bici|bisab|bisnie|bizco|bilin|bimens|bianu|bilat|bipe)/.test(wcs))return 'b_bi';
+  for(const i of idxOf(wcs,'b')){
+    if('lr'.includes(wcs[i+1]||'#'))return 'b_lr';
+    if(wcs[i-1]==='m')return 'b_mb';
+    if(i===wcs.length-1||!'aeiou'.includes(wcs[i+1]||'#'))return 'b_cons';
+  }
+  return 'b_gen';
+}
+function classifyV(wcs){
+  if(!wcs.includes('v'))return null;
+  if(/^ev/.test(wcs))return 'v_ev';
+  if(/^vi(ce|z)/.test(wcs))return 'v_vice';
+  for(const i of idxOf(wcs,'v')){
+    if(wcs[i-1]==='d')return 'v_adv';
+    if(wcs[i-1]==='n')return 'v_nv';
+  }
+  if(/(anduv|estuv|tuv)/.test(wcs))return 'v_uv';
+  if(/(ave|eve|ive|avo|eva|evo|ivo|iva|avos|evos|ivos|ivas)$/.test(wcs))return 'v_ivo';
+  if(/(ver|vir|olver)$/.test(wcs))return 'v_ver';
+  return 'v_gen';
+}
+function classifyG(wcs){
+  if(!wcs.includes('g'))return null;
+  if(/gu[ei]/.test(wcs))return 'gu_ei';
+  if(/g(er|ir)(se)?$/.test(wcs))return 'g_ger';
+  if(/(gencia|gente)s?$/.test(wcs))return 'g_gente';
+  if(/^(geo|gen|gest|germ|gel)/.test(wcs))return 'g_geo';
+  if(/(gia|gio|gion|gico|gica|gional)/.test(wcs))return 'g_gia';
+  if(/gen$/.test(wcs))return 'g_gen';
+  for(const i of idxOf(wcs,'g')){
+    if('ei'.includes(wcs[i+1]||'#'))return 'g_ei';
+    if('aou'.includes(wcs[i+1]||'#'))return 'g_aou';
+    if('lr'.includes(wcs[i+1]||'#'))return 'g_lr';
+  }
+  return null;
+}
+function classifyJ(wcs){
+  if(!wcs.includes('j'))return null;
+  if(/ajes?$/.test(wcs))return 'j_aje';
+  if(/(jero|jera|jeria)s?$/.test(wcs))return 'j_jero';
+  if(/(dij|traj|duj)/.test(wcs))return 'j_dijo';
+  for(const i of idxOf(wcs,'j'))if('aou'.includes(wcs[i+1]||'#'))return 'j_aou';
+  return 'j_gen';
+}
+function classifyLL(wcs){
+  if(!wcs.includes('ll'))return null;
+  if(/(illo|illa|ello|ella)s?$/.test(wcs))return 'll_illo';
+  if(/^(llam|lleg|llev|llor|llov|lluv|llen|llav)/.test(wcs))return 'll_fam';
+  return 'll_gen';
+}
+function classifyY(wcs){
+  if(!wcs.includes('y'))return null;
+  if(/[aeiou]yes$/.test(wcs))return 'y_pl';
+  if(/[aeiou]y(o|eron|endo|era|eras|eran|ese|en|es|e)$/.test(wcs))return 'y_verb';
+  if(/y$/.test(wcs))return 'y_fin';
+  return 'y_gen';
+}
+function classifyRR(wcs){
+  if(wcs.includes('rr'))return 'rr_vv';
+  if(wcs.includes('r')){
+    if(wcs[0]==='r')return 'r_ini';
+    if(/[nls]r/.test(wcs))return 'r_nls';
+  }
+  return null;
+}
+function classifyCZS(wcs){
+  const ids=[];
+  if(/ccion(es)?$/.test(wcs))ids.push('cc');
+  else if(/cion(es)?$/.test(wcs))ids.push('cion');
+  if(/sion(es)?$/.test(wcs))ids.push('sion');
+  if(/(anza|eza|azo|aza)s?$/.test(wcs))ids.push('z_anza');
+  if(/z$/.test(wcs))ids.push('z_fin');
+  if(/(ancia|encia)s?$/.test(wcs))ids.push('c_ancia');
+  if(/c(er|ir)(se)?$/.test(wcs))ids.push('c_cer');
+  if(/(cito|cita|cillo|cilla)s?$/.test(wcs))ids.push('c_cito');
+  if(/(oso|osa)s?$/.test(wcs))ids.push('s_oso');
+  if(/isim[oa]s?$/.test(wcs))ids.push('s_isimo');
+  if(/(esa|isa)s?$/.test(wcs))ids.push('s_esa');
+  if(/qu[ei]/.test(wcs))ids.push('qu');
+  if(/k/.test(wcs))ids.push('k');
+  return ids;
+}
+function classifyX(wcs){
+  const ids=[];
+  if(wcs.includes('x')){
+    if(/^extra/.test(wcs))ids.push('x_extra');
+    else if(/^ex(pl|pr)/.test(wcs))ids.push('x_pl');
+    else if(/^ex/.test(wcs))ids.push('x_ex');
+    else ids.push('x_gen');
+  }
+  if(/^es[ptc]/.test(wcs))ids.push('s_es');
+  return ids;
+}
+function classifyMN(wcs){
+  const ids=[];
+  for(const i of idxOf(wcs,'m'))if('pb'.includes(wcs[i+1]||'#')){ids.push('mpb');break;}
+  for(const i of idxOf(wcs,'n'))if(wcs[i+1]==='v'){ids.push('nv');break;}
+  return ids;
+}
+function classifyTilde(wl){
+  if(DIAC[wl])return {id:'diac',g:'tilde',text:DIAC[wl]};
+  if(!hasTilde(wl))return null;
+  if(/[aeoáéó][íú]|[íú][aeoáéó]/.test(wl))return {id:'hiato',g:'tilde',text:ruleTextById('hiato')};
+  const info=stressInfo(wl);
+  if(info.n===1)return null;
+  if(info.fe===1)return {id:'ag_con',g:'tilde',text:ruleTextById('ag_con')};
+  if(info.fe===2)return {id:'ll_con',g:'tilde',text:ruleTextById('ll_con')};
+  if(info.fe>=3)return {id:'esd',g:'tilde',text:ruleTextById('esd')};
+  return null;
+}
+function homoHits(wcs){
+  const pre=wcs+'|',out=[];
+  Object.keys(HOMO).forEach(k=>{if(k.indexOf(pre)===0)out.push(HOMO[k]);});
+  return out;
+}
+function scanDictadoTheory(text){
+  text=text||'';
+  const words=getWords(text);
+  words.forEach(w=>{const raw=text.slice(0,w.i),p=raw.replace(/[¿¡"«“'(\s]+$/,'');w.ss=p===''||/[.!?…]$/.test(p)||/\n\s*[¿¡"«“(]*$/.test(raw);});
+  const map=new Map();
+  const add=(id,g,txt,example)=>{
+    if(!txt)return;
+    let e=map.get(id);if(!e){e={id,g,text:txt,examples:[]};map.set(id,e);}
+    if(example&&!e.examples.includes(example)&&e.examples.length<4)e.examples.push(example);
+  };
+  const seenWCS=new Set(),propios=new Set();
+  words.forEach(w=>{
+    if(!/\p{L}/u.test(w.t))return;
+    const wl=w.t.toLowerCase(),wcs=strip(wl);
+    if(!w.ss&&w.t[0]&&w.t[0]!==w.t[0].toLowerCase())propios.add(w.t);
+    const tid=classifyTilde(wl);if(tid)add(tid.id,tid.g,tid.text,w.t);
+    if(wl.includes('ü'))add('dier','tilde',ruleTextById('dier'),w.t);
+    homoHits(wcs).forEach((txt,i)=>add('homo_'+wcs+'_'+i,'otros',txt,w.t));
+    if(seenWCS.has(wcs))return;
+    seenWCS.add(wcs);
+    const hid=classifyH(wcs);if(hid)add(hid,'h',ruleTextById(hid),w.t);
+    const bid=classifyB(wcs);if(bid)add(bid,'bv',ruleTextById(bid),w.t);
+    const vid=classifyV(wcs);if(vid)add(vid,'bv',ruleTextById(vid),w.t);
+    const gid=classifyG(wcs);if(gid)add(gid,'gj',ruleTextById(gid),w.t);
+    const jid=classifyJ(wcs);if(jid)add(jid,'gj',ruleTextById(jid),w.t);
+    const llid=classifyLL(wcs);if(llid)add(llid,'lly',ruleTextById(llid),w.t);
+    const yid=classifyY(wcs);if(yid)add(yid,'lly',ruleTextById(yid),w.t);
+    const rrid=classifyRR(wcs);if(rrid)add(rrid,'rr',ruleTextById(rrid),w.t);
+    classifyCZS(wcs).forEach(id=>add(id,'czs',ruleTextById(id),w.t));
+    classifyX(wcs).forEach(id=>add(id,'x',ruleTextById(id),w.t));
+    classifyMN(wcs).forEach(id=>add(id,'mn',ruleTextById(id),w.t));
+  });
+  const sentences=(text.match(/[.!?…]+(\s|$)/g)||[]).length+1;
+  if(sentences>=2)add('may_ini','mayus',ruleTextById('may_ini'),null);
+  if(propios.size)Array.from(propios).slice(0,6).forEach(p=>add('may_prop','mayus',ruleTextById('may_prop'),p));
+  return TEORIA_GROUP_ORDER.map(g=>({g,label:TEORIA_GROUP_LABEL[g],items:Array.from(map.values()).filter(it=>it.g===g)})).filter(gr=>gr.items.length);
+}
+function teoriaHTML(text){
+  let groups;
+  try{groups=scanDictadoTheory(text);}catch(e){return '';}
+  if(!groups.length)return '';
+  return `<details class="panel" open style="margin-bottom:10px;border-color:var(--pri)"><summary style="cursor:pointer;font-weight:800;font-size:1.05rem">📖 Teoría de este dictado <small class="mute" style="font-weight:400">(repásala antes de empezar)</small></summary>
+  <div style="margin-top:10px">${groups.map(gr=>`<div style="margin-bottom:12px"><b>${esc(gr.label)}</b>${gr.items.map(it=>`<div style="margin:6px 0 6px 4px;padding:8px 10px;background:#f6f5ff;border-radius:10px"><div>${esc(it.text)}</div>${it.examples.length?`<div class="mute" style="margin-top:4px;font-size:.85rem">${it.examples.length>1?'Ejemplos':'Ejemplo'} en el texto: ${it.examples.map(e=>`<b>${esc(e)}</b>`).join(', ')}</div>`:''}</div>`).join('')}</div>`).join('')}</div>
+  </details>`;
+}
 /* ================= estado ================= */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
@@ -726,7 +915,7 @@ function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
-  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres}[ui.screen]||renderHome)();
+  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy}[ui.screen]||renderHome)();
 }
 function renderList(){
   const L=state.dictados;
@@ -738,6 +927,7 @@ const rateLabel=r=>r<.6?'Muy lenta':r<.8?'Lenta':r<1?'Normal':'Rápida';
 function renderRun(){
   const d=state.dictados.find(x=>x.id===ui.dict);if(!d){ui.screen='list';return render();}
   app.innerHTML=`<button class="link" data-act="backList">${ui.item?'← Deberes de hoy':'← Dictados'}</button><h2>${esc(d.title)}</h2>
+  ${teoriaHTML(d.text)}
   ${Dict.supported?'':'<div class="panel" style="border-color:var(--bad)">Este navegador no puede leer en voz alta. Prueba con Safari en el iPad.</div>'}
   <div class="row"><button class="btn primary big" data-act="start" id="bStart">▶ Empezar dictado</button>
   <button class="btn" data-act="pause" id="bPause">⏸ Pausa</button><button class="btn" data-act="repeat" id="bRepeat">🔁 Repetir</button>
@@ -1084,6 +1274,7 @@ function sessionReport(s){
     else if(r.kind==='mates'&&r.res){const x=r.res;o.line=`${x.first} de ${x.n} a la primera · ${x.ok} de ${x.n} correctos`;
       o.det=x.wrong.map(w=>`${w.q.replace(/\s*=\s*$/,'')} = ${w.a}${w.given&&w.given.length?' (puso '+w.given.join(', ')+')':''}`);}
     else if(r.kind==='examen'&&r.res){const x=r.res;o.line=`${(Math.round(x.score*10)/10).toString().replace('.',',')} de ${x.n} puntos (${Math.round(100*x.score/x.n)}%)`;o.det=x.qa.filter(a=>exEff(a)<0.7).map(a=>`${a.q} → ${a.correct}`);}
+    else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (sin foto)'}`;}
     else o.line=r.done?'Hecho':'Empezado, sin terminar';
     return o;
   };
@@ -1107,7 +1298,7 @@ function renderHome(){
   app.innerHTML=`<h1>¡Hola, Julia! 👋</h1><p class="mute">¿Qué deberes toca hoy?</p>
   <div class="tiles"><button class="tile" data-act="goToday" style="border-color:var(--pri)"><span class="ico">📅</span><b>Deberes de hoy</b><small>${sub}</small></button>
   <button class="tile" data-act="goList"><span class="ico">✏️</span><b>Dictados</b><small>Escucha y escribe lo que oyes</small></button>
-  ${state.examenes.some(e=>e.status==='ready')?`<button class="tile" data-act="goExams"><span class="ico">📝</span><b>Exámenes</b><small>${(()=>{const n=state.examenes.filter(e=>e.status==='ready'&&e.date>=t).sort((a,b)=>a.date<b.date?-1:1)[0];return n?'Próximo: '+esc(n.title)+' ('+exDaysTxt(n.date)+')':'Practica para tus exámenes';})()}</small></button>`:''}
+  ${state.examenes.some(e=>e.status==='ready')?`<button class="tile" data-act="goExams"><span class="ico">📚</span><b>Teoría y exámenes</b><small>${(()=>{const nx=state.examenes.filter(e=>e.status==='ready'&&e.isExam&&e.date>=t).sort((a,b)=>a.date<b.date?-1:1)[0];return nx?'Próximo examen: '+esc(nx.title)+' ('+exDaysTxt(nx.date)+')':'Estudia la teoría o practica un examen';})()}</small></button>`:''}
   <button class="tile" data-act="goMlist"><span class="ico">➗</span><b>Matemáticas</b><small>Practica cuando quieras</small></button></div>`;
 }
 function renderToday(){
@@ -1231,7 +1422,7 @@ function tfSummaryHTML(){
 function tfRefresh(){const y=scrollY;render();scrollTo(0,y);}
 function tabDeberes(){
   if(!ui.tf)ui.tf=tfDef();
-  const f=ui.tf,t=todayStr(),D=state.dictados,X=state.examenes.filter(e=>e.status==='ready');
+  const f=ui.tf,t=todayStr(),D=state.dictados,X=state.examenes.filter(e=>e.status==='ready'&&e.isExam);
   const tomorrow=new Date(t+'T12:00:00');tomorrow.setDate(tomorrow.getDate()+1);const tm=tomorrow.toLocaleDateString('sv-SE');
   const chip=(on,act,attrs,label)=>`<button class="chip${on?' on':''}" data-act="${act}" ${attrs}>${label}</button>`;
   const byDate={};state.tareas.forEach(x=>(byDate[x.date]=byDate[x.date]||[]).push(x));
@@ -1251,7 +1442,7 @@ function tabDeberes(){
      <div class="lbl">Nivel</div><div class="chips">${[1,2,3].map(l=>chip(f.lv===l,'tfLv',`data-v="${l}"`,MATH_LEVELS[l])).join('')}</div>
      <div class="lbl">Ejercicios por día</div><div class="chips">${[5,10,15,20].map(n=>chip(f.n===n,'tfN',`data-v="${n}"`,n)).join('')}</div></div>`:''}
    ${f.useE&&X.length?`<div class="sub"><b>Examen a practicar</b><select data-tf="eid" style="margin-top:8px">${X.map(e=>`<option value="${esc(e.id)}" ${f.eid===e.id?'selected':''}>${esc(e.title)} (${esc(exShortDate(e.date))})</option>`).join('')}</select><p class="mute" style="margin:6px 0 0;font-size:.85rem">Cada día saldrán preguntas distintas del banco.</p></div>`:''}
-   ${!X.length?`<p class="mute" style="margin:8px 0 0;font-size:.85rem">Para poder elegir «Examen», primero crea y publica uno en la pestaña Exámenes.</p>`:''}</div>
+   ${!X.length?`<p class="mute" style="margin:8px 0 0;font-size:.85rem">Para poder elegir «Examen», primero combina varios temas en uno en la pestaña Teoría y exámenes.</p>`:''}</div>
   <div class="sumbar"><div id="tfSum">${tfSummaryHTML()}</div><div class="row" style="margin-top:10px"><button class="btn primary big" data-act="createTask" ${tfProblem(f)?'disabled':''} id="tfGo">💾 Crear deberes</button></div></div>
   <h3 style="margin-top:24px">📅 Deberes puestos</h3>
   <div class="agenda">${up.map(row).join('')||'<p class="mute">Todavía no hay deberes para hoy ni para los próximos días.</p>'}</div>
@@ -1274,8 +1465,8 @@ const deberesActions={
   tfDate(b){ui.tf.date=b.dataset.v;tfRefresh();},
   tfDays(b){ui.tf.days=+b.dataset.v;tfRefresh();},
   tfSkip(){ui.tf.skip=!ui.tf.skip;tfRefresh();},
-  tfAct(b){const k=b.dataset.k,f=ui.tf;if(k==='E'&&!state.examenes.some(e=>e.status==='ready'))return toast('Primero publica un examen');
-    if(k==='D')f.useD=!f.useD;if(k==='M')f.useM=!f.useM;if(k==='E'){f.useE=!f.useE;if(f.useE&&!f.eid)f.eid=state.examenes.find(e=>e.status==='ready').id;}tfRefresh();},
+  tfAct(b){const k=b.dataset.k,f=ui.tf;if(k==='E'&&!state.examenes.some(e=>e.status==='ready'&&e.isExam))return toast('Primero publica un examen (combinando temas de teoría)');
+    if(k==='D')f.useD=!f.useD;if(k==='M')f.useM=!f.useM;if(k==='E'){f.useE=!f.useE;if(f.useE&&!f.eid)f.eid=state.examenes.find(e=>e.status==='ready'&&e.isExam).id;}tfRefresh();},
   tfDd(b){ui.tf.dd=tog(ui.tf.dd,b.dataset.id);tfRefresh();},
   tfGen(b){ui.tf.gens=tog(ui.tf.gens,b.dataset.k);tfRefresh();},
   tfLv(b){ui.tf.lv=+b.dataset.v;tfRefresh();},
@@ -1486,29 +1677,41 @@ function exRecalc(res){res.score=res.qa.reduce((s,a)=>s+exEff(a),0);return res;}
 function tabExamenes(){
   const t=$('#tab');
   if(ui.exId){const e=exGet(ui.exId);if(e)return exEditView(t,e);ui.exId=null;}
-  const L=state.examenes.slice().sort((a,b)=>a.date<b.date?1:-1);
+  const temas=state.examenes.filter(e=>!e.isExam).sort((a,b)=>a.date<b.date?1:-1);
+  const exams=state.examenes.filter(e=>e.isExam).sort((a,b)=>a.date<b.date?1:-1);
   const combOn=ui.exCombineOn,sel=ui.exCombineSel||[];
   const combBar=combOn?`<div class="panel" style="border-color:var(--pri)">
-  <b>🔗 Combinar en examen final</b> <span class="mute">· marca los exámenes que quieres juntar (mínimo 2)</span>
+  <b>🔗 Combinar temas en un examen</b> <span class="mute">· marca los temas que quieres juntar (mínimo 2)</span>
   <div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">
-  <button class="btn primary" data-act="exCombineGo" ${sel.length<2?'disabled':''}>✅ Crear examen final (${sel.length} seleccionados)</button>
+  <button class="btn primary" data-act="exCombineGo" ${sel.length<2?'disabled':''}>✅ Crear examen (${sel.length} seleccionados)</button>
   <button class="btn" data-act="exCombineCancel">✕ Cancelar</button>
   </div></div>`:'';
-  t.innerHTML=`<div class="row" style="margin:6px 0;flex-wrap:wrap;gap:8px">
-  <button class="btn primary" data-act="exNew">＋ Nuevo examen</button>
-  ${L.length>=2?`<button class="btn" data-act="${combOn?'exCombineCancel':'exCombineStart'}">${combOn?'✕ Cancelar combinar':'🔗 Combinar exámenes en uno final'}</button>`:''}
-  </div>
-  ${combBar}
-  ${L.map(e=>{
-    const act=e.pool.filter(q=>!q.off).length,checked=sel.includes(e.id);
+  const temaRow=e=>{
+    const act=e.pool.filter(q=>!q.off).length,checked=sel.includes(e.id),nph=(state.examFotos[e.id]||[]).length;
     return `<div class="panel row" style="justify-content:space-between;${checked?'border-color:var(--pri);background:#eef2ff':''}">
     <span class="row" style="gap:10px;align-items:flex-start">
     ${combOn?`<input type="checkbox" data-act="exCombineTog" data-id="${esc(e.id)}" ${checked?'checked':''} style="width:22px;height:22px;margin-top:2px;flex:none">`:''}
-    <span><b>${esc(e.title||'(sin título)')}</b> ${e.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicado</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · ${e.n} preguntas por examen · banco de ${act}</small></span>
+    <span><b>${esc(e.title||'(sin título)')}</b> ${e.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicado</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · banco de ${act}${nph?` · ${nph} ${nph===1?'foto':'fotos'}`:''}</small></span>
     </span>
     ${combOn?'':`<span class="row"><button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span>`}
     </div>`;
-  }).join('')||'<p class="mute">Aún no hay exámenes. Crea uno, sube fotos de la teoría y la app generará el banco de preguntas.</p>'}`;
+  };
+  const examRow=e=>{
+    const act=e.pool.filter(q=>!q.off).length;
+    return `<div class="panel row" style="justify-content:space-between">
+    <span><b>${esc(e.title||'(sin título)')}</b> ${e.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicado</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · ${e.n} preguntas por examen · banco de ${act}</small></span>
+    <span class="row"><button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span>
+    </div>`;
+  };
+  t.innerHTML=`<div class="row" style="margin:6px 0;flex-wrap:wrap;gap:8px">
+  <button class="btn primary" data-act="exNew">＋ Nuevo tema de teoría</button>
+  ${temas.length>=2?`<button class="btn" data-act="${combOn?'exCombineCancel':'exCombineStart'}">${combOn?'✕ Cancelar combinar':'🔗 Combinar temas en un examen'}</button>`:''}
+  </div>
+  ${combBar}
+  <h3 style="margin-bottom:6px">📘 Temas de teoría</h3>
+  <p class="mute" style="margin-top:0">Sube fotos de los apuntes; Julia las verá en pantalla y practicará pregunta a pregunta con su tutor, con opción de pasar a «nivel 2» sin ver la foto.</p>
+  ${temas.map(temaRow).join('')||'<p class="mute">Aún no hay temas. Crea uno, sube fotos de la teoría y la app generará el banco de preguntas.</p>'}
+  ${exams.length?`<h3 style="margin-bottom:6px">📝 Exámenes</h3><p class="mute" style="margin-top:0">Se crean combinando varios temas. Julia los hace de un tirón, sin ver la foto, y se corrigen al final.</p>${exams.map(examRow).join('')}`:''}`;
 }
 function qCard(q,i){
   const on=!q.off;
@@ -1530,7 +1733,7 @@ function exCompactView(t,e){
   <button class="btn" data-act="exExpand" data-id="${esc(e.id)}">✏️ Ver / editar</button>
   <button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button>
   </span></div>
-  <p class="mute" style="margin:8px 0 0">✅ Publicado: Julia ya puede practicar este examen. Minimizado para no llenar la pantalla si tienes varios a la vez.</p>
+  <p class="mute" style="margin:8px 0 0">✅ Publicado: Julia ya puede ${e.isExam?'hacer este examen':'estudiar este tema'}. Minimizado para no llenar la pantalla si tienes varios a la vez.</p>
   </div>`;
 }
 function exEditView(t,e){
@@ -1556,10 +1759,10 @@ function exEditView(t,e){
   <button class="btn primary" data-act="exGen" id="exGenB">${e.pool.length?'➕ Generar más preguntas':'🧠 Generar preguntas'}</button>
   ${act>=e.n*2?`<button class="btn" data-act="exSplit">✂️ Dividir en ${Math.floor(act/e.n)} exámenes de ${e.n}</button>`:''}
   </div><div id="exGst" class="mute" style="margin:6px 0">${e.pool.length?'Revisa la lista: corrige, quita o desmarca las que no quieras.':'Se generan con IA a partir del texto de arriba (unos céntimos).'}</div>
-  ${act>=e.n*2?`<p class="mute" style="margin:0 0 6px;font-size:.85rem">Tienes preguntas de sobra: puedes dividirlas en varios exámenes distintos (uno para cada día, por ejemplo) en vez de un único examen con banco grande.</p>`:''}
+  ${act>=e.n*2?`<p class="mute" style="margin:0 0 6px;font-size:.85rem">Tienes preguntas de sobra: puedes dividirlas en varios exámenes distintos (uno para cada día, por ejemplo) en vez de un único tema con banco grande.</p>`:''}
   ${(e.dropped||[]).length?`<details><summary class="mute">La app ha descartado ${e.dropped.length} preguntas repetidas o casi iguales</summary><small class="mute">${e.dropped.map(d=>`• ${esc(d.q)}<br>&nbsp;&nbsp;<i>${esc(d.why)}</i>`).join('<br>')}</small></details>`:''}</div>
   ${e.pool.map((q,i)=>qCard(q,i)).join('')}
-  <div class="panel" style="${e.status==='ready'?'border-color:var(--ok);background:var(--okbg)':''}"><b>${e.status==='ready'?'✅ Publicado: Julia puede practicar este examen':'Sin publicar: Julia todavía no lo ve'}</b><div class="row" style="margin-top:8px"><button class="btn ${e.status==='ready'?'':'success big'}" data-act="exPub">${e.status==='ready'?'Retirar (volver a borrador)':'✅ Publicar examen'}</button></div></div>`;
+  <div class="panel" style="${e.status==='ready'?'border-color:var(--ok);background:var(--okbg)':''}"><b>${e.status==='ready'?(e.isExam?'✅ Publicado: Julia puede hacer este examen':'✅ Publicado: Julia puede estudiar este tema'):(e.isExam?'Sin publicar: Julia todavía no ve este examen':'Sin publicar: Julia todavía no ve este tema')}</b><div class="row" style="margin-top:8px"><button class="btn ${e.status==='ready'?'':'success big'}" data-act="exPub">${e.status==='ready'?'Retirar (volver a borrador)':(e.isExam?'✅ Publicar examen':'✅ Publicar tema')}</button></div></div>`;
 }
 function exInput(t){
   if(t.id==='exPhotos'){if(t.type==='file'&&t.files&&t.files.length){const f=[...t.files];t.value='';readNotesPhotos(f);}return true;}
@@ -1638,7 +1841,7 @@ async function readNotesPhotos(files){
   }
 }
 const examActions={
-  exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',pool:[],dropped:[],status:'draft'};state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;ui.exCombineOn=false;ui.exCombineSel=[];render();},
+  exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',pool:[],dropped:[],status:'draft',isExam:false};state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;ui.exCombineOn=false;ui.exCombineSel=[];render();},
   exOpen(b){ui.exId=b.dataset.id;ui.exExpand=null;render();},
   exBack(){ui.exId=null;ui.exExpand=null;render();},
   exExpand(b){ui.exExpand=b.dataset.id;render();},
@@ -1656,9 +1859,9 @@ const examActions={
     const baseTitle=e.title.replace(/\s*\(\d+\)\s*$/,'').trim();
     e.title=`${baseTitle} (1)`;
     e.pool=shuffled.slice(0,e.n).concat(leftover);
-    e.status='draft';
+    e.status='draft';e.isExam=true;
     for(let k=1;k<total;k++){
-      state.examenes.push({id:'e'+uid(),title:`${baseTitle} (${k+1})`,date:exAddDays(e.date,k),mode:e.mode,n:e.n,bank:e.bank,lang:e.lang,notes:'',pool:shuffled.slice(k*e.n,(k+1)*e.n),dropped:[],status:'draft'});
+      state.examenes.push({id:'e'+uid(),title:`${baseTitle} (${k+1})`,date:exAddDays(e.date,k),mode:e.mode,n:e.n,bank:e.bank,lang:e.lang,notes:'',pool:shuffled.slice(k*e.n,(k+1)*e.n),dropped:[],status:'draft',isExam:true});
     }
     ui.exExpand=null;save();render();
     toast(`Creados ${total} exámenes de ${e.n} preguntas cada uno. Revísalos y publícalos.`);
@@ -1680,7 +1883,7 @@ const examActions={
     const mode=mixed?'mixto':exams[0].mode;
     let title='Examen final: '+exams.map(e=>e.title||'(sin título)').join(' + ');
     if(title.length>120)title=title.slice(0,117)+'…';
-    const ne={id:'e'+uid(),title,date:todayStr(),mode,n:Math.min(pool.length,40),bank:pool.length,lang:exams[0].lang||'auto',notes:'',pool,dropped:[],status:'draft'};
+    const ne={id:'e'+uid(),title,date:todayStr(),mode,n:Math.min(pool.length,40),bank:pool.length,lang:exams[0].lang||'auto',notes:'',pool,dropped:[],status:'draft',isExam:true};
     state.examenes.push(ne);
     ui.exCombineOn=false;ui.exCombineSel=[];ui.exId=ne.id;ui.exExpand=null;
     save();render();
@@ -1752,10 +1955,12 @@ function startExam(eid,itemId){
   ui.ex={eid,qs,ans:[],i:0,itemId,t0:Date.now()};ui.t0=Date.now();ui.screen='exrun';render();
 }
 function renderExlist(){
-  const L=state.examenes.filter(e=>e.status==='ready').sort((a,b)=>a.date<b.date?-1:1);
-  app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>📝 Exámenes</h2>`+
-  (L.length?`<div class="list">${L.map(e=>`<button class="item" data-act="exStart" data-id="${esc(e.id)}"><span><b>${esc(e.title)}</b><br><small class="mute">Examen ${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${Math.min(e.n,e.pool.filter(q=>!q.off).length)} preguntas · ${e.mode==='test'?'test':e.mode==='red'?'redactadas':'test y redactadas'}</small></span><span style="font-size:1.6rem">▶️</span></button>`).join('')}</div><p class="mute">Cada vez que practiques saldrán preguntas distintas.</p>`
-  :`<div class="panel">Todavía no hay exámenes preparados. Tu tutor los añadirá aquí.</div>`);
+  const temas=state.examenes.filter(e=>e.status==='ready'&&!e.isExam).sort((a,b)=>a.date<b.date?-1:1);
+  const exams=state.examenes.filter(e=>e.status==='ready'&&e.isExam).sort((a,b)=>a.date<b.date?-1:1);
+  app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>📚 Teoría y exámenes</h2>`+
+  (temas.length?`<h3 style="margin-bottom:4px">📘 Temas de teoría</h3><p class="mute" style="margin-top:0">Estudia con la foto delante, junto a tu tutor.</p><div class="list">${temas.map(e=>{const nph=(state.examFotos[e.id]||[]).length;return `<button class="item" data-act="studyOpen" data-id="${esc(e.id)}"><span><b>${esc(e.title)}</b><br><small class="mute">${e.pool.filter(q=>!q.off).length} preguntas${nph?` · ${nph} ${nph===1?'foto':'fotos'}`:''}</small></span><span style="font-size:1.6rem">▶️</span></button>`;}).join('')}</div>`:'')+
+  (exams.length?`<h3 style="margin-bottom:4px">📝 Exámenes</h3><p class="mute" style="margin-top:0">Se corrigen al final, sin ver la foto.</p><div class="list">${exams.map(e=>`<button class="item" data-act="exStart" data-id="${esc(e.id)}"><span><b>${esc(e.title)}</b><br><small class="mute">Examen ${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${Math.min(e.n,e.pool.filter(q=>!q.off).length)} preguntas · ${e.mode==='test'?'test':e.mode==='red'?'redactadas':'test y redactadas'}</small></span><span style="font-size:1.6rem">▶️</span></button>`).join('')}</div><p class="mute">Cada vez que practiques un examen saldrán preguntas distintas.</p>`:'')+
+  (!temas.length&&!exams.length?`<div class="panel">Todavía no hay temas ni exámenes preparados. Tu tutor los añadirá aquí.</div>`:'');
 }
 function renderExrun(){
   const x=ui.ex;if(!x){ui.screen='home';return render();}
@@ -1802,11 +2007,143 @@ function examDetailHTML(s,r,rid){
     ${a.t==='red'?`<br><span class="mute">Palabras clave: ${a.hits.map(h=>'✔'+esc(h)).concat(a.miss.map(h=>'✘'+esc(h))).join(' ')} · nota automática ${Math.round(a.score*100)}%${a.ai?` · IA: ${Math.round(a.ai.score*100)}% — ${esc(a.ai.comment)}`:''}${a.man!==undefined?` · tu nota: ${Math.round(a.man*100)}%`:''}</span><br>
     <span class="row" style="gap:6px;margin-top:4px"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exAI" data-sid="${esc(s.id)}" data-rid="${esc(rid)}" data-qi="${i}">🤖 Corregir con IA</button>${[[1,'✅ Bien'],[0.5,'🟡 Regular'],[0,'❌ Mal']].map(([v,l])=>`<button class="btn" style="min-height:36px;padding:4px 12px" data-act="exMan" data-sid="${esc(s.id)}" data-rid="${esc(rid)}" data-qi="${i}" data-v="${v}">${l}</button>`).join('')}</span>`:''}</small></div>`;}).join('')}</details>`;
 }
+/* ================= temas de teoría: modo estudio (con/sin foto) ================= */
+function ruleTextOfQ(q){
+  const t=(q.e||'').trim();if(t)return t;
+  const ans=q.t==='test'?q.o[q.c]:q.a;
+  return (q.fact?q.fact+': ':'')+ans;
+}
+function shuffleArr(a){a=a.slice();for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+/* 3 opciones de "regla/explicación" para cuando Julia falla una pregunta: la correcta (de esta
+   pregunta) y 2 señuelos sacados de otras preguntas del mismo tema. Igual que las 3 opciones del
+   dictado, pero aplicado a las preguntas de teoría. */
+function makeExamOptions(pool,q){
+  const correct=ruleTextOfQ(q);
+  const others=shuffleArr(pool.filter(o=>o.id!==q.id&&!o.off));
+  const picks=[];
+  for(const o of others){const t=ruleTextOfQ(o);if(t&&t!==correct&&!picks.some(p=>p.text===t)){picks.push({text:t,ok:false});}if(picks.length>=2)break;}
+  return shuffleArr([{text:correct,ok:true},...picks]);
+}
+function studyOpen(id){
+  const e=exGet(id);if(!e||e.status!=='ready')return toast('Este tema todavía no está disponible');
+  const pool=e.pool.filter(q=>!q.off);if(!pool.length)return toast('Este tema no tiene preguntas todavía');
+  ui.study={temaId:id,level:1,showPhoto:true,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk:0,n:pool.length,recorded:false};
+  ui.studyPhotoView=null;ui.screen='study';render();
+}
+function studyRound(temaId,level,showPhoto){
+  const e=exGet(temaId),pool=e.pool.filter(q=>!q.off);
+  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk:0,n:pool.length,recorded:false};
+  ui.studyPhotoView=null;render();
+}
+function studyPhotosHTML(id){
+  const L=(state.examFotos[id]||[]).filter(p=>!p.err);if(!L.length)return '';
+  return `<div class="panel" style="padding:10px"><div class="exph-grid">${L.map(p=>`<button class="exph-item" data-act="studyPhotoOpen" data-id="${esc(p.id)}" title="Ampliar"><img src="${p.thumb}" alt="Teoría"></button>`).join('')}</div></div>`;
+}
+function studyPhotoOverlay(){
+  const st=ui.study;if(!st||!ui.studyPhotoView)return '';
+  const L=state.examFotos[st.temaId]||[],p=L.find(x=>x.id===ui.studyPhotoView);if(!p)return '';
+  const rot=p.rot||0,turned=rot===90||rot===270;
+  const imgStyle=turned?'max-width:80vh;max-height:85vw;width:auto;height:auto':'max-width:92vw;max-height:85vh;width:auto;height:auto';
+  return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.studyPhotoClose()"><div class="exph-box" style="max-width:96vw">
+  <div class="row" style="justify-content:flex-end"><button class="btn" data-act="studyPhotoClose">✕ Cerrar</button></div>
+  <div style="text-align:center"><img src="${p.full||p.thumb}" alt="Teoría" style="${imgStyle};transform:rotate(${rot}deg);border-radius:10px"></div></div></div>`;
+}
+function studyAnswerHTML(st,q){
+  if(st.stage==='answer'){
+    let body;
+    if(q.t==='test'){
+      body=q.o.map((o,k)=>`<button class="item" style="display:block;width:100%;text-align:left;font:inherit;background:${st.picked===k?'#ece9fb':'#fff'};border:2px solid ${st.picked===k?'var(--pri)':'var(--line)'};border-radius:var(--r);padding:14px 16px;margin:8px 0;cursor:pointer;color:var(--ink)" data-act="studyPick" data-k="${k}"><b style="color:var(--pri2)">${'ABCDE'[k]}.</b> ${esc(o)}</button>`).join('');
+      body+=`<div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyCheck" ${st.picked==null?'disabled':''}>✔ Comprobar</button></div>`;
+    }else{
+      body=`<textarea id="studyAns" placeholder="Escribe tu respuesta…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:110px">${esc(st.given||'')}</textarea><div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyCheck">✔ Comprobar</button></div>`;
+    }
+    return body;
+  }
+  if(st.stage==='ok')return `<div class="msg right" style="font-size:1.1rem">✅ ¡Correcto!</div>${q.e?`<div class="mute" style="margin-top:6px">💡 ${esc(q.e)}</div>`:''}<div class="row" style="margin-top:12px"><button class="btn success big" data-act="studyNext">Siguiente ➜</button></div>`;
+  if(st.stage==='rule'||st.stage==='ruleok'){
+    const given=q.t==='test'?(st.picked!=null?q.o[st.picked]:'(sin contestar)'):(st.given||'(sin contestar)');
+    const correct=q.t==='test'?q.o[q.c]:q.a;
+    let h=`<div class="msg wrong">Pusiste: ${esc(given)}</div><div class="msg">La respuesta correcta era: <b>${esc(correct)}</b></div><div class="msg" style="margin-top:8px">📘 ¿Cuál es la explicación correcta?</div>`;
+    h+=`<div class="opts">${st.opts.map((o,k)=>`<button data-act="studyRulePick" data-k="${k}" class="${st.wrongPicks.includes(k)?'no':st.stage==='ruleok'&&o.ok?'yes':''}" ${st.wrongPicks.includes(k)||st.stage==='ruleok'?'disabled':''}>${esc(o.text)}</button>`).join('')}</div>`;
+    if(st.wrongPicks.length&&st.stage==='rule')h+=`<div class="msg wrong">Casi… prueba con otra.</div>`;
+    if(st.stage==='ruleok')h+=`<div class="row" style="margin-top:12px"><button class="btn success big" data-act="studyNext">Siguiente ➜</button></div>`;
+    return h;
+  }
+  return '';
+}
+function recordStudyOnce(st,e){
+  if(st.recorded)return;st.recorded=true;
+  const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now();
+  s.extra.push({id:uid(),kind:'teoria',title:'Teoría: '+(e?e.title:''),start:Date.now(),end:Date.now(),secs:0,done:true,res:{n:st.n,ok:st.firstOk,level:st.level}});
+  touchSes(s);
+}
+function renderStudyDone(){
+  const st=ui.study,e=exGet(st.temaId);
+  recordStudyOnce(st,e);
+  const pct=st.n?Math.round(100*st.firstOk/st.n):100;
+  app.innerHTML=`<button class="link" data-act="studyQuitOk">← Teoría y exámenes</button><h2>${pct>=80?'🎉 ¡Genial, Julia!':pct>=50?'👍 ¡Buen trabajo!':'💪 ¡Sigue practicando!'}</h2>
+  <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${st.firstOk} de ${st.n} a la primera (${pct}%)</div><small class="mute">Nivel ${st.level}${st.level===1?' · con la foto':' · sin la foto'}</small></div>
+  <div class="row" style="flex-wrap:wrap">
+  ${st.level===1?`<button class="btn primary big" data-act="studyLevel2">🚀 Pasar a nivel 2 (sin foto)</button>`:''}
+  <button class="btn" data-act="studyRepeat">🔁 Repetir esta ronda</button>
+  <button class="btn" data-act="studyQuitOk">← Volver a temas y exámenes</button>
+  </div>`;
+}
+function renderStudy(){
+  const st=ui.study;if(!st){ui.screen='exlist';return render();}
+  const e=exGet(st.temaId);if(!e){ui.study=null;ui.screen='exlist';return render();}
+  if(st.i>=st.qs.length)return renderStudyDone();
+  const q=st.qs[st.i];
+  const levelBtn=st.level===1?`<button class="btn" data-act="studyLevel2">🚀 Nivel 2 (sin foto)</button>`:`<button class="btn" data-act="studyLevel1">📷 Volver a nivel 1 (con foto)</button>`;
+  const overlay=studyPhotoOverlay();
+  app.innerHTML=`<button class="link" data-act="studyQuit">← Salir</button><h2 style="margin:0">📘 ${esc(e.title)}</h2>
+  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0">
+  <span class="mute">Nivel ${st.level} · pregunta ${st.i+1} de ${st.qs.length}</span>${levelBtn}</div>
+  ${st.showPhoto?studyPhotosHTML(st.temaId):'<p class="mute" style="margin:4px 0 10px">🙈 Nivel 2: sin la foto. ¡A ver cuánto recuerdas!</p>'}
+  <div class="panel"><div style="font-size:1.2rem;font-weight:800;line-height:1.4;margin-bottom:12px">${esc(q.q)}</div>
+  ${studyAnswerHTML(st,q)}</div>${overlay}`;
+  const ta=$('#studyAns');if(ta)ta.focus();
+}
+const studyActions={
+  studyOpen(b){studyOpen(b.dataset.id);},
+  studyPick(b){if(ui.study){ui.study.picked=+b.dataset.k;render();}},
+  studyCheck(){
+    const st=ui.study;if(!st)return;const q=st.qs[st.i];
+    let ok;
+    if(q.t==='test'){
+      if(st.picked==null)return toast('Elige una opción');
+      ok=st.picked===q.c;
+    }else{
+      const v=($('#studyAns')?.value||'').trim();st.given=v;
+      if(!v)return toast('Escribe algo primero');
+      ok=exGrade(q,v).ok==='ok';
+    }
+    if(ok){st.firstOk++;st.stage='ok';}
+    else{st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.stage='rule';}
+    render();
+  },
+  studyRulePick(b){
+    const st=ui.study;if(!st)return;const k=+b.dataset.k;
+    if(st.opts[k].ok){st.stage='ruleok';render();}else{st.wrongPicks.push(k);render();}
+  },
+  studyNext(){
+    const st=ui.study;if(!st)return;
+    st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.stage='answer';
+    render();
+  },
+  studyLevel2(){const st=ui.study;if(!st)return;studyRound(st.temaId,2,false);},
+  studyLevel1(){const st=ui.study;if(!st)return;studyRound(st.temaId,1,true);},
+  studyRepeat(){const st=ui.study;if(!st)return;studyRound(st.temaId,st.level,st.showPhoto);},
+  studyPhotoOpen(b){ui.studyPhotoView=b.dataset.id;render();},
+  studyPhotoClose(){ui.studyPhotoView=null;render();},
+  studyQuit(){if(confirm('¿Salir? Perderás el progreso de esta ronda.')){ui.study=null;ui.studyPhotoView=null;ui.screen='exlist';render();}},
+  studyQuitOk(){ui.study=null;ui.studyPhotoView=null;ui.screen='exlist';render();}
+};
 /* ================= área tutor ================= */
 function renderTutor(){
   if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
   if(!ui.unlocked){app.innerHTML=`<h2>🔐 Área de tutor</h2><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" data-enter="pin" placeholder="PIN"><br><br><button class="btn primary big" data-act="pinEnter">Entrar</button></div>`;return;}
-  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['examenes','📝 Exámenes'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['ajustes','⚙️ Dictado y ajustes']];
+  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['examenes','📚 Teoría y exámenes'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['ajustes','⚙️ Dictado y ajustes']];
   app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><button class="btn" data-act="lock">🔒 Bloquear</button></div>
   <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>`;
   ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,reglas:tabReglas,historial:tabHistorial,ajustes:tabAjustes}[ui.tab])();
@@ -1943,7 +2280,7 @@ const studentActions={
   again(){ui.t0=Date.now();ui.answer='';ui.photo=null;ui.fix=null;ui.screen='run';render();},
   setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();}
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions);
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions,studyActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
