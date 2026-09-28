@@ -1530,14 +1530,25 @@ function exParse(text){
   }
   return out;
 }
+/* palabra analizada, cuando la pregunta sigue el formato "Analiza la palabra «X»…":
+   deja que estas preguntas se repitan MUCHO (misma plantilla) siempre que la palabra cambie —
+   es justo lo que se busca en ejercicios de "aplica esta regla a cualquier palabra" (raíz y
+   morfemas, sinónimos, etc.): la repetición con palabras distintas es cómo se aprende, no
+   una pregunta "casi igual" que haya que descartar. */
+function exQuotedWord(q){
+  const s=String((q&&q.q)||'');
+  const m=s.match(/«([^»]{1,40})»/)||s.match(/"([^"]{1,40})"/);
+  return m?exNorm(m[1]):'';
+}
 /* curar: quita repetidas, casi-repetidas y las de misma respuesta */
 function exCurate(existing,fresh){
   const kept=existing.filter(q=>!q.off||true).slice(),dropped=[],add=[];
-  const info=q=>({qt:exToks(q.q),ft:exToks(q.fact||''),ak:exAnswerKey(q),at:exToks(exAnswerKey(q))});
+  const info=q=>({qt:exToks(q.q),ft:exToks(q.fact||''),ak:exAnswerKey(q),at:exToks(exAnswerKey(q)),w:exQuotedWord(q)});
   const infos=kept.map(info);
   fresh.forEach(q=>{
     const n=info(q);let why='';
     for(let i=0;i<kept.length&&!why;i++){const m=infos[i],p=kept[i];
+      if(n.w&&m.w){if(n.w===m.w)why=`Ya se preguntó por la misma palabra: «${p.q}»`;continue;}
       if(exJac(n.qt,m.qt)>=0.55)why=`Casi igual que otra: «${p.q}»`;
       else if(n.ft.length>=2&&m.ft.length>=2&&exJac(n.ft,m.ft)>=0.7)why=`Evalúa lo mismo que: «${p.q}»`;
       else if(n.ak&&n.ak===m.ak&&!EX_YN.has(n.ak))why=`Misma respuesta que: «${p.q}»`;
@@ -1633,16 +1644,16 @@ function genPrompt(exam,chunk,ci,nc,k){
   const mixed=exam.mode==='mixto',tt=exam.mode==='test'?'tipo test':exam.mode==='red'?'de respuesta redactada':`mixtas (${Math.ceil(k/2)} tipo test y ${Math.floor(k/2)} de respuesta redactada)`;
   const facts=exam.pool.slice(-60).map(q=>q.fact||q.q.slice(0,50)).join(' | ');
   return [{role:'system',content:`Eres un profesor de primaria (Year 6, 10-11 años, colegio británico) que redacta preguntas de examen usando ÚNICAMENTE los apuntes que se te dan. Reglas estrictas:
-1) Cada pregunta evalúa UN dato distinto. Nunca dos preguntas con la misma respuesta ni reformulaciones de la misma idea.
-2) Los datos concretos (fechas, cifras, nombres, hechos) deben salir SOLO de los apuntes; no inventes datos externos. PERO si los apuntes explican una REGLA o MÉTODO general de análisis en vez de (o además de) datos concretos —por ejemplo: cómo separar la raíz y los morfemas de una palabra y qué significa cada uno, identificar sinónimos/antónimos, familias de palabras, tipos de oraciones, conjugar un tiempo verbal, clasificar sílabas, etc.— entonces NO te limites al único ejemplo que aparezca en los apuntes: aplica esa MISMA regla a palabras o casos NUEVOS y variados, reales y habituales para un alumno de 10-11 años (elige tú las palabras; no hace falta que estén en los apuntes), y pregunta por el análisis completo tal como lo explica la teoría (p. ej.: "Analiza la palabra «perrito»: ¿cuál es la raíz? ¿qué morfema(s) tiene y qué significa(n)?"). En este caso el objetivo es que el alumno practique aplicando la regla a casos distintos, no que memorice el ejemplo de los apuntes; usa palabras distintas en cada pregunta para no repetir.
+1) Cada pregunta evalúa UN dato distinto. Nunca dos preguntas con la misma respuesta ni reformulaciones de la misma idea. EXCEPCIÓN (ver regla 2): en preguntas de análisis de palabra, repetir la MISMA pregunta-plantilla con una palabra distinta cada vez SÍ cuenta como "dato distinto" (la palabra es el dato) y es exactamente lo que se pide, no una reformulación.
+2) Los datos concretos (fechas, cifras, nombres, hechos) deben salir SOLO de los apuntes; no inventes datos externos. PERO si los apuntes explican una REGLA o MÉTODO general de análisis en vez de (o además de) datos concretos —por ejemplo: cómo separar la raíz y los morfemas de una palabra y qué significa cada uno, identificar sinónimos/antónimos, familias de palabras, tipos de oraciones, conjugar un tiempo verbal, clasificar sílabas, etc.— entonces NO te limites al único ejemplo que aparezca en los apuntes: aplica esa MISMA regla a palabras o casos NUEVOS y variados, reales y habituales para un alumno de 10-11 años (elige tú las palabras; no hace falta que estén en los apuntes). Este tipo de teoría se aprende por REPETICIÓN: cuantas más palabras distintas se practiquen con la misma regla, mejor, así que genera MUCHAS preguntas de este estilo, una por palabra, todas con la misma plantilla de pregunta y el mismo formato de respuesta, cambiando solo la palabra (nunca repitas la misma palabra). Formato obligatorio de la pregunta: escribe la palabra analizada entre comillas angulares «así», exactamente una vez y siempre con ese símbolo, p. ej.: Analiza la palabra «perrito»: ¿cuál es la raíz? ¿qué morfema(s) tiene y qué significa(n)?
 3) Preguntas claras y autocontenidas, adecuadas a 10-11 años. Sin «según el texto». Sin verdadero/falso ni sí/no.
 4) Test: 4 opciones plausibles y claramente distintas, solo una correcta, sin «todas las anteriores». La opción correcta no debe ser siempre la más larga.
-5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una); si es un análisis de palabra (raíz/morfemas u otro), la respuesta modelo debe dar la palabra completa analizada (p. ej. "Raíz: perr-. Morfemas: -it- (diminutivo), -o (género masculino)") y las palabras clave deben incluir la raíz y cada morfema.
+5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una); si es un análisis de palabra (raíz/morfemas u otro), la respuesta modelo debe dar el análisis completo de esa palabra (p. ej. "Raíz: perr-. Morfemas: -it- (diminutivo), -o (género masculino)") y las palabras clave deben incluir la raíz y cada morfema.
 6) ${langRule(exam.lang)}
 Devuelve SOLO un JSON válido: {"questions":[...]} con objetos de estos formatos:
 test: {"t":"test","q":"...","o":["...","...","...","..."],"c":0,"e":"explicación breve","fact":"dato evaluado en 3-6 palabras"}
 redactada: {"t":"red","q":"...","a":"respuesta modelo","k":["clave1","clave2"],"e":"","fact":"dato evaluado en 3-6 palabras"}
-En test, "c" es la posición (0-3) de la opción correcta dentro de "o". En preguntas de análisis de palabra, "fact" debe ser la palabra analizada (p. ej. "raíz y morfemas de perrito"), para no repetir la misma palabra dos veces.`},
+En test, "c" es la posición (0-3) de la opción correcta dentro de "o". En preguntas de análisis de palabra, "fact" debe ser exactamente "análisis de «palabra»" con esa misma palabra entre «».`},
    {role:'user',content:`APUNTES (trozo ${ci+1} de ${nc}):\n"""\n${chunk}\n"""\n\nGenera ${k} preguntas ${tt}.${facts?`\nYa existen preguntas sobre estos datos; NO los repitas ni evalúes lo mismo: ${facts}`:''}`}];
 }
 async function genQuestions(exam,onProg){
