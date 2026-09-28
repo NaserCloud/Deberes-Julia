@@ -1634,15 +1634,15 @@ function genPrompt(exam,chunk,ci,nc,k){
   const facts=exam.pool.slice(-60).map(q=>q.fact||q.q.slice(0,50)).join(' | ');
   return [{role:'system',content:`Eres un profesor de primaria (Year 6, 10-11 años, colegio británico) que redacta preguntas de examen usando ÚNICAMENTE los apuntes que se te dan. Reglas estrictas:
 1) Cada pregunta evalúa UN dato distinto. Nunca dos preguntas con la misma respuesta ni reformulaciones de la misma idea.
-2) Solo información presente en los apuntes; no inventes ni añadas datos externos.
+2) Los datos concretos (fechas, cifras, nombres, hechos) deben salir SOLO de los apuntes; no inventes datos externos. PERO si los apuntes explican una REGLA o MÉTODO general de análisis en vez de (o además de) datos concretos —por ejemplo: cómo separar la raíz y los morfemas de una palabra y qué significa cada uno, identificar sinónimos/antónimos, familias de palabras, tipos de oraciones, conjugar un tiempo verbal, clasificar sílabas, etc.— entonces NO te limites al único ejemplo que aparezca en los apuntes: aplica esa MISMA regla a palabras o casos NUEVOS y variados, reales y habituales para un alumno de 10-11 años (elige tú las palabras; no hace falta que estén en los apuntes), y pregunta por el análisis completo tal como lo explica la teoría (p. ej.: "Analiza la palabra «perrito»: ¿cuál es la raíz? ¿qué morfema(s) tiene y qué significa(n)?"). En este caso el objetivo es que el alumno practique aplicando la regla a casos distintos, no que memorice el ejemplo de los apuntes; usa palabras distintas en cada pregunta para no repetir.
 3) Preguntas claras y autocontenidas, adecuadas a 10-11 años. Sin «según el texto». Sin verdadero/falso ni sí/no.
 4) Test: 4 opciones plausibles y claramente distintas, solo una correcta, sin «todas las anteriores». La opción correcta no debe ser siempre la más larga.
-5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una).
+5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una); si es un análisis de palabra (raíz/morfemas u otro), la respuesta modelo debe dar la palabra completa analizada (p. ej. "Raíz: perr-. Morfemas: -it- (diminutivo), -o (género masculino)") y las palabras clave deben incluir la raíz y cada morfema.
 6) ${langRule(exam.lang)}
 Devuelve SOLO un JSON válido: {"questions":[...]} con objetos de estos formatos:
 test: {"t":"test","q":"...","o":["...","...","...","..."],"c":0,"e":"explicación breve","fact":"dato evaluado en 3-6 palabras"}
 redactada: {"t":"red","q":"...","a":"respuesta modelo","k":["clave1","clave2"],"e":"","fact":"dato evaluado en 3-6 palabras"}
-En test, "c" es la posición (0-3) de la opción correcta dentro de "o".`},
+En test, "c" es la posición (0-3) de la opción correcta dentro de "o". En preguntas de análisis de palabra, "fact" debe ser la palabra analizada (p. ej. "raíz y morfemas de perrito"), para no repetir la misma palabra dos veces.`},
    {role:'user',content:`APUNTES (trozo ${ci+1} de ${nc}):\n"""\n${chunk}\n"""\n\nGenera ${k} preguntas ${tt}.${facts?`\nYa existen preguntas sobre estos datos; NO los repitas ni evalúes lo mismo: ${facts}`:''}`}];
 }
 async function genQuestions(exam,onProg){
