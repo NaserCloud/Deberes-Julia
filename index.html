@@ -1742,12 +1742,12 @@ function exEditView(t,e){
   t.innerHTML=`<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px"><button class="link" data-act="exBack">← Todos los exámenes</button><span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="exNew">＋ Nuevo examen</button>${e.status==='ready'?'<button class="btn" data-act="exMinim">🙈 Minimizar</button>':''}</span></div>
   <div class="panel"><h3 style="margin-top:0">📝 Datos del examen</h3>
   <div class="grid2"><label class="f">Título<input type="text" data-exf="title" value="${esc(e.title)}" placeholder="Ej.: Los romanos — Year 6"></label>
-  <label class="f">Fecha del examen<input type="date" data-exf="date" value="${esc(e.date)}"></label>
+  <label class="f">Fecha${e.isExam?' del examen':''}<input type="date" data-exf="date" value="${esc(e.date)}"></label>
   <label class="f">Tipo de preguntas<select data-exf="mode">${Object.entries(EX_MODES).map(([k,v])=>`<option value="${k}" ${e.mode===k?'selected':''}>${v}</option>`).join('')}</select></label>
-  <label class="f">Preguntas por examen<input type="number" data-exf="n" min="3" max="40" value="${e.n}"></label>
+  ${e.isExam?`<label class="f">Preguntas por examen<input type="number" data-exf="n" min="3" max="40" value="${e.n}"></label>`:''}
   <label class="f">Tamaño del banco a generar<input type="number" data-exf="bank" min="10" max="80" value="${e.bank}"></label>
   <label class="f">Idioma<select data-exf="lang"><option value="auto" ${e.lang==='auto'?'selected':''}>El de los apuntes</option><option value="es" ${e.lang==='es'?'selected':''}>Español</option><option value="en" ${e.lang==='en'?'selected':''}>English</option></select></label></div>
-  <p class="mute" style="margin:6px 0 0">El banco se genera una sola vez con IA; cada examen sortea preguntas distintas del banco sin gastar más.</p></div>
+  <p class="mute" style="margin:6px 0 0">${e.isExam?'El banco se genera una sola vez con IA; cada examen sortea preguntas distintas del banco sin gastar más.':'Julia estudiará todas las preguntas activas del banco, una a una, con la foto delante.'}</p></div>
   <div class="panel"><h3 style="margin-top:0">📷 Teoría a estudiar</h3>
   <div class="row" style="align-items:center;gap:12px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label><small class="mute">Hasta ${EX_MAXPH} fotos por tanda; puedes subir varias tandas seguidas.</small></div>
   <div id="exSt" class="mute" style="margin:6px 0"></div>
@@ -1757,15 +1757,22 @@ function exEditView(t,e){
   <div class="panel"><h3 style="margin-top:0">🧠 Preguntas <small class="mute">(${act} activas de ${e.pool.length})</small></h3>
   <div class="row" style="flex-wrap:wrap">
   <button class="btn primary" data-act="exGen" id="exGenB">${e.pool.length?'➕ Generar más preguntas':'🧠 Generar preguntas'}</button>
-  ${act>=e.n*2?`<button class="btn" data-act="exSplit">✂️ Dividir en ${Math.floor(act/e.n)} exámenes de ${e.n}</button>`:''}
+  ${act>=6?`<button class="btn" data-act="exSplit">✂️ Convertir en varios exámenes</button>`:''}
   </div><div id="exGst" class="mute" style="margin:6px 0">${e.pool.length?'Revisa la lista: corrige, quita o desmarca las que no quieras.':'Se generan con IA a partir del texto de arriba (unos céntimos).'}</div>
-  ${act>=e.n*2?`<p class="mute" style="margin:0 0 6px;font-size:.85rem">Tienes preguntas de sobra: puedes dividirlas en varios exámenes distintos (uno para cada día, por ejemplo) en vez de un único tema con banco grande.</p>`:''}
+  ${act>=6?`<p class="mute" style="margin:0 0 6px;font-size:.85rem">Tienes preguntas de sobra: puedes repartirlas en varios exámenes distintos (uno para cada día, por ejemplo). Al pulsar te preguntará cuántas preguntas quieres en cada uno.</p>`:''}
   ${(e.dropped||[]).length?`<details><summary class="mute">La app ha descartado ${e.dropped.length} preguntas repetidas o casi iguales</summary><small class="mute">${e.dropped.map(d=>`• ${esc(d.q)}<br>&nbsp;&nbsp;<i>${esc(d.why)}</i>`).join('<br>')}</small></details>`:''}</div>
   ${e.pool.map((q,i)=>qCard(q,i)).join('')}
   <div class="panel" style="${e.status==='ready'?'border-color:var(--ok);background:var(--okbg)':''}"><b>${e.status==='ready'?(e.isExam?'✅ Publicado: Julia puede hacer este examen':'✅ Publicado: Julia puede estudiar este tema'):(e.isExam?'Sin publicar: Julia todavía no ve este examen':'Sin publicar: Julia todavía no ve este tema')}</b><div class="row" style="margin-top:8px"><button class="btn ${e.status==='ready'?'':'success big'}" data-act="exPub">${e.status==='ready'?'Retirar (volver a borrador)':(e.isExam?'✅ Publicar examen':'✅ Publicar tema')}</button></div></div>`;
 }
 function exInput(t){
   if(t.id==='exPhotos'){if(t.type==='file'&&t.files&&t.files.length){const f=[...t.files];t.value='';readNotesPhotos(f);}return true;}
+  if(t.dataset.exph){
+    const e=exGet(ui.exId);if(!e)return true;
+    const L=state.examFotos[e.id]||[];const p=L.find(x=>x.id===t.dataset.id);if(!p)return true;
+    const k=t.dataset.exph;if(k==='name')p.name=t.value;else if(k==='desc')p.desc=t.value;
+    save();
+    return true;
+  }
   if(t.dataset.exf){const e=exGet(ui.exId);if(!e)return true;const k=t.dataset.exf;e[k]=(k==='n'||k==='bank')?Math.max(3,Math.min(80,+t.value||10)):t.value;save();return true;}
   if(t.dataset.exq){const e=exGet(ui.exId);if(!e)return true;const q=e.pool[+t.dataset.i];if(!q)return true;const k=t.dataset.exq;
     if(k==='q'||k==='a'||k==='e')q[k]=t.value;
@@ -1779,8 +1786,8 @@ function exInput(t){
 const EX_MAXPH=8;
 function examPhotosHTML(id){
   const L=state.examFotos[id]||[];if(!L.length)return '';
-  return `<div style="margin:8px 0"><b>${L.length} ${L.length===1?'foto subida':'fotos subidas'}</b> <span class="mute" style="font-size:.85rem">· toca una para ampliarla y ver solo su texto</span>
-  <div class="exph-grid">${L.map(p=>`<button class="exph-item" data-act="exPhotoOpen" data-id="${esc(p.id)}" title="Ver esta foto"><img src="${p.thumb}" alt="Foto de apuntes">${p.err?'<span class="exph-warn">⚠</span>':''}</button>`).join('')}</div></div>`;
+  return `<div style="margin:8px 0"><b>${L.length} ${L.length===1?'foto subida':'fotos subidas'}</b> <span class="mute" style="font-size:.85rem">· toca una para ampliarla, ponerle nombre y descripción, y ver su texto</span>
+  <div class="exph-grid">${L.map(p=>`<div><button class="exph-item" data-act="exPhotoOpen" data-id="${esc(p.id)}" title="${esc(p.name||'Ver esta foto')}"><img src="${p.thumb}" alt="Foto de apuntes">${p.err?'<span class="exph-warn">⚠</span>':''}</button>${p.name?`<div class="mute" style="font-size:.72rem;text-align:center;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</div>`:''}</div>`).join('')}</div></div>`;
 }
 function exPhotoOverlay(examId){
   if(!ui.exPhotoView)return '';
@@ -1790,9 +1797,13 @@ function exPhotoOverlay(examId){
     ?'max-width:52vh;max-height:80vw;width:auto;height:auto'
     :'max-width:100%;max-height:52vh;width:auto;height:auto';
   return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.exPhotoClose()"><div class="exph-box">
-  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><span><b>Foto ${L.indexOf(p)+1} de ${L.length}</b>${p.name?`<br><small class="mute" style="font-size:.8rem;word-break:break-all">📄 ${esc(p.name)}</small>`:''}</span><span class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exPhotoRotate" data-id="${esc(p.id)}">🔄 Girar</button><button class="btn danger" style="min-height:36px;padding:4px 12px" data-act="exPhotoDel" data-id="${esc(p.id)}">🗑 Eliminar</button><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></span></div>
+  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b>Foto ${L.indexOf(p)+1} de ${L.length}</b><span class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exPhotoRotate" data-id="${esc(p.id)}">🔄 Girar</button><button class="btn danger" style="min-height:36px;padding:4px 12px" data-act="exPhotoDel" data-id="${esc(p.id)}">🗑 Eliminar</button><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></span></div>
   <div style="text-align:center;padding:${turned?'26px 0':'0'};margin-top:10px">
   <img src="${p.full||p.thumb}" alt="Foto de apuntes" style="${imgStyle};transform:rotate(${rot}deg);border-radius:10px;display:inline-block"></div>
+  <div class="grid2" style="margin-top:10px">
+  <label class="f">Nombre<input type="text" data-exph="name" data-id="${esc(p.id)}" value="${esc(p.name||'')}" placeholder="Ej.: Apuntes de fracciones (pág. 1)"></label>
+  <label class="f">Descripción<input type="text" data-exph="desc" data-id="${esc(p.id)}" value="${esc(p.desc||'')}" placeholder="Ej.: Reglas para sumar fracciones"></label>
+  </div>
   <div class="mute" style="margin:10px 0 4px;font-weight:800">Lo que ha leído la IA en esta foto:</div>
   <div class="marked" style="max-height:22vh;overflow:auto;font-size:.95rem;line-height:1.6">${p.err?`<span class="wrong">${esc(p.err)}</span>`:esc(p.text||'(sin texto)')}</div></div></div>`;
 }
@@ -1849,22 +1860,26 @@ const examActions={
   exSplit(){
     const e=exGet(ui.exId);if(!e)return;
     const act=e.pool.filter(q=>!q.off);
-    const total=Math.floor(act.length/e.n);
-    if(total<2)return toast(`Necesitas al menos ${e.n*2} preguntas activas para dividir en varios exámenes (ahora tienes ${act.length}).`);
-    if(!confirm(`Esto convertirá este examen en ${total} exámenes de ${e.n} preguntas cada uno, en días consecutivos a partir del ${exShortDate(e.date)}. Las preguntas que sobren se quedarán guardadas (desmarcadas) por si las quieres usar luego. ¿Continuar?`))return;
+    const raw=prompt(`¿Cuántas preguntas quieres en cada examen? (tienes ${act.length} preguntas activas)`,e.n||10);
+    if(raw===null)return;
+    const n=Math.max(3,Math.min(40,parseInt(raw,10)||0));
+    if(!n)return toast('Pon un número de preguntas válido');
+    const total=Math.floor(act.length/n);
+    if(total<2)return toast(`Necesitas al menos ${n*2} preguntas activas para dividir en varios exámenes de ${n} (ahora tienes ${act.length}).`);
+    if(!confirm(`Esto convertirá este tema en ${total} exámenes de ${n} preguntas cada uno, en días consecutivos a partir del ${exShortDate(e.date)}. Las preguntas que sobren se quedarán guardadas (desmarcadas) por si las quieres usar luego. ¿Continuar?`))return;
     const shuffled=act.slice();
     for(let i=shuffled.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[shuffled[i],shuffled[j]]=[shuffled[j],shuffled[i]];}
-    const usedIds=new Set(shuffled.slice(0,total*e.n).map(q=>q.id));
+    const usedIds=new Set(shuffled.slice(0,total*n).map(q=>q.id));
     const leftover=e.pool.filter(q=>!usedIds.has(q.id)).map(q=>({...q,off:true}));
     const baseTitle=e.title.replace(/\s*\(\d+\)\s*$/,'').trim();
     e.title=`${baseTitle} (1)`;
-    e.pool=shuffled.slice(0,e.n).concat(leftover);
+    e.n=n;e.pool=shuffled.slice(0,n).concat(leftover);
     e.status='draft';e.isExam=true;
     for(let k=1;k<total;k++){
-      state.examenes.push({id:'e'+uid(),title:`${baseTitle} (${k+1})`,date:exAddDays(e.date,k),mode:e.mode,n:e.n,bank:e.bank,lang:e.lang,notes:'',pool:shuffled.slice(k*e.n,(k+1)*e.n),dropped:[],status:'draft',isExam:true});
+      state.examenes.push({id:'e'+uid(),title:`${baseTitle} (${k+1})`,date:exAddDays(e.date,k),mode:e.mode,n,bank:e.bank,lang:e.lang,notes:'',pool:shuffled.slice(k*n,(k+1)*n),dropped:[],status:'draft',isExam:true});
     }
     ui.exExpand=null;save();render();
-    toast(`Creados ${total} exámenes de ${e.n} preguntas cada uno. Revísalos y publícalos.`);
+    toast(`Creados ${total} exámenes de ${n} preguntas cada uno. Revísalos y publícalos.`);
   },
   exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){delete state.examFotos[b.dataset.id];state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
   exCombineStart(){ui.exCombineOn=true;ui.exCombineSel=[];render();},
@@ -2037,7 +2052,7 @@ function studyRound(temaId,level,showPhoto){
 }
 function studyPhotosHTML(id){
   const L=(state.examFotos[id]||[]).filter(p=>!p.err);if(!L.length)return '';
-  return `<div class="panel" style="padding:10px"><div class="exph-grid">${L.map(p=>`<button class="exph-item" data-act="studyPhotoOpen" data-id="${esc(p.id)}" title="Ampliar"><img src="${p.thumb}" alt="Teoría"></button>`).join('')}</div></div>`;
+  return `<div class="panel" style="padding:10px"><div class="exph-grid">${L.map(p=>`<div><button class="exph-item" data-act="studyPhotoOpen" data-id="${esc(p.id)}" title="${esc(p.name||'Ampliar')}"><img src="${p.thumb}" alt="Teoría"></button>${p.name?`<div class="mute" style="font-size:.72rem;text-align:center;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</div>`:''}</div>`).join('')}</div></div>`;
 }
 function studyPhotoOverlay(){
   const st=ui.study;if(!st||!ui.studyPhotoView)return '';
@@ -2045,8 +2060,9 @@ function studyPhotoOverlay(){
   const rot=p.rot||0,turned=rot===90||rot===270;
   const imgStyle=turned?'max-width:80vh;max-height:85vw;width:auto;height:auto':'max-width:92vw;max-height:85vh;width:auto;height:auto';
   return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.studyPhotoClose()"><div class="exph-box" style="max-width:96vw">
-  <div class="row" style="justify-content:flex-end"><button class="btn" data-act="studyPhotoClose">✕ Cerrar</button></div>
-  <div style="text-align:center"><img src="${p.full||p.thumb}" alt="Teoría" style="${imgStyle};transform:rotate(${rot}deg);border-radius:10px"></div></div></div>`;
+  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">${p.name?`<b>${esc(p.name)}</b>`:'<span></span>'}<button class="btn" data-act="studyPhotoClose">✕ Cerrar</button></div>
+  ${p.desc?`<p class="mute" style="margin:4px 0">${esc(p.desc)}</p>`:''}
+  <div style="text-align:center;margin-top:6px"><img src="${p.full||p.thumb}" alt="Teoría" style="${imgStyle};transform:rotate(${rot}deg);border-radius:10px"></div></div></div>`;
 }
 function studyAnswerHTML(st,q){
   if(st.stage==='answer'){
