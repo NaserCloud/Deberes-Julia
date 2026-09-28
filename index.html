@@ -1588,7 +1588,7 @@ const exShortDate=d=>new Date(d+'T12:00:00').toLocaleDateString('es-ES',{day:'nu
 const exGet=id=>state.examenes.find(e=>e.id===id);
 const exAddDays=(d,n)=>{const dt=new Date(d+'T12:00:00');dt.setDate(dt.getDate()+n);return dt.toLocaleDateString('sv-SE');};
 const langRule=l=>l==='es'?'Escribe todo en español.':l==='en'?'Write everything in English.':'Escribe las preguntas y respuestas en el MISMO idioma en que están escritos los apuntes (si están en inglés, en inglés; si están en español, en español).';
-const NOTES_SYS='Eres un transcriptor fiel de apuntes escolares (teoría de una asignatura de primaria, Year 6 de un colegio británico). Copia el contenido de la imagen como texto limpio: títulos, definiciones, datos, fechas, cifras, listas y vocabulario clave. Si hay esquemas, tablas o dibujos con información, descríbelos brevemente con palabras. Si en la imagen hay ejercicios, problemas o preguntas de ejemplo (estén resueltos o no, con o sin la solución escrita), transcríbelos TAMBIÉN tal cual, aparte del resto, bajo un apartado final titulado exactamente "EJERCICIOS DE EJEMPLO:" (enunciado completo y su respuesta/solución si la hay) — sirven para saber qué tipo de preguntas se hacen sobre este tema. Conserva el idioma original, no traduzcas, no resumas y no inventes nada. Ignora números de página y decoración. Separa los apartados con una línea en blanco. Responde SOLO con el texto.';
+const NOTES_SYS='Eres un transcriptor fiel de apuntes escolares (teoría de una asignatura de primaria, Year 6 de un colegio británico). Copia ÚNICAMENTE la teoría de la imagen como texto limpio: títulos, definiciones, datos, fechas, cifras, listas y vocabulario clave. Si hay esquemas, tablas o dibujos con información teórica, descríbelos brevemente con palabras. Si en la imagen hay también ejercicios, problemas o preguntas de ejemplo (estén resueltos o no), IGNÓRALOS por completo: no los transcribas ni los menciones, no forman parte de la teoría. Conserva el idioma original, no traduzcas, no resumas y no inventes nada. Ignora números de página y decoración. Separa los apartados con una línea en blanco. Responde SOLO con el texto de la teoría.';
 async function aiText(messages,max){
   let r;try{r=await aiCall('vision','/v1/chat/completions',{model:state.ai.visionModel||'gpt-4o',temperature:0,max_tokens:max||1500,messages});}catch(e){throw new Error('Sin conexión con el servidor');}
   if(!r.ok)throw new Error(apiErr(r.status));
@@ -1638,8 +1638,7 @@ function genPrompt(exam,chunk,ci,nc,k){
 3) Preguntas claras y autocontenidas, adecuadas a 10-11 años. Sin «según el texto». Sin verdadero/falso ni sí/no.
 4) Test: 4 opciones plausibles y claramente distintas, solo una correcta, sin «todas las anteriores». La opción correcta no debe ser siempre la más larga.
 5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una).
-6) Si los apuntes incluyen un apartado "EJERCICIOS DE EJEMPLO", son ejercicios reales de este tema: úsalos como referencia del tipo de pregunta, el formato y la dificultad esperados (mismo estilo, pero no los copies literalmente ni reutilices los mismos números o datos si ya están cubiertos por otra pregunta).
-7) ${langRule(exam.lang)}
+6) ${langRule(exam.lang)}
 Devuelve SOLO un JSON válido: {"questions":[...]} con objetos de estos formatos:
 test: {"t":"test","q":"...","o":["...","...","...","..."],"c":0,"e":"explicación breve","fact":"dato evaluado en 3-6 palabras"}
 redactada: {"t":"red","q":"...","a":"respuesta modelo","k":["clave1","clave2"],"e":"","fact":"dato evaluado en 3-6 palabras"}
