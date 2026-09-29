@@ -676,7 +676,7 @@ const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tar
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
   const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{}};
-  s=Object.assign(d,s);s.ai=Object.assign({on:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
+  s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
   s.sync.isnap=s.sync.isnap||{};s.sync.itomb=s.sync.itomb||{};
   if(!s.dictados)s.dictados=[SAMPLE];
   return s;
@@ -1028,7 +1028,7 @@ function photoHTML(){
   return `<div class="panel"><div class="row" style="flex-wrap:nowrap;align-items:flex-start"><img src="${ui.photo}" alt="Tu cuaderno" style="width:130px;border-radius:10px;border:2px solid var(--line)"><div>✅ <b>He leído tu cuaderno.</b> Comprueba que el texto de arriba es lo que tú escribiste: si la app ha leído mal una letra, cámbiala, pero <b>no corrijas tus faltas</b>. Si aparece el título o la fecha, no pasa nada.${/\[\?\]/.test(ui.answer)?'<br><span class="wrong">Hay partes que no se han podido leer ([?]): escríbelas tú.</span>':''}</div></div></div>`;
 }
 async function handlePhoto(file){
-  if(!state.ai.on)return toast('El tutor tiene que activar la IA en Ajustes para leer fotos');
+  if(!state.ai.photoOn)return toast('El tutor tiene que activar la IA de fotos en Ajustes para leer fotos');
   const box=$('#photoBox');if(box)box.innerHTML='<div class="status"><span class="ico">🔎</span><div>Leyendo tu letra… unos segundos</div></div>';
   try{
     const data=await fileToJpeg(file),txt=await readNotebook(data);
@@ -1919,7 +1919,7 @@ async function fileHash(file){
 }
 async function readNotesPhotos(files){
   const e=exGet(ui.exId),st=()=>$('#exSt');if(!e)return;
-  if(!state.ai.on){if(st())st().textContent='';return toast('Activa la IA en Ajustes para leer fotos');}
+  if(!state.ai.photoOn){if(st())st().textContent='';return toast('Activa la IA de fotos en Ajustes para leer fotos');}
   const total=files.length;files=files.slice(0,EX_MAXPH);
   const gallery=state.examFotos[e.id]=(state.examFotos[e.id]||[]);
   const out=[];let okN=0,errN=0,dupN=0;
@@ -2035,7 +2035,7 @@ const examActions={
     else e.status='draft';save();render();},
   async exGen(){
     const e=exGet(ui.exId);if(!e||ui.exBusy)return;
-    if(!state.ai.on)return toast('Activa la IA en Ajustes');
+    if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes');
     if(!exChunks(e.notes).length)return toast('Primero sube fotos o escribe los apuntes');
     if(!e.title.trim())return toast('Ponle un título al examen');
     ui.exBusy=true;const B=$('#exGenB');if(B)B.disabled=true;const g=$('#exGst');
@@ -2243,7 +2243,7 @@ function renderStudy(){
 }
 const studyActions={
   studyOpen(b){studyOpen(b.dataset.id);},
-  studyPick(b){if(ui.study){ui.study.picked=+b.dataset.k;render();}},
+  studyPick(b){if(ui.study){ui.study.picked=+b.dataset.k;const y=scrollY;render();scrollTo(0,y);}},
   studyCheck(){
     const st=ui.study;if(!st)return;const q=st.qs[st.i];
     let ok;
@@ -2257,21 +2257,23 @@ const studyActions={
     }
     if(ok){st.firstOk++;st.stage='ok';}
     else{st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.stage='rule';}
-    render();
+    const y=scrollY;render();scrollTo(0,y);
   },
   studyRulePick(b){
     const st=ui.study;if(!st)return;const k=+b.dataset.k;
-    if(st.opts[k].ok){st.stage='ruleok';render();}else{st.wrongPicks.push(k);render();}
+    const y=scrollY;
+    if(st.opts[k].ok){st.stage='ruleok';}else{st.wrongPicks.push(k);}
+    render();scrollTo(0,y);
   },
   studyNext(){
     const st=ui.study;if(!st)return;
     st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.stage='answer';
-    render();
+    render();scrollTo(0,0);
   },
   studyPrev(){
     const st=ui.study;if(!st||st.i<=0)return;
     st.i--;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.stage='answer';
-    render();
+    render();scrollTo(0,0);
   },
   studyLevel2(){const st=ui.study;if(!st)return;studyRound(st.temaId,2,false);},
   studyLevel1(){const st=ui.study;if(!st)return;studyRound(st.temaId,1,true);},
@@ -2354,7 +2356,9 @@ function tabAjustes(){
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
   <div class="panel"><h3>🎙 IA de OpenAI: voz y lectura de fotos</h3>
   <p class="mute" style="margin-top:0">Usa la voz de OpenAI para dictar como una profesora. El audio se genera <b>una sola vez</b> al guardar cada dictado (cuesta unos céntimos) y queda guardado en este iPad. El audio queda guardado en cada dispositivo.</p>
-  <label class="f"><input type="checkbox" data-ai="on" ${state.ai.on?'checked':''}> Usar voz IA</label><br>
+  <label class="f"><input type="checkbox" data-ai="on" ${state.ai.on?'checked':''}> Usar voz IA (dictados)</label><br>
+  <label class="f"><input type="checkbox" data-ai="photoOn" ${state.ai.photoOn?'checked':''}> Usar IA para leer fotos y generar preguntas</label><br>
+  <p class="mute" style="margin:6px 0">Son dos interruptores independientes: puedes tener la voz IA apagada y la lectura de fotos encendida, o al revés.</p>
   <p class="mute" style="margin:6px 0">🔒 La clave de OpenAI está guardada en el servidor, no en este dispositivo.</p>
   <details><summary class="mute">Usar una clave propia solo en este dispositivo (opcional)</summary><label class="f">Clave API de OpenAI<input type="password" data-ai="key" value="${esc(state.ai.key)}" placeholder="sk-... (déjalo vacío para usar la del servidor)" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></label></details>
   <div class="grid2" style="margin-top:12px">
@@ -2448,7 +2452,7 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
   if(t.dataset.enter==='pin')tutorActions.pinEnter();});
 render();
 async function readDictPhotos(files){
-  const st=$('#dictPhotoSt');if(!state.ai.on){if(st)st.textContent='';return toast('Activa la IA en Ajustes para leer fotos');}
+  const st=$('#dictPhotoSt');if(!state.ai.photoOn){if(st)st.textContent='';return toast('Activa la IA de fotos en Ajustes para leer fotos');}
   const ta=$('#dText'),ti=$('#dTitle');if(!ta)return;
   files=files.slice(0,4);let out=[],title='';
   try{
