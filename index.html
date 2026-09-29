@@ -676,7 +676,8 @@ const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tar
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
   const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{}};
-  s=Object.assign(d,s);s.ai=Object.assign({on:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:''},s.sync||{});
+  s=Object.assign(d,s);s.ai=Object.assign({on:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
+  s.sync.isnap=s.sync.isnap||{};s.sync.itomb=s.sync.itomb||{};
   if(!s.dictados)s.dictados=[SAMPLE];
   return s;
 }
@@ -831,11 +832,29 @@ const Voz=(()=>{
 /* ================= sincronización con Supabase ================= */
 const SB_URL='https://rzzaizkzszgiirwmilyq.supabase.co',SB_KEY='sb_publishable_xdaxsZhA3FDyGWsMeT2pLA_4TSyUvpl';
 const Cloud=(()=>{
-  const K=['dictados','customRules','rulesMode','pin','settings','ai','tareas','examenes'],hdr={apikey:SB_KEY,'Content-Type':'application/json'};
+  const K=['dictados','customRules','rulesMode','pin','settings','ai'];
+  /* "examenes" y "tareas" son listas de elementos con id propio (temas, exámenes, deberes) que se
+     crean/editan/borran desde varios dispositivos. Antes se sincronizaban como el resto de claves
+     (K): se comparaba un único "reloj" para TODA la lista y, si un dispositivo tenía un reloj más
+     nuevo, se sustituía la lista entera del otro por la suya — así, si dos dispositivos habían
+     creado cosas distintas sin haber sincronizado entre medias, el que sincronizaba en último lugar
+     "ganaba" y el trabajo del otro desaparecía sin más (esto es lo que le pasó a David: al abrir
+     desde el ordenador de Julia, ese dispositivo "ganó" y los exámenes creados en el otro se
+     perdieron). Con IK se sincroniza ELEMENTO A ELEMENTO: cada tema/examen/tarea lleva su propio
+     "upd" (cuándo se editó por última vez) y al sincronizar se hace la UNIÓN de lo que hay en cada
+     dispositivo, quedándose con la versión más reciente de cada elemento por separado — nunca se
+     descarta un elemento entero solo porque el otro dispositivo tenga la lista "más nueva" en
+     conjunto. Los borrados se recuerdan aparte (itomb, un pequeño registro de "id borrado en tal
+     momento") para que un elemento borrado en un dispositivo no reaparezca al sincronizar con otro
+     que todavía lo tenía. */
+  const IK=['examenes','tareas'];
+  const hdr={apikey:SB_KEY,'Content-Type':'application/json'};
   const part=k=>{if(k==='ai'){const o=Object.assign({},state.ai);delete o.key;return o;}if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;return o;}return state[k];};
   const js=k=>JSON.stringify(part(k)===undefined?null:part(k));
   const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':(v&&typeof v==='object')?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
-  const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='tareas'||k==='examenes')return !v||!v.length;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
+  const canonNoUpd=it=>canon(Object.assign({},it,{upd:0}));
+  const byIdAsc=(a,b)=>a.id<b.id?-1:1;
+  const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
     if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;return canon(o)===canon(d);}return false;};
   let timer=null,busy=false,again=false,started=false;
   const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
@@ -844,15 +863,59 @@ const Cloud=(()=>{
       if(C.status==='sync')return '🔄 Sincronizando…';
       if(C.status==='err')return `⚠️ No se ha podido conectar con el servidor (${esc(C.err)}). Todo se sigue guardando en este dispositivo y se sincronizará cuando vuelva la conexión.`;
       return l?`✅ Sincronizado con el servidor a las ${l}`:'Todavía sin sincronizar';},
+    /* detecta cambios elemento a elemento en state[key] desde el último mark() y les pone un "upd"
+       propio; los elementos que ya no están (se borraron) quedan registrados en itomb. */
+    markItems(key){
+      const s=state.sync;s.isnap=s.isnap||{};s.itomb=s.itomb||{};
+      const snap=s.isnap[key]=s.isnap[key]||{},tomb=s.itomb[key]=s.itomb[key]||{};
+      const arr=state[key]||[];let d=false;const seen={};
+      arr.forEach(it=>{
+        if(!it||!it.id)return;seen[it.id]=1;
+        const c=canonNoUpd(it);
+        if(snap[it.id]!==c){it.upd=Date.now();snap[it.id]=c;d=true;if(tomb[it.id]!==undefined)delete tomb[it.id];}
+      });
+      Object.keys(snap).forEach(id=>{if(!seen[id]){delete snap[id];tomb[id]=Date.now();d=true;}});
+      return d;
+    },
     mark(){
       if(!C.on)return;const s=state.sync;let d=false;
       K.forEach(k=>{const j=js(k);if(s.j[k]!==j){s.j[k]=j;s.t[k]=Date.now();d=true;}});
+      IK.forEach(k=>{if(C.markItems(k))d=true;});
       const hj=state.history.map(h=>h.id).join(',');if(s.hj!==hj){s.hj=hj;d=true;}
       const sj=state.sesiones.map(x=>x.id+':'+x.upd).join(',');if(s.sj!==sj){s.sj=sj;d=true;}
       if(d){s.dirty=true;persist();clearTimeout(timer);timer=setTimeout(()=>C.sync(),1200);}
     },
+    /* une los elementos de "key" en local y remoto por id, quedándose con el más reciente (upd) de
+       cada uno y respetando los borrados (itomb). Compatible con un remoto "antiguo" (de antes de
+       este cambio) que todavía guarde la lista entera en rv.d[key]: esos elementos se adoptan igual,
+       tomando como "upd" el reloj antiguo de esa clave. */
+    mergeItems(key,rv,out){
+      const s=state.sync;s.isnap=s.isnap||{};s.itomb=s.itomb||{};
+      const snap=s.isnap[key]=s.isnap[key]||{},tomb=s.itomb[key]=s.itomb[key]||{};
+      const localArr=state[key]||[];
+      let remoteArr=rv&&rv.iarr&&Array.isArray(rv.iarr[key])?rv.iarr[key]:null;
+      if(!remoteArr){const legacy=rv&&rv.d&&Array.isArray(rv.d[key])?rv.d[key]:[];const lt=(rv&&rv.t&&rv.t[key])||1;remoteArr=legacy.map(it=>Object.assign({},it,{upd:it.upd||lt}));}
+      const remoteTomb=(rv&&rv.itomb&&rv.itomb[key])||{};
+      const byId={};
+      localArr.forEach(it=>{if(it&&it.id)byId[it.id]={item:it,upd:it.upd||0};});
+      remoteArr.forEach(it=>{if(!it||!it.id)return;const ru=it.upd||0,cur=byId[it.id];if(!cur||ru>cur.upd)byId[it.id]={item:it,upd:ru};});
+      const mergedTomb=Object.assign({},tomb);
+      Object.keys(remoteTomb).forEach(id=>{mergedTomb[id]=Math.max(mergedTomb[id]||0,remoteTomb[id]);});
+      const winners=[];
+      Object.keys(byId).forEach(id=>{const rec=byId[id],tts=mergedTomb[id]||0;if(tts&&tts>=rec.upd)return;winners.push(rec.item);});
+      winners.sort(byIdAsc);
+      const changed=canon(winners)!==canon(localArr.slice().sort(byIdAsc));
+      if(changed){
+        state[key]=winners;
+        Object.keys(snap).forEach(k=>delete snap[k]);
+        winners.forEach(it=>{snap[it.id]=canonNoUpd(it);});
+      }
+      Object.keys(mergedTomb).forEach(id=>{tomb[id]=mergedTomb[id];});
+      out.iarr[key]=winners;out.itomb[key]=mergedTomb;
+      return changed;
+    },
     merge(rv){
-      const s=state.sync,first=!s.init,out={v:1,t:{},d:{},history:[],hclear:0,ses:[]};let changed=false;
+      const s=state.sync,first=!s.init,out={v:1,t:{},d:{},history:[],hclear:0,ses:[],iarr:{},itomb:{}};let changed=false;
       const localD=state.dictados.slice();let adoptedD=false;
       K.forEach(k=>{
         let lt=first&&rv?0:(s.t[k]||0);let rt=rv?(rv.t&&rv.t[k]||0):-1;
@@ -876,8 +939,12 @@ const Cloud=(()=>{
       if(canon(SS)!==canon(state.sesiones.slice().sort((a,b)=>a.id<b.id?-1:1))){state.sesiones=SS;changed=true;}
       s.sj=state.sesiones.map(x=>x.id+':'+x.upd).join(',');out.ses=SS;
       s.hclear=hc;s.hj=H.map(h=>h.id).join(',');out.history=H;out.hclear=hc;
-      const allP=K.every(k=>pristine(k,part(k)))&&!state.history.length&&!state.sesiones.length;
-      return {out,changed,skip:!rv&&allP&&first,push:!rv||canon(out)!==canon({v:rv.v,t:rv.t,d:rv.d,history:rv.history||[],hclear:rv.hclear||0,ses:(rv.ses||[]).slice().sort((a,b)=>a.id<b.id?-1:1)})};
+      IK.forEach(key=>{if(C.mergeItems(key,rv,out))changed=true;});
+      const allP=K.every(k=>pristine(k,part(k)))&&!state.history.length&&!state.sesiones.length&&IK.every(k=>!state[k].length);
+      const rvCmp=rv?{v:rv.v,t:rv.t,d:rv.d,history:rv.history||[],hclear:rv.hclear||0,ses:(rv.ses||[]).slice().sort((a,b)=>a.id<b.id?-1:1),
+        iarr:IK.reduce((o,k)=>{o[k]=((rv.iarr&&rv.iarr[k])||[]).slice().sort(byIdAsc);return o;},{}),
+        itomb:IK.reduce((o,k)=>{o[k]=(rv.itomb&&rv.itomb[k])||{};return o;},{})}:null;
+      return {out,changed,skip:!rv&&allP&&first,push:!rv||canon(out)!==canon(rvCmp)};
     },
     async sync(manual){
       if(!C.on)return;if(busy){again=true;return;}
@@ -1332,6 +1399,7 @@ function renderMrun(){
   const e=m.ex[m.i],pct=Math.round(100*m.i/m.ex.length);
   app.innerHTML=`<button class="link" data-act="mexit">← Salir</button><h2 style="margin:0">${esc(m.title)}</h2>
   <div class="status"><span class="ico">🧮</span><div style="flex:1"><div>Ejercicio ${m.i+1} de ${m.ex.length}</div><div class="bar"><i style="width:${pct}%"></i></div></div></div>
+  <div class="row" style="margin:6px 0"><button class="btn" data-act="mprev" ${m.i?'':'disabled'}>⬅ Anterior</button></div>
   ${m.msg?`<p style="font-weight:800;color:${m.msgOk?'var(--ok)':'var(--bad)'};margin:6px 0">${esc(m.msg)}</p>`:''}
   <div class="panel"><div style="font-size:${e.q.length>30?'1.3':'2'}rem;font-weight:800;line-height:1.4">${esc(e.q)}</div>
   ${m.reveal?`<p style="margin:12px 0 0">La respuesta correcta era: <b style="font-size:1.6rem;color:var(--ok)">${esc(e.txt)}</b></p>`
@@ -1387,6 +1455,12 @@ const taskActions={
     render();
   },
   mnext(){mathAdvance(false,false);},
+  mprev(){
+    const m=ui.mrun;if(!m||m.i<=0)return;
+    m.i--;m.log.pop();
+    m.tries=0;m.given=[];m.reveal=false;m.msg='';m.et=Date.now();
+    render();
+  },
   finishDay(){
     const t=todayStr(),its=itemsOf(t),s=getSes(t,true),pend=its.filter(i=>!(s.items[i.id]&&s.items[i.id].done)).length;
     if(!s.finished){
@@ -1774,6 +1848,7 @@ function exEditView(t,e){
   <label class="f">Idioma<select data-exf="lang"><option value="auto" ${e.lang==='auto'?'selected':''}>El de los apuntes</option><option value="es" ${e.lang==='es'?'selected':''}>Español</option><option value="en" ${e.lang==='en'?'selected':''}>English</option></select></label></div>
   <p class="mute" style="margin:6px 0 0">${e.isExam?'El banco se genera una sola vez con IA; cada examen sortea preguntas distintas del banco sin gastar más.':'Julia estudiará todas las preguntas activas del banco, una a una, con la foto delante.'}</p></div>
   <div class="panel"><h3 style="margin-top:0">📷 Teoría a estudiar</h3>
+  ${(!e.isExam&&e.pool.length&&!e.notes.trim()&&!(state.examFotos[e.id]||[]).length)?'<p class="msg wrong" style="margin-top:0">⚠️ Este tema ya tiene preguntas generadas pero no le queda ninguna foto ni texto de apuntes guardado (puede que se borrara una foto y se borrase también su texto). Julia no verá nada que estudiar antes de las preguntas hasta que vuelvas a subir la foto o pegues el texto aquí abajo.</p>':''}
   <div class="row" style="align-items:center;gap:12px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label><small class="mute">Hasta ${EX_MAXPH} fotos por tanda; puedes subir varias tandas seguidas.</small></div>
   <div id="exSt" class="mute" style="margin:6px 0"></div>
   ${examPhotosHTML(e.id)}
@@ -1783,6 +1858,7 @@ function exEditView(t,e){
   <div class="row" style="flex-wrap:wrap">
   <button class="btn primary" data-act="exGen" id="exGenB">${e.pool.length?'➕ Generar más preguntas':'🧠 Generar preguntas'}</button>
   ${act>=6?`<button class="btn" data-act="exSplit">✂️ Convertir en varios exámenes</button>`:''}
+  ${e.pool.length?`<button class="btn danger" data-act="exDelAll">🗑 Borrar todas las preguntas</button>`:''}
   </div><div id="exGst" class="mute" style="margin:6px 0">${e.pool.length?'Revisa la lista: corrige, quita o desmarca las que no quieras.':'Se generan con IA a partir del texto de arriba (unos céntimos).'}</div>
   ${act>=6?`<p class="mute" style="margin:0 0 6px;font-size:.85rem">Tienes preguntas de sobra: puedes repartirlas en varios exámenes distintos (uno para cada día, por ejemplo). Al pulsar te preguntará cuántas preguntas quieres en cada uno.</p>`:''}
   ${(e.dropped||[]).length?`<details><summary class="mute">La app ha descartado ${e.dropped.length} preguntas repetidas o casi iguales</summary><small class="mute">${e.dropped.map(d=>`• ${esc(d.q)}<br>&nbsp;&nbsp;<i>${esc(d.why)}</i>`).join('<br>')}</small></details>`:''}</div>
@@ -1952,6 +2028,7 @@ const examActions={
     toast('Foto eliminada');
   },
   exQDel(b){const e=exGet(ui.exId);e.pool.splice(+b.dataset.i,1);save();const y=scrollY;render();scrollTo(0,y);},
+  exDelAll(){const e=exGet(ui.exId);if(!e||!e.pool.length)return;if(!confirm(`¿Seguro que quieres borrar las ${e.pool.length} preguntas de «${e.title||'este tema'}»? No se puede deshacer.`))return;e.pool=[];e.dropped=[];save();render();},
   exPub(b){const e=exGet(ui.exId);
     if(e.status!=='ready'){if(!e.title.trim())return toast('Ponle un título al examen');if(e.pool.filter(q=>!q.off).length<Math.min(e.n,3))return toast('Faltan preguntas: genera o activa más');
       const act=e.pool.filter(q=>!q.off).length;if(act<e.n&&!confirm(`Solo hay ${act} preguntas activas y cada examen lleva ${e.n}. Julia hará exámenes de ${act}. ¿Publicar?`))return;e.status='ready';}
@@ -2088,6 +2165,15 @@ function studyNotesHTML(e){
   return `<details class="panel" style="margin-top:8px" ${hasPhotos?'':'open'}><summary style="cursor:pointer;font-weight:800">📖 Leer la teoría en texto</summary>
   <div class="mute" style="margin-top:8px;white-space:pre-wrap;line-height:1.5">${esc(txt)}</div></details>`;
 }
+/* si a este tema no le queda ni foto ni texto de teoría (p.ej. se borró la foto después de generar
+   las preguntas, lo que también borra su trozo de "apuntes"), no lo dejamos en blanco sin más:
+   avisamos con claridad de qué falta, para que el tutor sepa que tiene que volver a añadir la
+   teoría (las preguntas ya generadas no se pierden por esto). */
+function studyTheoryOrWarn(e){
+  const photos=studyPhotosHTML(e.id),notes=studyNotesHTML(e);
+  if(photos||notes)return photos+notes;
+  return `<div class="panel" style="border-color:#e0a800;background:#fff8e1;margin-bottom:8px">⚠️ <b>A este tema no le queda ninguna foto ni texto de teoría guardado</b> (puede que se borrara la foto). Las preguntas siguen aquí, pero pídele a tu tutor que vuelva a subir la foto o el texto en «Teoría y estudio».</div>`;
+}
 function studyPhotoOverlay(){
   const st=ui.study;if(!st||!ui.studyPhotoView)return '';
   const L=state.examFotos[st.temaId]||[],p=L.find(x=>x.id===ui.studyPhotoView);if(!p)return '';
@@ -2150,7 +2236,7 @@ function renderStudy(){
   <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0">
   <span class="mute">Nivel ${st.level} · pregunta ${st.i+1} de ${st.qs.length}</span>
   <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="studyPrev" ${st.i?'':'disabled'}>⬅ Anterior</button>${levelBtn}</span></div>
-  ${st.showPhoto?studyPhotosHTML(st.temaId)+studyNotesHTML(e):'<p class="mute" style="margin:4px 0 10px">🙈 Nivel 2: sin la foto. ¡A ver cuánto recuerdas!</p>'}
+  ${st.showPhoto?studyTheoryOrWarn(e):'<p class="mute" style="margin:4px 0 10px">🙈 Nivel 2: sin la foto. ¡A ver cuánto recuerdas!</p>'}
   <div class="panel"><div style="font-size:1.2rem;font-weight:800;line-height:1.4;margin-bottom:12px">${esc(q.q)}</div>
   ${studyAnswerHTML(st,q)}</div>${overlay}`;
   const ta=$('#studyAns');if(ta)ta.focus();
