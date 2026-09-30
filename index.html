@@ -797,7 +797,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.01-2';
+const APP_VERSION='2026.10.01-3';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -1755,40 +1755,21 @@ function exVarKey(q){
   const v=(q&&q.v)?exNorm(q.v):'';
   return v||exQuotedWord(q);
 }
-/* curar: quita repetidas, casi-repetidas y las de misma respuesta.
-   NOTA sobre los umbrales: una pregunta-plantilla que solo cambia UNA palabra (p.ej. "Analiza la
-   palabra «X»: ¿cuál es la raíz?...") comparte casi todo el texto salvo esa palabra, así que su
-   Jaccard de texto ronda 0.7-0.8 de forma NORMAL aunque sean preguntas legítimamente distintas —
-   por eso el umbral de texto tiene que ser muy alto (solo pilla duplicados casi literales). Y en
-   redactadas, las palabras clave de un análisis (raíz, morfema, diminutivo, género...) suelen ser
-   las mismas ETIQUETAS gramaticales para muchas palabras distintas (dos diminutivos comparten
-   "diminutivo", etc.), así que comparar la respuesta por esas claves genéricas descarta preguntas
-   que en realidad tratan de casos distintos: para redactadas nos apoyamos solo en el texto de la
-   pregunta y en el "fact"/caso concreto, no en las palabras clave de la respuesta. */
+/* curar: quita SOLO las que son prácticamente la misma pregunta (texto casi literal) o repiten
+   exactamente el mismo caso concreto (la misma palabra/ejemplo en preguntas-plantilla del tipo
+   "aplica esta regla a un caso nuevo"). A propósito ya NO se descarta nada por "misma respuesta"
+   ni por "mismo dato evaluado": eso estaba tirando muchísimas preguntas legítimas (p.ej. muchas
+   palabras distintas que son todas "adverbio de tiempo" comparten respuesta pero son preguntas
+   distintas), así que el único criterio real de duplicado es el texto de la pregunta en sí. */
 function exCurate(existing,fresh){
   const kept=existing.filter(q=>!q.off||true).slice(),dropped=[],add=[];
-  const info=q=>({qt:exToks(q.q),ft:exToks(q.fact||''),ak:exAnswerKey(q),at:exToks(exAnswerKey(q)),w:exVarKey(q)});
+  const info=q=>({qt:exToks(q.q),w:exVarKey(q)});
   const infos=kept.map(info);
   fresh.forEach(q=>{
     const n=info(q);let why='';
-    /* Si esta pregunta trae "caso concreto" (n.w: una palabra o ejemplo marcado en "var" o entre
-       comillas), es una pregunta-plantilla de las de "aplica la regla/clasificación a un caso
-       nuevo" (tipos de adverbio, raíz y morfemas, conjugar un verbo...). En estas es NORMAL y
-       ESPERADO que muchos casos distintos compartan la misma respuesta final (p.ej. "ayer" y
-       "pronto" son los dos "adverbio de tiempo"): comparar por la respuesta las descartaría todas
-       menos la primera. Así que para estas solo comprobamos que el caso concreto no se repita y
-       que el enunciado no sea casi literalmente el mismo texto; nunca las tiramos por "misma
-       respuesta". */
     for(let i=0;i<kept.length&&!why;i++){const m=infos[i],p=kept[i];
-      if(n.w){
-        if(m.w&&n.w===m.w)why=`Ya se preguntó por lo mismo (${p.v||exQuotedWord(p)}): «${p.q}»`;
-        else if(exJac(n.qt,m.qt)>=0.92)why=`Casi igual que otra: «${p.q}»`;
-        continue;
-      }
-      if(exJac(n.qt,m.qt)>=0.92)why=`Casi igual que otra: «${p.q}»`;
-      else if(n.ft.length>=2&&m.ft.length>=2&&exJac(n.ft,m.ft)>=0.9)why=`Evalúa lo mismo que: «${p.q}»`;
-      else if(q.t==='test'&&n.ak&&n.ak===m.ak&&!EX_YN.has(n.ak))why=`Misma respuesta que: «${p.q}»`;
-      else if(q.t==='test'&&n.at.length>=2&&exJac(n.at,m.at)>=0.9)why=`Respuesta casi idéntica a: «${p.q}»`;
+      if(n.w&&m.w&&n.w===m.w)why=`Ya se preguntó por lo mismo (${p.v||exQuotedWord(p)}): «${p.q}»`;
+      else if(exJac(n.qt,m.qt)>=0.94)why=`Es prácticamente la misma pregunta que: «${p.q}»`;
     }
     if(why)dropped.push({q:q.q,why});else{kept.push(q);infos.push(n);add.push(q);}
   });
