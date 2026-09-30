@@ -797,7 +797,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.01-7';
+const APP_VERSION='2026.10.01-8';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -1116,13 +1116,20 @@ function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
-  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame}[ui.screen]||renderHome)();
+  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo}[ui.screen]||renderHome)();
 }
 function renderList(){
   const L=state.dictados;
+  const rows=L.map(d=>`<div class="row" style="align-items:stretch;gap:6px;flex-wrap:nowrap">
+   <button class="item" style="flex:1" data-act="openDict" data-id="${esc(d.id)}"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small></span><span style="font-size:1.6rem">▶️</span></button>
+   <button class="btn" style="align-self:center" data-act="morfoFromDict" data-id="${esc(d.id)}" title="Analizar morfológicamente este texto">🔤</button>
+  </div>`).join('');
   app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>✏️ Dictados</h2>`+
-  (L.length?`<div class="list">${L.map(d=>`<button class="item" data-act="openDict" data-id="${esc(d.id)}"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small></span><span style="font-size:1.6rem">▶️</span></button>`).join('')}</div>`
-   :`<div class="panel">Todavía no hay dictados. Pídele a tu tutor que escriba uno en el área de Tutor.</div>`);
+  (L.length?`<div class="list">${rows}</div>`:`<div class="panel">Todavía no hay dictados. Pídele a tu tutor que escriba uno en el área de Tutor.</div>`)+
+  `<details class="panel" style="margin-top:14px"><summary style="cursor:pointer;font-weight:700">🔤 Analizar morfológicamente otro texto</summary>
+  <p class="mute" style="margin:8px 0">Pega o escribe cualquier texto y clasifica sus palabras (sustantivo, verbo, adjetivo…).</p>
+  <textarea id="morfoTa" placeholder="Pega aquí el texto…" style="min-height:100px"></textarea>
+  <div class="row" style="margin-top:8px"><button class="btn primary" data-act="morfoCustom">🔤 Analizar este texto</button></div></details>`;
 }
 const rateLabel=r=>r<.6?'Muy lenta':r<.8?'Lenta':r<1?'Normal':'Rápida';
 function renderRun(){
@@ -1479,6 +1486,7 @@ function sessionReport(s){
     else if(r.kind==='examen'&&r.res){const x=r.res;o.line=`${(Math.round(x.score*10)/10).toString().replace('.',',')} de ${x.n} puntos (${Math.round(100*x.score/x.n)}%)`;o.det=x.qa.filter(a=>exEff(a)<0.7).map(a=>`${a.q} → ${a.correct}`);}
     else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (sin foto)'}`;}
     else if(r.kind==='minijuego'&&r.res){o.line=r.res.line;}
+    else if(r.kind==='morfo'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien clasificadas`;}
     else o.line=r.done?'Hecho':'Empezado, sin terminar';
     return o;
   };
@@ -2737,6 +2745,119 @@ const miniActions={
     startMiniGame('__tutorpreview__',kind);
   }
 };
+/* ================= análisis morfológico (con IA) =================
+   Julia clasifica palabra por palabra el texto de un dictado (o cualquier otro texto que
+   pegue) en su categoría gramatical (sustantivo, verbo, adjetivo...). La IA genera UNA VEZ,
+   por adelantado, la "clave" correcta de cada palabra (usando el contexto de la frase, porque
+   una misma palabra puede ser distinta categoría según dónde aparezca); luego el juego en sí
+   es 100% local, palabra por palabra, con corrección inmediata. Nivel adaptado a 5º-6º de
+   primaria: categorías generales, sin subtipos ni tiempos verbales. */
+const MORFO_CATS=[
+  {k:'sustantivo',l:'Sustantivo'},
+  {k:'verbo',l:'Verbo'},
+  {k:'adjetivo',l:'Adjetivo'},
+  {k:'adverbio',l:'Adverbio'},
+  {k:'articulo',l:'Artículo'},
+  {k:'pronombre',l:'Pronombre'},
+  {k:'preposicion',l:'Preposición'},
+  {k:'conjuncion',l:'Conjunción'},
+  {k:'otro',l:'Otra / no lo sé'}
+];
+const MORFO_LABEL=Object.fromEntries(MORFO_CATS.map(c=>[c.k,c.l]));
+const MORFO_SET=new Set(MORFO_CATS.map(c=>c.k));
+function morfoPrompt(text,tokens){
+  const list=tokens.map((w,i)=>`${i}: "${w.t}"`).join('\n');
+  return [{role:'system',content:`Eres un profesor de Lengua de primaria (Year 6, 10-11 años, colegio británico) que clasifica morfológicamente cada palabra de un texto en español. Para cada palabra de la lista, usando el contexto del texto completo, decide su categoría gramatical más apropiada para ese nivel (no distingas subtipos ni tiempos verbales: solo la categoría general). Usa EXCLUSIVAMENTE una de estas categorías (en minúsculas, tal cual, sin acentos): sustantivo, verbo, adjetivo, adverbio, articulo, pronombre, preposicion, conjuncion, otro (usa "otro" solo para números, interjecciones o palabras que de verdad no encajen en ninguna anterior). Devuelve SOLO un JSON válido: {"cats":["categoria0","categoria1",...]} con EXACTAMENTE ${tokens.length} elementos, en el mismo orden que la lista de palabras, uno por palabra — nunca añadas ni quites elementos.`},
+   {role:'user',content:`TEXTO completo (para el contexto):\n"""\n${text}\n"""\n\nPALABRAS a clasificar, en este orden:\n${list}`}];
+}
+async function morfoAnalyze(text){
+  const tokens=getWords(text).slice(0,220);
+  if(!tokens.length)throw new Error('No hay palabras que analizar en este texto');
+  const raw=await aiText(morfoPrompt(text,tokens),Math.min(2200,200+tokens.length*12));
+  const m=raw.match(/\{[\s\S]*\}/);if(!m)throw new Error('La IA no ha devuelto una clasificación válida');
+  let j;try{j=JSON.parse(m[0]);}catch(e){throw new Error('La IA no ha devuelto una clasificación válida');}
+  if(!Array.isArray(j.cats))throw new Error('La IA no ha devuelto una clasificación válida');
+  const cats=tokens.map((_,i)=>MORFO_SET.has(j.cats[i])?j.cats[i]:'otro');
+  return {tokens,cats};
+}
+function morfoStart(text,title){
+  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,i:0,stage:'loading',results:[],ok:0,errMsg:''};
+  ui.screen='morfo';render();
+  morfoAnalyze(text).then(r=>{
+    const st=ui.morfo;if(!st||st.stage!=='loading')return;
+    st.tokens=r.tokens;st.cats=r.cats;st.stage='answer';render();
+  }).catch(e=>{
+    const st=ui.morfo;if(!st)return;st.stage='error';st.errMsg=e.message||'No se ha podido analizar el texto';render();
+  });
+}
+function morfoFinish(){
+  const st=ui.morfo;
+  const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now();
+  s.extra.push({id:uid(),kind:'morfo',title:'Análisis morfológico: '+st.title,start:Date.now(),end:Date.now(),secs:0,done:true,res:{n:st.tokens.length,ok:st.ok}});
+  touchSes(s);
+}
+function morfoTextHTML(st){
+  let out='',pos=0;
+  st.tokens.forEach((w,k)=>{
+    out+=esc(st.text.slice(pos,w.i));
+    const r=st.results[k];
+    if(k===st.i&&st.stage==='answer')out+=`<span style="background:#ece9fb;color:var(--pri2);font-weight:800;border-radius:6px;padding:0 4px">${esc(w.t)}</span>`;
+    else if(r)out+=`<span class="${r.ok?'fixed':'miss'}" title="${esc(MORFO_LABEL[r.correct])}">${esc(w.t)}</span>`;
+    else out+=esc(w.t);
+    pos=w.e;
+  });
+  return out+esc(st.text.slice(pos));
+}
+function morfoBody(){
+  const st=ui.morfo;
+  if(st.stage==='loading')return `<div class="panel" style="text-align:center">🔎 Analizando el texto… un momento.</div>`;
+  if(st.stage==='error')return `<div class="panel" style="border-color:var(--bad)">😕 ${esc(st.errMsg)}</div><div class="row" style="margin-top:10px"><button class="btn" data-act="morfoBack">← Volver</button></div>`;
+  if(st.stage==='done'){
+    const bad=st.results.map((r,i)=>({r,w:st.tokens[i].t})).filter(x=>!x.r.ok);
+    return `<div class="panel" style="border-color:var(--ok);background:var(--okbg)"><h2 style="margin:0">${st.ok===st.tokens.length?'🎉 ¡Perfecto!':'💪 ¡Bien hecho!'}</h2><div style="font-size:1.4rem;font-weight:800;margin-top:6px">${st.ok} de ${st.tokens.length} palabras bien clasificadas</div></div>
+    ${bad.length?`<h3>Repasa estas</h3><div class="list">${bad.map(x=>`<div class="panel" style="padding:10px 14px"><b>${esc(x.w)}</b>: pusiste <span class="wrong">${esc(MORFO_LABEL[x.r.pick]||x.r.pick)}</span>, era <span class="right">${esc(MORFO_LABEL[x.r.correct])}</span></div>`).join('')}</div>`:''}
+    <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="morfoBack">← Volver a dictados</button></div>`;
+  }
+  const w=st.tokens[st.i];
+  return `<p class="mute" style="margin:4px 0 10px">Palabra ${st.i+1} de ${st.tokens.length}</p>
+  <div class="panel" style="line-height:2">${morfoTextHTML(st)}</div>
+  <div class="panel" style="text-align:center"><div style="font-size:1.6rem;font-weight:800">${esc(w.t)}</div><p class="mute" style="margin:4px 0 0">¿Qué tipo de palabra es?</p></div>
+  ${st.stage==='answer'?`<div class="opts" style="grid-template-columns:repeat(2,1fr)">${MORFO_CATS.map(c=>`<button data-act="morfoPick" data-k="${c.k}">${c.l}</button>`).join('')}</div>`
+   :`<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?'✅ ¡Correcto!':`❌ Era: ${esc(MORFO_LABEL[st.cats[st.i]])}`}</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`}
+  <div class="row" style="margin-top:14px"><button class="link" data-act="morfoBack">← Salir</button></div>`;
+}
+function renderMorfo(){
+  const st=ui.morfo;if(!st){ui.screen='list';return render();}
+  app.innerHTML=`<h2 style="margin:0">🔤 ${esc(st.title)}</h2>${morfoBody()}`;
+}
+const morfoActions={
+  morfoFromDict(b){
+    if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar el análisis morfológico');
+    const d=state.dictados.find(x=>x.id===b.dataset.id);if(!d)return;
+    morfoStart(d.text,d.title);
+  },
+  morfoCustom(){
+    if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar el análisis morfológico');
+    const ta=$('#morfoTa'),t=(ta&&ta.value||'').trim();
+    if(!t)return toast('Pega o escribe un texto primero');
+    if(t.length>4000)return toast('Este texto es demasiado largo; prueba con un fragmento más corto');
+    morfoStart(t,'Texto propio');
+  },
+  morfoPick(b){
+    const st=ui.morfo;if(!st||st.stage!=='answer')return;
+    const pick=b.dataset.k,correct=st.cats[st.i],ok=pick===correct;
+    st.results[st.i]={ok,pick,correct};if(ok)st.ok++;
+    st.stage=ok?'ok':'wrong';
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  morfoNext(){
+    const st=ui.morfo;if(!st)return;
+    st.i++;
+    if(st.i>=st.tokens.length){st.stage='done';morfoFinish();}else st.stage='answer';
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  morfoBack(){ui.morfo=null;ui.screen='list';render();}
+};
 /* ================= área tutor ================= */
 function renderTutor(){
   if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
@@ -2890,7 +3011,7 @@ const studentActions={
   setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();},
   showVersion(){const l=state.sync.last?new Date(state.sync.last).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'nunca';toast(`Versión v${APP_VERSION} · última sincronización: ${l}`);}
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions,studyActions,miniActions);
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions,studyActions,miniActions,morfoActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
