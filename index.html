@@ -813,7 +813,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.01-10';
+const APP_VERSION='2026.10.01-11';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -1132,7 +1132,7 @@ function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
-  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo}[ui.screen]||renderHome)();
+  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo,engdict:renderEngDict}[ui.screen]||renderHome)();
 }
 function renderList(){
   const L=state.dictados;
@@ -1503,6 +1503,7 @@ function sessionReport(s){
     else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (sin foto)'}`;}
     else if(r.kind==='minijuego'&&r.res){o.line=r.res.line;}
     else if(r.kind==='morfo'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien clasificadas`;}
+    else if(r.kind==='vocab'&&r.res){const x=r.res;o.line=`${x.n} palabras consultadas · ${x.ok} ya las sabía`;}
     else o.line=r.done?'Hecho':'Empezado, sin terminar';
     return o;
   };
@@ -1527,7 +1528,8 @@ function renderHome(){
   <div class="tiles"><button class="tile" data-act="goToday" style="border-color:var(--pri)"><span class="ico">📅</span><b>Deberes de hoy</b><small>${sub}</small></button>
   <button class="tile" data-act="goList"><span class="ico">✏️</span><b>Dictados</b><small>Escucha y escribe lo que oyes</small></button>
   ${state.examenes.some(e=>e.status==='ready')?`<button class="tile" data-act="goExams"><span class="ico">📚</span><b>Teoría y exámenes</b><small>${(()=>{const nx=state.examenes.filter(e=>e.status==='ready'&&e.isExam&&e.date>=t).sort((a,b)=>a.date<b.date?-1:1)[0];return nx?'Próximo examen: '+esc(nx.title)+' ('+exDaysTxt(nx.date)+')':'Estudia la teoría o practica un examen';})()}</small></button>`:''}
-  <button class="tile" data-act="goMlist"><span class="ico">➗</span><b>Matemáticas</b><small>Practica cuando quieras</small></button></div>`;
+  <button class="tile" data-act="goMlist"><span class="ico">➗</span><b>Matemáticas</b><small>Practica cuando quieras</small></button>
+  <button class="tile" data-act="goDict"><span class="ico">📖</span><b>Diccionario (inglés)</b><small>Adivina qué significan palabras en inglés</small></button></div>`;
 }
 function renderToday(){
   const t=todayStr(),its=itemsOf(t),s=getSes(t,false);
@@ -2315,6 +2317,11 @@ function studySave(){
 function studyClearProgress(temaId){
   if(state.studyProgress&&state.studyProgress[temaId]){delete state.studyProgress[temaId];save();}
 }
+/* ¿tiene este tema alguna foto de teoría (sin contar las que fallaron al subir)? decide si el
+   texto transcrito empieza plegado (hay foto, se ve esa) o desplegado (no hay foto, hace falta
+   el texto). Una vez decidido al abrir el tema, Julia puede plegar/desplegarlo a mano y eso se
+   respeta el resto de la ronda (ver ui.study.theoryOpen). */
+function studyHasPhotos(id){return (state.examFotos[id]||[]).some(p=>!p.err);}
 function studyOpen(id){
   const e=exGet(id);if(!e||e.status!=='ready')return toast('Este tema todavía no está disponible');
   const pool=e.pool.filter(q=>!q.off);if(!pool.length)return toast('Este tema no tiene preguntas todavía');
@@ -2328,12 +2335,12 @@ function studyOpen(id){
     if(rebuilt.length){qs=rebuilt;i=Math.min(saved.i,qs.length-1);firstOk=saved.firstOk||0;level=saved.level||1;showPhoto=saved.showPhoto!==undefined?saved.showPhoto:true;}
   }
   if(!qs)qs=shuffleArr(pool);
-  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk,n:qs.length,recorded:false};
+  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk,n:qs.length,recorded:false,theoryOpen:!studyHasPhotos(id)};
   ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 function studyRound(temaId,level,showPhoto){
   const e=exGet(temaId),pool=e.pool.filter(q=>!q.off);
-  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk:0,n:pool.length,recorded:false};
+  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk:0,n:pool.length,recorded:false,theoryOpen:!studyHasPhotos(temaId)};
   ui.studyPhotoView=null;ui.studyQuitAsk=false;studySave();render();
 }
 function studyPhotosHTML(id){
@@ -2345,9 +2352,10 @@ function studyPhotosHTML(id){
    la pantalla; se abre solo si no hay fotos (para que la teoría no falte nunca). */
 function studyNotesHTML(e){
   const txt=String(e&&e.notes||'').trim();if(!txt)return '';
-  const hasPhotos=(state.examFotos[e.id]||[]).some(p=>!p.err);
-  return `<details class="panel" style="margin-top:8px" ${hasPhotos?'':'open'}><summary style="cursor:pointer;font-weight:800">📖 Leer la teoría en texto</summary>
-  <div class="mute" style="margin-top:8px;white-space:pre-wrap;line-height:1.5">${esc(txt)}</div></details>`;
+  const st=ui.study,open=st?!!st.theoryOpen:!studyHasPhotos(e.id);
+  return `<div class="panel" style="margin-top:8px">
+  <button data-act="studyToggleTheory" style="all:unset;display:block;width:100%;cursor:pointer;font-weight:800">📖 Leer la teoría en texto <span style="float:right">${open?'▲ minimizar':'▼ ver'}</span></button>
+  ${open?`<div class="mute" style="margin-top:8px;white-space:pre-wrap;line-height:1.5">${esc(txt)}</div>`:''}</div>`;
 }
 /* si a este tema no le queda ni foto ni texto de teoría (p.ej. se borró la foto después de generar
    las preguntas, lo que también borra su trozo de "apuntes"), no lo dejamos en blanco sin más:
@@ -2483,6 +2491,7 @@ const studyActions={
     studySave();
     const y=scrollY;render();scrollTo(0,y);
   },
+  studyToggleTheory(){const st=ui.study;if(!st)return;st.theoryOpen=!st.theoryOpen;const y=scrollY;render();scrollTo(0,y);},
   studyLevel2(){const st=ui.study;if(!st)return;studyRound(st.temaId,2,false);},
   studyLevel1(){const st=ui.study;if(!st)return;studyRound(st.temaId,1,true);},
   studyRepeat(){const st=ui.study;if(!st)return;studyRound(st.temaId,st.level,st.showPhoto);},
@@ -2874,6 +2883,86 @@ const morfoActions={
   },
   morfoBack(){ui.morfo=null;ui.screen='list';render();}
 };
+/* ================= diccionario guiado inglés → español (con IA) =================
+   Julia escribe CUALQUIER palabra en inglés que quiera consultar. La IA nunca traduce
+   directamente: da una definición sencilla en inglés, un par de frases de ejemplo y algún
+   sinónimo, todo en inglés, adaptado a su nivel (10-11 años, colegio británico). Con esas
+   pistas, Julia intenta adivinar el significado en español, y solo al pulsar "Ver traducción"
+   se le revela la traducción real para que ella misma compruebe si había acertado. */
+function engDictPrompt(word){
+  return [{role:'system',content:`Eres un profesor de inglés que ayuda a un alumno español de primaria (Year 6, 10-11 años, colegio británico) a adivinar el significado de una palabra en inglés SIN decírselo nunca. Te doy una palabra en inglés. Da pistas EN INGLÉS sencillo (adaptado a su nivel): una definición corta y fácil, 2 frases de ejemplo naturales usando la palabra, y hasta 2 sinónimos sencillos en inglés si existen. IMPORTANTE: en la definición, los ejemplos y los sinónimos NUNCA escribas la traducción al español de la palabra, ni la palabra en español, ni ninguna pista tan obvia que sea prácticamente decírselo (por ejemplo, no uses un cognado evidente si existe una forma de explicarlo sin él). Aparte, en un campo separado "translation" (que no se le mostrará al alumno hasta que él pida comprobar su respuesta), da la traducción correcta al español de esa palabra en este contexto. Devuelve SOLO un JSON válido: {"pos":"noun|verb|adjective|adverb|other","definition":"...","examples":["...","..."],"synonyms":["...","..."],"translation":"..."}. Si "${word}" no es una palabra real en inglés o no la reconoces, devuelve en su lugar SOLO {"error":"..."} con una frase breve en español explicando por qué.`},
+   {role:'user',content:`Palabra: "${word}"`}];
+}
+async function engDictAnalyze(word){
+  const raw=await aiText(engDictPrompt(word),700);
+  const m=raw.match(/\{[\s\S]*\}/);if(!m)throw new Error('No he podido buscar esta palabra');
+  let j;try{j=JSON.parse(m[0]);}catch(e){throw new Error('No he podido buscar esta palabra');}
+  if(j.error)throw new Error(String(j.error).slice(0,200));
+  if(!j.definition||!j.translation)throw new Error('No he podido buscar esta palabra');
+  return {
+    pos:String(j.pos||'').slice(0,20),
+    definition:String(j.definition).slice(0,400),
+    examples:(Array.isArray(j.examples)?j.examples:[]).map(x=>String(x).slice(0,200)).slice(0,3),
+    synonyms:(Array.isArray(j.synonyms)?j.synonyms:[]).map(x=>String(x).slice(0,40)).slice(0,4),
+    translation:String(j.translation).slice(0,120)
+  };
+}
+function engDictFinish(){
+  const st=ui.engdict;if(!st||!st.done)return;
+  const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now();
+  s.extra.push({id:uid(),kind:'vocab',title:'Diccionario guiado (inglés)',start:Date.now(),end:Date.now(),secs:0,done:true,res:{n:st.done,ok:st.ok}});
+  touchSes(s);
+}
+function engDictBody(st){
+  if(st.stage==='input'){
+    return `<div class="panel"><label class="f">Palabra en inglés<input type="text" id="dictWord" data-enter="dictWord" placeholder="p.ej. wander" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(st.word||'')}"></label>
+    <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="dictSearch">🔍 Ver pistas</button></div></div>`;
+  }
+  if(st.stage==='loading')return `<div class="panel" style="text-align:center">🔎 Pensando pistas para «${esc(st.word)}»…</div>`;
+  if(st.stage==='error')return `<div class="panel" style="border-color:var(--bad)">😕 ${esc(st.errMsg)}</div><div class="row" style="margin-top:10px"><button class="btn" data-act="dictAgain">← Probar otra palabra</button></div>`;
+  const c=st.clue;
+  return `<div class="panel"><div style="font-size:1.7rem;font-weight:800">${esc(st.word)}</div>${c.pos?`<span class="mute">${esc(c.pos)}</span>`:''}
+  <p style="margin-top:10px">${esc(c.definition)}</p>
+  ${c.examples.length?`<ul style="margin:8px 0 0;padding-left:20px">${c.examples.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`:''}
+  ${c.synonyms.length?`<p class="mute" style="margin-top:8px">Synonyms: ${c.synonyms.map(esc).join(', ')}</p>`:''}
+  </div>
+  <div class="panel"><p class="mute" style="margin-top:0">¿Qué crees que significa en español?</p>
+  <textarea id="dictGuess" data-enter="dictGuess" placeholder="Escribe tu respuesta…" style="min-height:70px" ${st.revealed?'disabled':''}>${esc(st.guess||'')}</textarea>
+  ${st.revealed?'':`<div class="row" style="margin-top:8px"><button class="btn primary big" data-act="dictReveal">👀 Ver traducción</button></div>`}
+  ${st.revealed?`<div class="msg" style="margin-top:10px">La traducción es: <b>${esc(c.translation)}</b></div>
+  <p class="mute" style="margin-top:6px">¿Lo tenías?</p>
+  <div class="row"><button class="btn success" data-act="dictSelf" data-ok="1">✅ Sí, lo tenía</button><button class="btn" data-act="dictSelf" data-ok="0">💡 No, ahora lo sé</button></div>`:''}
+  </div>`;
+}
+function renderEngDict(){
+  const st=ui.engdict;if(!st){ui.screen='home';return render();}
+  app.innerHTML=`<button class="link" data-act="dictBack">← Inicio</button><h2 style="margin:0">📖 Diccionario guiado (inglés)</h2>
+  <p class="mute" style="margin-top:4px">Escribe una palabra en inglés: te doy pistas en inglés (nunca la traducción) para que adivines qué significa.</p>
+  ${st.done?`<p class="mute">Llevas ${st.done} palabra${st.done===1?'':'s'} (${st.ok} acertada${st.ok===1?'':'s'})</p>`:''}
+  ${engDictBody(st)}`;
+}
+const engDictActions={
+  goDict(){ui.engdict={stage:'input',word:'',clue:null,guess:'',revealed:false,errMsg:'',done:0,ok:0};ui.screen='engdict';render();},
+  dictSearch(){
+    if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar el diccionario');
+    const st=ui.engdict;if(!st||st.stage==='loading')return;
+    const w=($('#dictWord')?.value||'').trim();
+    if(!w)return toast('Escribe una palabra primero');
+    if(!/^[a-zA-Z' -]{1,30}$/.test(w))return toast('Escribe solo una palabra en inglés');
+    st.word=w;st.stage='loading';st.guess='';st.revealed=false;render();
+    engDictAnalyze(w).then(c=>{const s2=ui.engdict;if(!s2||s2.stage!=='loading')return;s2.clue=c;s2.stage='clues';render();})
+      .catch(e=>{const s2=ui.engdict;if(!s2)return;s2.stage='error';s2.errMsg=e.message||'No se ha podido buscar esta palabra';render();});
+  },
+  dictReveal(){const st=ui.engdict;if(!st||st.stage!=='clues'||st.revealed)return;st.guess=($('#dictGuess')?.value||'').trim();st.revealed=true;render();},
+  dictSelf(b){
+    const st=ui.engdict;if(!st||!st.revealed)return;
+    st.done++;if(b.dataset.ok==='1')st.ok++;
+    st.stage='input';st.word='';st.clue=null;st.guess='';st.revealed=false;
+    render();const i=$('#dictWord');if(i)i.focus();
+  },
+  dictAgain(){const st=ui.engdict;if(!st)return;st.stage='input';st.errMsg='';render();},
+  dictBack(){engDictFinish();ui.engdict=null;ui.screen='home';render();}
+};
 /* ================= área tutor ================= */
 function renderTutor(){
   if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
@@ -3028,7 +3117,7 @@ const studentActions={
   setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();},
   showVersion(){const l=state.sync.last?new Date(state.sync.last).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'nunca';toast(`Versión v${APP_VERSION} · última sincronización: ${l}`);}
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions,studyActions,miniActions,morfoActions);
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions,studyActions,miniActions,morfoActions,engDictActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
@@ -3054,7 +3143,9 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
   if(t.dataset.enter==='mans')taskActions.mcheck();
   if(t.dataset.enter==='opin')fixActions.origGo();
   if(t.dataset.enter==='pin')tutorActions.pinEnter();
-  if(t.dataset.enter==='studyAns')studyActions.studyCheck();});
+  if(t.dataset.enter==='studyAns')studyActions.studyCheck();
+  if(t.dataset.enter==='dictWord')engDictActions.dictSearch();
+  if(t.dataset.enter==='dictGuess')engDictActions.dictReveal();});
 render();
 async function readDictPhotos(files){
   const st=$('#dictPhotoSt');if(!state.ai.photoOn){if(st)st.textContent='';return toast('Activa la IA de fotos en Ajustes para leer fotos');}
