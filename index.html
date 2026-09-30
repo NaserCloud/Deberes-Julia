@@ -797,7 +797,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.09.30-1';
+const APP_VERSION='2026.10.01-2';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -1771,8 +1771,20 @@ function exCurate(existing,fresh){
   const infos=kept.map(info);
   fresh.forEach(q=>{
     const n=info(q);let why='';
+    /* Si esta pregunta trae "caso concreto" (n.w: una palabra o ejemplo marcado en "var" o entre
+       comillas), es una pregunta-plantilla de las de "aplica la regla/clasificación a un caso
+       nuevo" (tipos de adverbio, raíz y morfemas, conjugar un verbo...). En estas es NORMAL y
+       ESPERADO que muchos casos distintos compartan la misma respuesta final (p.ej. "ayer" y
+       "pronto" son los dos "adverbio de tiempo"): comparar por la respuesta las descartaría todas
+       menos la primera. Así que para estas solo comprobamos que el caso concreto no se repita y
+       que el enunciado no sea casi literalmente el mismo texto; nunca las tiramos por "misma
+       respuesta". */
     for(let i=0;i<kept.length&&!why;i++){const m=infos[i],p=kept[i];
-      if(n.w&&m.w){if(n.w===m.w)why=`Ya se preguntó por lo mismo (${p.v||exQuotedWord(p)}): «${p.q}»`;continue;}
+      if(n.w){
+        if(m.w&&n.w===m.w)why=`Ya se preguntó por lo mismo (${p.v||exQuotedWord(p)}): «${p.q}»`;
+        else if(exJac(n.qt,m.qt)>=0.92)why=`Casi igual que otra: «${p.q}»`;
+        continue;
+      }
       if(exJac(n.qt,m.qt)>=0.92)why=`Casi igual que otra: «${p.q}»`;
       else if(n.ft.length>=2&&m.ft.length>=2&&exJac(n.ft,m.ft)>=0.9)why=`Evalúa lo mismo que: «${p.q}»`;
       else if(q.t==='test'&&n.ak&&n.ak===m.ak&&!EX_YN.has(n.ak))why=`Misma respuesta que: «${p.q}»`;
@@ -1869,23 +1881,23 @@ function genPrompt(exam,chunk,ci,nc,k){
   const facts=exam.pool.slice(-60).map(q=>q.v||q.fact||q.q.slice(0,50)).join(' | ');
   return [{role:'system',content:`Eres un profesor de primaria (Year 6, 10-11 años, colegio británico) que redacta preguntas de examen usando ÚNICAMENTE los apuntes que se te dan. Reglas estrictas:
 1) Cada pregunta evalúa UN dato distinto. Nunca dos preguntas con la misma respuesta ni reformulaciones de la misma idea. EXCEPCIÓN (ver regla 2): en preguntas de "aplica esta regla a un caso nuevo", repetir la MISMA pregunta-plantilla cambiando solo el caso concreto (una palabra, un verbo, un número...) SÍ cuenta como "dato distinto" y es exactamente lo que se pide, no una reformulación — que se parezcan mucho entre sí está bien y es lo esperado.
-2) Los datos concretos (fechas, cifras, nombres, hechos) deben salir SOLO de los apuntes; no inventes datos externos. PERO si los apuntes explican una REGLA o MÉTODO general de análisis en vez de (o además de) datos concretos —por ejemplo: cómo separar la raíz y los morfemas de una palabra y qué significa cada uno, identificar sinónimos/antónimos, familias de palabras, tipos de oraciones y de verbos, conjugar un tiempo verbal, clasificar sílabas, etc.— entonces NO te limites al único ejemplo que aparezca en los apuntes: aplica esa MISMA regla una y otra vez a casos NUEVOS y variados (palabras, verbos, números…), reales y habituales para un alumno de 10-11 años (elígelos tú; no hace falta que estén en los apuntes). Este tipo de teoría se aprende por REPETICIÓN, así que genera TANTAS preguntas de este estilo como se te pidan, todas con la misma plantilla de pregunta y el mismo formato de respuesta, cambiando solo el caso concreto cada vez (nunca repitas el mismo caso dos veces). IMPORTANTE — no te salgas del alcance exacto de la teoría: solo varía dentro de las categorías, tiempos o tipos que los apuntes explican explícitamente, nunca añadas otros que el alumno no ha estudiado todavía. Por ejemplo, si los apuntes solo explican el presente y el futuro, todos los verbos deben practicarse en presente o futuro — NUNCA metas pretérito ni otro tiempo que no esté en los apuntes; si los apuntes solo explican un tipo de morfema, no introduzcas otros tipos que no se hayan visto. Si los apuntes SÍ cubren varias categorías (p. ej. verbos regulares e irregulares, o varios tipos de morfema), entonces sí reparte las preguntas entre esas categorías para cubrirlas todas, pero sin salirte de lo que los apuntes cubren. Marca siempre el caso concreto en el campo "var" del JSON (ver formato abajo) además de mencionarlo en la pregunta, p. ej.: "q":"Analiza la palabra «perrito»: ¿cuál es la raíz? ¿qué morfema(s) tiene y qué significa(n)?","var":"perrito"; o "q":"Escribe el verbo «cantar» en futuro: ...","var":"cantar".
+2) Los datos concretos (fechas, cifras, nombres, hechos) deben salir SOLO de los apuntes; no inventes datos externos. PERO si los apuntes explican una REGLA, MÉTODO o CLASIFICACIÓN general en vez de (o además de) datos concretos —por ejemplo: cómo separar la raíz y los morfemas de una palabra y qué significa cada uno, identificar sinónimos/antónimos, familias de palabras, clasificar palabras o frases en sus TIPOS (tipos de adverbios, de sustantivos, de pronombres, de oraciones, sujeto o predicado, etc.), conjugar un tiempo verbal, clasificar sílabas, etc.— entonces NO te limites al único ejemplo que aparezca en los apuntes: aplica esa MISMA regla o clasificación una y otra vez a casos NUEVOS y variados (palabras, frases, verbos, números…), reales y habituales para un alumno de 10-11 años (elígelos tú; no hace falta que estén en los apuntes). Este tipo de teoría se aprende por REPETICIÓN, así que genera TANTAS preguntas de este estilo como se te pidan, todas con la misma plantilla de pregunta y el mismo formato de respuesta, cambiando solo el caso concreto cada vez (nunca repitas el mismo caso dos veces); que muchos casos distintos acaben teniendo la MISMA respuesta final (p. ej. varias palabras que son todas "adverbio de tiempo") es NORMAL y no un problema. IMPORTANTE — no te salgas del alcance exacto de la teoría: solo varía dentro de las categorías, tiempos o tipos que los apuntes explican explícitamente, nunca añadas otros que el alumno no ha estudiado todavía. Por ejemplo, si los apuntes solo explican el presente y el futuro, todos los verbos deben practicarse en presente o futuro — NUNCA metas pretérito ni otro tiempo que no esté en los apuntes; si los apuntes solo explican tipos de adverbios de tiempo y lugar, no introduzcas otros tipos (de modo, cantidad…) que no se hayan visto. Si los apuntes SÍ cubren varias categorías (p. ej. verbos regulares e irregulares, o varios tipos de adverbio), entonces sí reparte las preguntas entre esas categorías para cubrirlas todas, pero sin salirte de lo que los apuntes cubren. Marca SIEMPRE el caso concreto en el campo "var" del JSON (ver formato abajo) además de mencionarlo en la pregunta — esto es obligatorio en cualquier pregunta de este tipo (clasificación incluida), p. ej.: "q":"Analiza la palabra «perrito»: ¿cuál es la raíz? ¿qué morfema(s) tiene y qué significa(n)?","var":"perrito"; "q":"Escribe el verbo «cantar» en futuro: ...","var":"cantar"; "q":"¿Qué tipo de adverbio es «ayer»?","var":"ayer".
 3) Preguntas claras y autocontenidas, adecuadas a 10-11 años. Sin «según el texto». Sin verdadero/falso ni sí/no.
 4) Test: 4 opciones plausibles y claramente distintas, solo una correcta, sin «todas las anteriores». La opción correcta no debe ser siempre la más larga.
 5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una); si es una pregunta de "aplica la regla a un caso nuevo", la respuesta modelo debe dar el análisis completo de ese caso (p. ej. "Raíz: perr-. Morfemas: -it- (diminutivo), -o (género masculino)") y las palabras clave deben incluir cada parte del análisis.
 6) ${langRule(exam.lang)}
-Devuelve SOLO un JSON válido: {"questions":[...]} con objetos de estos formatos:
+${exam.hint?`7) El profesor ha dado estas indicaciones para estas preguntas — síguelas con prioridad, dentro de lo que permiten los apuntes y sin salirte del alcance de la teoría (regla 2): "${exam.hint}"\n`:''}Devuelve SOLO un JSON válido: {"questions":[...]} con objetos de estos formatos:
 test: {"t":"test","q":"...","o":["...","...","...","..."],"c":0,"e":"explicación breve","fact":"dato evaluado en 3-6 palabras","var":"caso concreto si aplica la regla 2, si no, omite este campo"}
 redactada: {"t":"red","q":"...","a":"respuesta modelo","k":["clave1","clave2"],"e":"","fact":"dato evaluado en 3-6 palabras","var":"caso concreto si aplica la regla 2, si no, omite este campo"}
 En test, "c" es la posición (0-3) de la opción correcta dentro de "o".`},
-   {role:'user',content:`APUNTES (trozo ${ci+1} de ${nc}):\n"""\n${chunk}\n"""\n\nGenera ${k} preguntas ${tt}.${facts?`\nYa existen preguntas sobre estos datos; NO los repitas ni evalúes lo mismo: ${facts}`:''}`}];
+   {role:'user',content:`APUNTES (trozo ${ci+1} de ${nc}):\n"""\n${chunk}\n"""\n\nGenera ${k} preguntas ${tt}.${exam.hint?`\nRecuerda seguir las indicaciones del profesor: ${exam.hint}`:''}${facts?`\nYa existen preguntas sobre estos datos; NO los repitas ni evalúes lo mismo: ${facts}`:''}`}];
 }
 async function genQuestions(exam,onProg){
   const chunks=exChunks(exam.notes);if(!chunks.length)throw new Error('Primero añade los apuntes');
   const target=Math.max(6,Math.min(80,exam.bank||40)),rng=seedRng('g'+Date.now());
-  let calls=0,dry=0,err='';const maxCalls=Math.min(16,Math.ceil(target/4)+chunks.length);
+  let calls=0,dry=0,err='';const maxCalls=Math.min(30,Math.ceil(target/3)+chunks.length*2);
   const start=exam.pool.length;
-  while(exam.pool.length-start<target&&calls<maxCalls&&dry<2){
+  while(exam.pool.length-start<target&&calls<maxCalls&&dry<3){
     const ci=calls%chunks.length;
     onProg&&onProg(`Generando preguntas… ${exam.pool.length-start} de ${target}`);
     let txt;try{txt=await aiText(genPrompt(exam,chunks[ci],ci,chunks.length,6),1500);}catch(e){err=e.message;break;}
@@ -1990,6 +2002,8 @@ function exEditView(t,e){
   <label class="f">Texto de los apuntes (revísalo y corrígelo si hace falta)<textarea data-exf="notes" style="min-height:200px" placeholder="Sube fotos o pega aquí el texto de la teoría.">${esc(e.notes)}</textarea></label></div>
   ${exPhotoOverlay(e.id)}
   <div class="panel"><h3 style="margin-top:0">🧠 Preguntas <small class="mute">(${act} activas de ${e.pool.length})</small></h3>
+  <label class="f">Consejos para la IA (opcional)<textarea data-exf="hint" placeholder="Ej.: Haz preguntas sobre los tipos de adverbios, usando diferentes palabras cada vez." style="min-height:70px">${esc(e.hint||'')}</textarea></label>
+  <p class="mute" style="margin:2px 0 8px">Úsalo para pedir un enfoque concreto: qué tema priorizar, qué tipo de casos usar, que no repita ciertas palabras, etc. Se tiene en cuenta cada vez que generes preguntas (también al pulsar «Generar más»).</p>
   <div class="row" style="flex-wrap:wrap">
   <button class="btn primary" data-act="exGen" id="exGenB">${e.pool.length?'➕ Generar más preguntas':'🧠 Generar preguntas'}</button>
   ${act>=6?`<button class="btn" data-act="exSplit">✂️ Convertir en varios exámenes</button>`:''}
@@ -2088,7 +2102,7 @@ async function readNotesPhotos(files){
   }
 }
 const examActions={
-  exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',pool:[],dropped:[],status:'draft',isExam:false};state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;ui.exCombineOn=false;ui.exCombineSel=[];render();},
+  exNew(){const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',hint:'',pool:[],dropped:[],status:'draft',isExam:false};state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;ui.exCombineOn=false;ui.exCombineSel=[];render();},
   exOpen(b){ui.exId=b.dataset.id;ui.exExpand=null;render();},
   exBack(){ui.exId=null;ui.exExpand=null;render();},
   exExpand(b){ui.exExpand=b.dataset.id;render();},
@@ -2112,7 +2126,7 @@ const examActions={
     e.n=n;e.pool=shuffled.slice(0,n).concat(leftover);
     e.status='draft';e.isExam=true;
     for(let k=1;k<total;k++){
-      state.examenes.push({id:'e'+uid(),title:`${baseTitle} (${k+1})`,date:exAddDays(e.date,k),mode:e.mode,n,bank:e.bank,lang:e.lang,notes:'',pool:shuffled.slice(k*n,(k+1)*n),dropped:[],status:'draft',isExam:true});
+      state.examenes.push({id:'e'+uid(),title:`${baseTitle} (${k+1})`,date:exAddDays(e.date,k),mode:e.mode,n,bank:e.bank,lang:e.lang,notes:'',hint:e.hint||'',pool:shuffled.slice(k*n,(k+1)*n),dropped:[],status:'draft',isExam:true});
     }
     ui.exExpand=null;save();render();
     toast(`Creados ${total} exámenes de ${n} preguntas cada uno. Revísalos y publícalos.`);
@@ -2134,7 +2148,7 @@ const examActions={
     const mode=mixed?'mixto':exams[0].mode;
     let title='Examen final: '+exams.map(e=>e.title||'(sin título)').join(' + ');
     if(title.length>120)title=title.slice(0,117)+'…';
-    const ne={id:'e'+uid(),title,date:todayStr(),mode,n:Math.min(pool.length,40),bank:pool.length,lang:exams[0].lang||'auto',notes:'',pool,dropped:[],status:'draft',isExam:true};
+    const ne={id:'e'+uid(),title,date:todayStr(),mode,n:Math.min(pool.length,40),bank:pool.length,lang:exams[0].lang||'auto',notes:'',hint:'',pool,dropped:[],status:'draft',isExam:true};
     state.examenes.push(ne);
     ui.exCombineOn=false;ui.exCombineSel=[];ui.exId=ne.id;ui.exExpand=null;
     save();render();
@@ -2576,37 +2590,45 @@ function makePuzzleState(){
     const moves=puzzleNeighbors(blank),m=moves[Math.floor(Math.random()*moves.length)];
     [tiles[blank],tiles[m]]=[tiles[m],tiles[blank]];blank=m;
   }
-  return {tiles,moves:0,done:puzzleSolved(tiles)};
+  return {tiles,moves:0,done:puzzleSolved(tiles),t0:Date.now(),maxMoves:100,maxMs:4*60*1000,timer:null};
+}
+function puzzleTick(){
+  const g=ui.mgame;if(!g||g.kind!=='puzzle'||g.done)return;
+  if(Date.now()-g.t0>=g.maxMs){miniClearTimer(g);g.done='timeout';render();}
 }
 function puzzleHTML(){
   const g=ui.mgame;
+  if(!g.timer&&!g.done)g.timer=setInterval(puzzleTick,1000);
+  const solved=g.done===true;
   return `<h2 style="margin:0">🧩 Rompecabezas</h2>
-  <p class="mute" style="margin-top:4px">Un pequeño descanso. Ordena los números del 1 al 8 deslizando las piezas.</p>
+  <p class="mute" style="margin-top:4px">Un pequeño descanso. Ordena los números del 1 al 8 deslizando las piezas (máximo ${g.maxMoves} movimientos o 4 minutos).</p>
   <div class="mini-grid" style="grid-template-columns:repeat(3,1fr);max-width:260px">${g.tiles.map((v,i)=>v===null?`<span class="mini-card" style="background:transparent;border-style:dashed"></span>`:`<button class="mini-card" data-act="miniPuzzle" data-i="${i}" ${g.done?'disabled':''}>${v}</button>`).join('')}</div>
-  ${g.done?`<div class="msg right" style="margin-top:10px">🎉 ¡Resuelto en ${g.moves} movimientos!</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="miniDone">Seguir con los ejercicios ➜</button></div>`:`<p class="mute" style="margin-top:8px">Movimientos: ${g.moves}</p>`}`;
+  ${g.done?(solved?`<div class="msg right" style="margin-top:10px">🎉 ¡Resuelto en ${g.moves} movimientos!</div>`:`<div class="msg" style="margin-top:10px">😊 ¡Buen intento! Lo dejamos aquí por ahora.</div>`)+`<div class="row" style="margin-top:10px"><button class="btn success big" data-act="miniDone">Seguir con los ejercicios ➜</button></div>`:`<p class="mute" style="margin-top:8px">Movimientos: ${g.moves} de ${g.maxMoves}</p>`}`;
 }
 /* ---- simón con colores ---- */
 const SIMON_COLORS=['red','green','blue','yellow'];
 const SIMON_EMOJI={red:'🔴',green:'🟢',blue:'🔵',yellow:'🟡'};
-function makeSimonState(){return {seq:[],pos:0,round:0,maxRound:6,active:null,input:false,done:false};}
+const SIMON_HEX={red:'#e11d48',green:'#16a34a',blue:'#2563eb',yellow:'#f59e0b'};
+const SIMON_LIGHT={red:'#ffd7de',green:'#c9f2d8',blue:'#cfe0ff',yellow:'#ffe6a8'};
+function makeSimonState(){return {seq:[],pos:0,round:0,maxRound:6,active:null,input:false,ready:true,done:false};}
 function simonNextRound(g){
   g.seq.push(SIMON_COLORS[Math.floor(Math.random()*4)]);
-  g.round++;g.pos=0;g.input=false;
-  simonPlay(g,0);
+  g.round++;g.pos=0;g.input=false;g.active=null;g.ready=true;render();
+  setTimeout(()=>{const g2=ui.mgame;if(!g2||g2.kind!=='simon')return;g2.ready=false;simonPlay(g2,0);},900);
 }
 function simonPlay(g,idx){
   if(idx>=g.seq.length){g.active=null;g.input=true;render();return;}
   g.active=g.seq[idx];render();
   setTimeout(()=>{const g2=ui.mgame;if(!g2||g2.kind!=='simon')return;g2.active=null;render();
-    setTimeout(()=>{const g3=ui.mgame;if(!g3||g3.kind!=='simon')return;simonPlay(g3,idx+1);},250);
-  },550);
+    setTimeout(()=>{const g3=ui.mgame;if(!g3||g3.kind!=='simon')return;simonPlay(g3,idx+1);},400);
+  },700);
 }
 function simonHTML(){
   const g=ui.mgame;
   return `<h2 style="margin:0">🔴 Simón dice</h2>
   <p class="mute" style="margin-top:4px">Un pequeño descanso. Repite la secuencia de colores. Ronda ${g.round} de ${g.maxRound}.</p>
-  <div class="mini-grid" style="grid-template-columns:repeat(2,1fr);max-width:240px">${SIMON_COLORS.map(c=>`<button class="mini-card" data-act="miniSimon" data-c="${c}" style="background:${g.active===c?'#fff':'#ece9fb'};font-size:2.2rem" ${g.input&&!g.done?'':'disabled'}>${SIMON_EMOJI[c]}</button>`).join('')}</div>
-  ${g.done?`<div class="msg ${g.done==='won'?'right':'wrong'}" style="margin-top:10px">${g.done==='won'?'🎉 ¡Genial memoria!':'😊 ¡Buen intento! Llegaste a la ronda '+g.round}</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="miniDone">Seguir con los ejercicios ➜</button></div>`:!g.input?`<p class="mute" style="margin-top:8px">Mira bien la secuencia…</p>`:''}`;
+  <div class="mini-grid" style="grid-template-columns:repeat(2,1fr);max-width:260px">${SIMON_COLORS.map(c=>`<button class="mini-card" data-act="miniSimon" data-c="${c}" style="background:${g.active===c?SIMON_HEX[c]:SIMON_LIGHT[c]};border-color:${SIMON_HEX[c]};box-shadow:${g.active===c?'0 0 0 4px #fff inset,0 0 16px '+SIMON_HEX[c]:'none'};font-size:2.6rem;transition:background .12s" ${g.input&&!g.done?'':'disabled'}>${SIMON_EMOJI[c]}</button>`).join('')}</div>
+  ${g.done?`<div class="msg ${g.done==='won'?'right':'wrong'}" style="margin-top:10px">${g.done==='won'?'🎉 ¡Genial memoria!':'😊 ¡Buen intento! Llegaste a la ronda '+g.round}</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="miniDone">Seguir con los ejercicios ➜</button></div>`:g.ready?`<p class="mute" style="margin-top:8px">Prepárate…</p>`:!g.input?`<p class="mute" style="margin-top:8px">Mira bien la secuencia…</p>`:`<p class="mute" style="margin-top:8px">Ahora repítela tú</p>`}`;
 }
 /* ---- acciones ---- */
 const miniActions={
@@ -2653,7 +2675,8 @@ const miniActions={
     if(!puzzleNeighbors(blank).includes(i))return;
     [g.tiles[blank],g.tiles[i]]=[g.tiles[i],g.tiles[blank]];
     g.moves++;
-    if(puzzleSolved(g.tiles))g.done=true;
+    if(puzzleSolved(g.tiles)){g.done=true;miniClearTimer(g);}
+    else if(g.moves>=g.maxMoves){g.done='timeout';miniClearTimer(g);}
     render();
   },
   miniSimon(b){
