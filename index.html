@@ -107,6 +107,12 @@ sup{color:var(--bad);font-weight:800}
 .opts button{font:inherit;text-align:left;background:#fff;border:2px solid var(--line);border-radius:14px;padding:14px;cursor:pointer;color:var(--ink);min-height:56px}
 .opts button.no{border-color:var(--bad);background:var(--badbg);opacity:.7}.opts button.yes{border-color:var(--ok);background:var(--okbg)}
 .rule{background:#eef6ff;border-left:6px solid #3b82f6;border-radius:10px;padding:10px 14px;margin-top:10px}
+.mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;max-width:420px}
+.mini-card{aspect-ratio:1;border:2px solid var(--line);border-radius:14px;background:#ece9fb;font-size:1.8rem;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.mini-card.flip{background:#fff;border-color:var(--pri)}
+.mini-card:disabled{cursor:default}
+.mini-kb{display:flex;flex-wrap:wrap;gap:6px;margin-top:14px}
+.mini-kb .btn{padding:10px 14px;min-height:44px;min-width:44px}
 .msg{margin-top:8px;font-weight:700}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
 .tabs button{font:inherit;font-weight:700;border:2px solid var(--line);background:#fff;border-radius:999px;padding:8px 16px;min-height:44px;cursor:pointer;color:var(--ink)}
@@ -663,9 +669,130 @@ function teoriaHTML(text){
   let groups;
   try{groups=scanDictadoTheory(text);}catch(e){return '';}
   if(!groups.length)return '';
-  return `<details class="panel" open style="margin-bottom:10px;border-color:var(--pri)"><summary style="cursor:pointer;font-weight:800;font-size:1.05rem">📖 Teoría de este dictado <small class="mute" style="font-weight:400">(repásala antes de empezar)</small></summary>
-  <div style="margin-top:10px">${groups.map(gr=>`<div style="margin-bottom:12px"><b>${esc(gr.label)}</b>${gr.items.map(it=>`<div style="margin:6px 0 6px 4px;padding:8px 10px;background:#f6f5ff;border-radius:10px"><div>${esc(it.text)}</div>${it.examples.length?`<div class="mute" style="margin-top:4px;font-size:.85rem">${it.examples.length>1?'Ejemplos':'Ejemplo'} en el texto: ${it.examples.map(e=>`<b>${esc(e)}</b>`).join(', ')}</div>`:''}</div>`).join('')}</div>`).join('')}</div>
-  </details>`;
+  return `<div style="margin-top:10px">${groups.map(gr=>`<div style="margin-bottom:12px"><b>${esc(gr.label)}</b>${gr.items.map(it=>`<div style="margin:6px 0 6px 4px;padding:8px 10px;background:#f6f5ff;border-radius:10px"><div>${esc(it.text)}</div>${it.examples.length?`<div class="mute" style="margin-top:4px;font-size:.85rem">${it.examples.length>1?'Ejemplos':'Ejemplo'} en el texto: ${it.examples.map(e=>`<b>${esc(e)}</b>`).join(', ')}</div>`:''}</div>`).join('')}</div>`).join('')}</div>`;
+}
+/* ---- resaltar en rojo, letra a letra, lo que cae bajo una regla ortográfica -----------------
+   Reutiliza las mismas funciones classify* de arriba (que ya deciden QUÉ regla aplica a cada
+   palabra) y además localiza EN QUÉ posición de la palabra está la letra o letras responsables,
+   para poder pintarlas de rojo dentro del propio texto del dictado. Solo se marcan reglas de
+   ortografía letra a letra (h, b/v, g/j, ll/y, r/rr, c/z/s/qu/k, x, m/n y tildes); mayúsculas y
+   confusiones de palabras completas (homófonos) no se pintan letra a letra porque no señalan una
+   letra concreta, y ya se explican abajo en la lista de reglas. */
+function ruleHighlightSpans(id,wcs){
+  const spans=[];
+  const all=re=>{re=new RegExp(re,'g');let m;while((m=re.exec(wcs))){spans.push([m.index,m.index+m[0].length]);if(m.index===re.lastIndex)re.lastIndex++;}};
+  switch(id){
+    case 'h_hue':case 'h_haber':case 'h_hum':case 'h_griego':case 'h_pref':case 'h_gen':all('h');break;
+    case 'b_bibl':case 'b_bien':case 'b_aba':case 'b_iba':case 'b_bilidad':case 'b_ble':case 'b_bir':case 'b_ber':case 'b_pref':case 'b_bu':case 'b_bi':case 'b_lr':case 'b_mb':case 'b_cons':case 'b_gen':all('b');break;
+    case 'v_ev':case 'v_vice':case 'v_adv':case 'v_nv':case 'v_uv':case 'v_ivo':case 'v_ver':case 'v_gen':all('v');break;
+    case 'gu_ei':all('gu[ei]');break;
+    case 'g_ger':case 'g_gente':case 'g_geo':case 'g_gia':case 'g_gen':case 'g_ei':case 'g_aou':case 'g_lr':all('g');break;
+    case 'j_aje':case 'j_jero':case 'j_dijo':case 'j_aou':case 'j_gen':all('j');break;
+    case 'll_illo':case 'll_fam':case 'll_gen':all('ll');break;
+    case 'y_pl':case 'y_verb':case 'y_fin':case 'y_gen':all('y');break;
+    case 'rr_vv':all('rr');break;
+    case 'r_ini':spans.push([0,1]);break;
+    case 'r_nls':all('[nls]r');break;
+    case 'cc':all('ccion(es)?$');break;
+    case 'cion':all('cion(es)?$');break;
+    case 'sion':all('sion(es)?$');break;
+    case 'z_anza':all('(anza|eza|azo|aza)s?$');break;
+    case 'z_fin':all('z$');break;
+    case 'c_ancia':all('(ancia|encia)s?$');break;
+    case 'c_cer':all('c(er|ir)(se)?$');break;
+    case 'c_cito':all('(cito|cita|cillo|cilla)s?$');break;
+    case 's_oso':all('(oso|osa)s?$');break;
+    case 's_isimo':all('isim[oa]s?$');break;
+    case 's_esa':all('(esa|isa)s?$');break;
+    case 'qu':all('qu[ei]');break;
+    case 'k':all('k');break;
+    case 'x_extra':all('^extra');break;
+    case 'x_pl':all('^ex(pl|pr)');break;
+    case 'x_ex':all('^ex');break;
+    case 'x_gen':all('x');break;
+    case 's_es':all('^es[ptc]');break;
+    case 'mpb':all('m[pb]');break;
+    case 'nv':all('nv');break;
+  }
+  return spans;
+}
+function mergeSpans(spans){
+  spans=spans.filter(s=>s&&s[1]>s[0]).sort((a,b)=>a[0]-b[0]);
+  if(!spans.length)return [];
+  const out=[spans[0].slice()];
+  for(let i=1;i<spans.length;i++){const last=out[out.length-1],cur=spans[i];
+    if(cur[0]<=last[1])last[1]=Math.max(last[1],cur[1]);else out.push(cur.slice());}
+  return out;
+}
+/* letras/tramos (en las coordenadas de la propia palabra tal como aparece en el texto, con
+   mayúsculas y tildes) que hay que pintar de rojo en esta palabra, o [] si no le toca ninguna
+   regla letra a letra. */
+function wordRuleSpans(wOrig){
+  if(!/\p{L}/u.test(wOrig))return [];
+  const wl=wOrig.toLowerCase(),wcs=strip(wl);
+  let spans=[];
+  const tid=classifyTilde(wl);
+  if(tid){const m=wOrig.match(/[áéíóúÁÉÍÓÚ]/);spans.push(m?[m.index,m.index+1]:[0,wOrig.length]);}
+  if(wl.includes('ü')){const i=wl.indexOf('ü');spans.push([i,i+1]);}
+  const hid=classifyH(wcs);if(hid)spans=spans.concat(ruleHighlightSpans(hid,wcs));
+  const bid=classifyB(wcs);if(bid)spans=spans.concat(ruleHighlightSpans(bid,wcs));
+  const vid=classifyV(wcs);if(vid)spans=spans.concat(ruleHighlightSpans(vid,wcs));
+  const gid=classifyG(wcs);if(gid)spans=spans.concat(ruleHighlightSpans(gid,wcs));
+  const jid=classifyJ(wcs);if(jid)spans=spans.concat(ruleHighlightSpans(jid,wcs));
+  const llid=classifyLL(wcs);if(llid)spans=spans.concat(ruleHighlightSpans(llid,wcs));
+  const yid=classifyY(wcs);if(yid)spans=spans.concat(ruleHighlightSpans(yid,wcs));
+  const rrid=classifyRR(wcs);if(rrid)spans=spans.concat(ruleHighlightSpans(rrid,wcs));
+  classifyCZS(wcs).forEach(id=>spans=spans.concat(ruleHighlightSpans(id,wcs)));
+  classifyX(wcs).forEach(id=>spans=spans.concat(ruleHighlightSpans(id,wcs)));
+  classifyMN(wcs).forEach(id=>spans=spans.concat(ruleHighlightSpans(id,wcs)));
+  return mergeSpans(spans);
+}
+function wordMarkedHTML(wOrig,spans){
+  if(!spans.length)return esc(wOrig);
+  let html='',p=0;
+  spans.forEach(([s,e])=>{html+=esc(wOrig.slice(p,s))+`<span style="color:var(--bad);font-weight:800">${esc(wOrig.slice(s,e))}</span>`;p=e;});
+  html+=esc(wOrig.slice(p));
+  return html;
+}
+/* el texto completo del dictado, con las letras afectadas ya pintadas de rojo en su sitio */
+function dictadoTextHighlightHTML(text){
+  text=text||'';
+  let words;try{words=getWords(text);}catch(e){return esc(text);}
+  let out='',pos=0;
+  words.forEach(w=>{
+    out+=esc(text.slice(pos,w.i));
+    out+=wordMarkedHTML(w.t,wordRuleSpans(w.t));
+    pos=w.i+w.t.length;
+  });
+  out+=esc(text.slice(pos));
+  return out;
+}
+/* debajo del texto: solo las palabras afectadas (sin repetir), cada una con sus letras en rojo */
+function dictadoAffectedWordsHTML(text){
+  let words;try{words=getWords(text||'');}catch(e){return '';}
+  const seen=new Map();
+  words.forEach(w=>{
+    const key=strip(w.t.toLowerCase());
+    if(seen.has(key))return;
+    const spans=wordRuleSpans(w.t);
+    if(!spans.length)return;
+    seen.set(key,wordMarkedHTML(w.t,spans));
+  });
+  if(!seen.size)return '';
+  return `<div style="margin-top:12px"><b>Palabras con letras que siguen una regla:</b>
+  <div style="margin-top:8px;font-size:1.15rem;line-height:2.4">${Array.from(seen.values()).map(h=>`<span style="display:inline-block;background:#f6f5ff;border:1px solid var(--line);border-radius:10px;padding:4px 10px;margin:2px">${h}</span>`).join('')}</div></div>`;
+}
+/* panel completo que se ve ANTES de empezar el dictado: el texto con las letras en rojo, debajo
+   las palabras afectadas sueltas, y debajo la lista de reglas (como estaba). Desaparece entero
+   en cuanto se pulsa «Empezar dictado» (ver ui.dictTheoryOpen). */
+function dictadoPreviewHTML(text){
+  const rules=teoriaHTML(text);
+  return `<div class="panel" style="margin-bottom:10px;border-color:var(--pri)">
+  <h3 style="margin-top:0;font-size:1.05rem">📖 Teoría de este dictado <small class="mute" style="font-weight:400">(repásala antes de empezar)</small></h3>
+  <div style="font-size:1.15rem;line-height:2;white-space:pre-wrap">${dictadoTextHighlightHTML(text)}</div>
+  ${dictadoAffectedWordsHTML(text)}
+  ${rules}
+  </div>`;
 }
 /* ================= estado ================= */
 const KEY='deberesJulia.v1';
@@ -675,7 +802,7 @@ const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:tru
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
-  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{}};
+  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},studyProgress:{},tutorNotes:'',miniGameEvery:15};
   s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
   s.sync.isnap=s.sync.isnap||{};s.sync.itomb=s.sync.itomb||{};
   if(!s.dictados)s.dictados=[SAMPLE];
@@ -684,7 +811,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[]};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -832,7 +959,7 @@ const Voz=(()=>{
 /* ================= sincronización con Supabase ================= */
 const SB_URL='https://rzzaizkzszgiirwmilyq.supabase.co',SB_KEY='sb_publishable_xdaxsZhA3FDyGWsMeT2pLA_4TSyUvpl';
 const Cloud=(()=>{
-  const K=['dictados','customRules','rulesMode','pin','settings','ai'];
+  const K=['dictados','customRules','rulesMode','pin','settings','ai','tutorNotes','studyProgress','miniGameEvery'];
   /* "examenes" y "tareas" son listas de elementos con id propio (temas, exámenes, deberes) que se
      crean/editan/borran desde varios dispositivos. Antes se sincronizaban como el resto de claves
      (K): se comparaba un único "reloj" para TODA la lista y, si un dispositivo tenía un reloj más
@@ -855,6 +982,7 @@ const Cloud=(()=>{
   const canonNoUpd=it=>canon(Object.assign({},it,{upd:0}));
   const byIdAsc=(a,b)=>a.id<b.id?-1:1;
   const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
+    if(k==='tutorNotes')return !v||!String(v).trim();if(k==='studyProgress')return !v||!Object.keys(v).length;if(k==='miniGameEvery')return !v||v===15;
     if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;return canon(o)===canon(d);}return false;};
   let timer=null,busy=false,again=false,started=false;
   const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
@@ -982,7 +1110,7 @@ function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
-  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy}[ui.screen]||renderHome)();
+  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame}[ui.screen]||renderHome)();
 }
 function renderList(){
   const L=state.dictados;
@@ -994,7 +1122,7 @@ const rateLabel=r=>r<.6?'Muy lenta':r<.8?'Lenta':r<1?'Normal':'Rápida';
 function renderRun(){
   const d=state.dictados.find(x=>x.id===ui.dict);if(!d){ui.screen='list';return render();}
   app.innerHTML=`<button class="link" data-act="backList">${ui.item?'← Deberes de hoy':'← Dictados'}</button><h2>${esc(d.title)}</h2>
-  ${teoriaHTML(d.text)}
+  ${ui.dictTheoryOpen?dictadoPreviewHTML(d.text):''}
   ${Dict.supported?'':'<div class="panel" style="border-color:var(--bad)">Este navegador no puede leer en voz alta. Prueba con Safari en el iPad.</div>'}
   <div class="row"><button class="btn primary big" data-act="start" id="bStart">▶ Empezar dictado</button>
   <button class="btn" data-act="pause" id="bPause">⏸ Pausa</button><button class="btn" data-act="repeat" id="bRepeat">🔁 Repetir</button>
@@ -1051,6 +1179,7 @@ function voiceTexts(chunks){
 async function startDictado(){
   const d=state.dictados.find(x=>x.id===ui.dict);if(!d||ui.preparing)return;
   const chunks=dictChunks(d);if(chunks.length<2)return toast('Este dictado está vacío');
+  if(ui.dictTheoryOpen){ui.dictTheoryOpen=false;render();}
   Voz.unlock();Dict.prime();
   const ai=Voz.ready(),st=Object.assign({},state.settings,{ai,aiSpeed:state.ai.speed});
   if(ai){
@@ -1194,6 +1323,7 @@ function updateFinal(){
   const f=$('#final');if(!f)return;
   if(left){f.innerHTML='';return;}
   recordDictado();
+  if(!r.gameShown){r.gameShown=true;startMiniGame('fix');return;}
   f.innerHTML=`<div class="panel" style="border-color:var(--ok);background:var(--okbg)"><h2 style="margin:0">🎉 ¡Muy bien, Julia!</h2><p>${r.errors.length?'Has corregido todos los fallos.':'Sigue así.'}</p>
   <details><summary>Ver el dictado correcto</summary><div class="marked" style="margin-top:8px">${esc(state.dictados.find(d=>d.id===ui.dict)?.text||'')}</div></details>
   <div class="row" style="margin-top:12px">${ui.item?'<button class="btn primary big" data-act="backList">📅 Volver a los deberes</button>':'<button class="btn primary" data-act="again">🔁 Repetir este dictado</button><button class="btn" data-act="backList">Elegir otro</button>'}</div></div>`;
@@ -1412,6 +1542,7 @@ function mathAdvance(ok,first){
   m.log.push({q:e.q,a:e.txt,given:m.given.slice(),ok,first,secs:Math.round((Date.now()-m.et)/1000)});
   m.i++;m.tries=0;m.given=[];m.reveal=false;m.et=Date.now();
   if(m.i>=m.ex.length)return finishMath();
+  if(miniGameDue(m.i,m.ex.length))return startMiniGame('mrun');
   m.msg=ok?'✅ ¡Bien!':'';m.msgOk=true;render();
 }
 function finishMath(){
@@ -1441,7 +1572,7 @@ const taskActions={
   openItem(b){
     const it=itemsOf(todayStr()).find(x=>x.id===b.dataset.id);if(!it)return;
     const [s]=recItem(it);touchSes(s);ui.item=it.id;
-    if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.screen='run';render();}
+    if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.dictTheoryOpen=true;ui.screen='run';render();}
     else if(it.type==='examen')startExam(it.eid,it.id);
     else startMath(it.cfg,it.seed,it.id);
   },
@@ -2060,7 +2191,7 @@ const examActions={
   exStart(b){startExam(b.dataset.id,null);},
   exPick(b){ui.ex.ans[ui.ex.i]=+b.dataset.k;const y=scrollY;render();scrollTo(0,y);},
   exPrev(){if(ui.ex.i>0){ui.ex.i--;render();}},
-  exNext(){if(ui.ex.i<ui.ex.qs.length-1){ui.ex.i++;render();}else exSubmit();},
+  exNext(){if(ui.ex.i<ui.ex.qs.length-1){ui.ex.i++;if(miniGameDue(ui.ex.i,ui.ex.qs.length))return startMiniGame('exrun');render();}else exSubmit();},
   exSubmit(){exSubmit();},
   exQuit(){if(confirm('¿Salir del examen? Perderás las respuestas.')){ui.ex=null;ui.screen=ui.item?'today':'exlist';render();}}
 };
@@ -2141,16 +2272,38 @@ function makeExamOptions(pool,q){
   for(const o of others){const t=ruleTextOfQ(o);if(t&&t!==correct&&!picks.some(p=>p.text===t)){picks.push({text:t,ok:false});}if(picks.length>=2)break;}
   return shuffleArr([{text:correct,ok:true},...picks]);
 }
+/* progreso de una ronda de estudio: se guarda el orden de preguntas (por id), en qué
+   pregunta va y sus aciertos, para que si Julia sale (o cierra el navegador) a medias,
+   al volver a abrir el mismo tema retome exactamente en la misma pregunta donde lo dejó. */
+function studySave(){
+  const st=ui.study;if(!st)return;
+  state.studyProgress=state.studyProgress||{};
+  state.studyProgress[st.temaId]={i:st.i,firstOk:st.firstOk,level:st.level,showPhoto:st.showPhoto,order:st.qs.map(q=>q.id)};
+  save();
+}
+function studyClearProgress(temaId){
+  if(state.studyProgress&&state.studyProgress[temaId]){delete state.studyProgress[temaId];save();}
+}
 function studyOpen(id){
   const e=exGet(id);if(!e||e.status!=='ready')return toast('Este tema todavía no está disponible');
   const pool=e.pool.filter(q=>!q.off);if(!pool.length)return toast('Este tema no tiene preguntas todavía');
-  ui.study={temaId:id,level:1,showPhoto:true,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk:0,n:pool.length,recorded:false};
-  ui.studyPhotoView=null;ui.screen='study';render();
+  const saved=state.studyProgress&&state.studyProgress[id];
+  let qs=null,i=0,firstOk=0,level=1,showPhoto=true;
+  if(saved&&Array.isArray(saved.order)&&saved.i<saved.order.length){
+    const byId={};pool.forEach(q=>byId[q.id]=q);
+    const ordered=saved.order.map(qid=>byId[qid]).filter(Boolean);
+    const extra=pool.filter(q=>!saved.order.includes(q.id));
+    const rebuilt=ordered.concat(extra);
+    if(rebuilt.length){qs=rebuilt;i=Math.min(saved.i,qs.length-1);firstOk=saved.firstOk||0;level=saved.level||1;showPhoto=saved.showPhoto!==undefined?saved.showPhoto:true;}
+  }
+  if(!qs)qs=shuffleArr(pool);
+  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk,n:qs.length,recorded:false};
+  ui.studyPhotoView=null;ui.screen='study';studySave();render();
 }
 function studyRound(temaId,level,showPhoto){
   const e=exGet(temaId),pool=e.pool.filter(q=>!q.off);
   ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk:0,n:pool.length,recorded:false};
-  ui.studyPhotoView=null;render();
+  ui.studyPhotoView=null;studySave();render();
 }
 function studyPhotosHTML(id){
   const L=(state.examFotos[id]||[]).filter(p=>!p.err);if(!L.length)return '';
@@ -2212,6 +2365,7 @@ function recordStudyOnce(st,e){
   const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now();
   s.extra.push({id:uid(),kind:'teoria',title:'Teoría: '+(e?e.title:''),start:Date.now(),end:Date.now(),secs:0,done:true,res:{n:st.n,ok:st.firstOk,level:st.level}});
   touchSes(s);
+  studyClearProgress(st.temaId);
 }
 function renderStudyDone(){
   const st=ui.study,e=exGet(st.temaId);
@@ -2268,12 +2422,15 @@ const studyActions={
   studyNext(){
     const st=ui.study;if(!st)return;
     st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.stage='answer';
-    render();scrollTo(0,0);
+    studySave();
+    if(miniGameDue(st.i,st.qs.length))return startMiniGame('study');
+    const y=scrollY;render();scrollTo(0,y);
   },
   studyPrev(){
     const st=ui.study;if(!st||st.i<=0)return;
     st.i--;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.stage='answer';
-    render();scrollTo(0,0);
+    studySave();
+    const y=scrollY;render();scrollTo(0,y);
   },
   studyLevel2(){const st=ui.study;if(!st)return;studyRound(st.temaId,2,false);},
   studyLevel1(){const st=ui.study;if(!st)return;studyRound(st.temaId,1,true);},
@@ -2283,14 +2440,250 @@ const studyActions={
   studyQuit(){if(confirm('¿Salir? Perderás el progreso de esta ronda.')){ui.study=null;ui.studyPhotoView=null;ui.screen='exlist';render();}},
   studyQuitOk(){ui.study=null;ui.studyPhotoView=null;ui.screen='exlist';render();}
 };
+/* ================= minijuegos: cada 15 preguntas, un descanso interactivo =================
+   Se insertan al azar dentro de las tandas largas de ejercicios (mates, exámenes, estudio de
+   temas) para que no se haga tan pesado. Seis juegos posibles, elegidos al azar cada vez. */
+const MINI_WORDS=['jirafa','pelicano','bicicleta','manzana','estrella','planeta','cocodrilo','biblioteca','elefante','mariposa','castillo','tortuga','oceano','montana','cuaderno','ventana','sombrero','jardin','musica','pintura','camion','paraguas','delfin','tijeras','calendario','lampara','escalera','desierto','volcan','cometa'];
+const MINI_EMOJIS=['🐶','🐱','🐵','🦁','🐸','🐧','🦋','🐢','🐬','🦖','🍎','🍉','⚽','🎈','🚗','🌈','⭐','🎵','🌙','☀️'];
+const MINI_FACES=['🙂','😕','😟','😧','😨','😱'];
+const MINI_KINDS=['memoria','ahorcado','tres','caza','puzzle','simon'];
+const MINI_LABELS={memoria:'Memoria de parejas',ahorcado:'Ahorcado',tres:'Tres en raya',caza:'Caza la respuesta',puzzle:'Rompecabezas deslizante',simon:'Simón con colores'};
+function miniGameDue(count,total){const ev=state.miniGameEvery||15;return count>0&&count%ev===0&&count<total;}
+function miniClearTimer(g){if(g&&g.timer){clearInterval(g.timer);g.timer=null;}}
+function startMiniGame(returnScreen,forceKind){
+  const kind=forceKind||MINI_KINDS[Math.floor(Math.random()*MINI_KINDS.length)];
+  const makers={memoria:makeMemoriaState,ahorcado:makeAhorcadoState,tres:makeTresState,caza:makeCazaState,puzzle:makePuzzleState,simon:makeSimonState};
+  ui.mgame=Object.assign(makers[kind](),{kind,returnScreen});
+  ui.screen='minigame';
+  if(kind==='simon')simonNextRound(ui.mgame);else render();
+}
+function endMiniGame(){
+  const g=ui.mgame;miniClearTimer(g);
+  const rs=g&&g.returnScreen;ui.mgame=null;
+  if(rs==='__tutorpreview__'){ui.role='tutor';ui.tab=ui.mgPreviewReturnTab||'ajustes';render();return;}
+  ui.screen=rs||'home';render();
+}
+function renderMiniGame(){
+  const g=ui.mgame;if(!g){ui.screen='home';return render();}
+  const bodies={memoria:memoriaHTML,ahorcado:ahorcadoHTML,tres:tresHTML,caza:cazaHTML,puzzle:puzzleHTML,simon:simonHTML};
+  const fn=bodies[g.kind];if(!fn){endMiniGame();return;}
+  app.innerHTML=`<button class="link" data-act="miniDone">Saltar este juego ➜</button>${fn()}`;
+}
+/* ---- memoria de parejas ---- */
+function makeMemoriaState(){
+  const n=6,picks=shuffleArr(MINI_EMOJIS).slice(0,n);
+  const cards=shuffleArr(picks.concat(picks)).map((e,i)=>({id:i,e,open:false,done:false}));
+  return {cards,picked:[],busy:false,moves:0};
+}
+function memoriaHTML(){
+  const g=ui.mgame,allDone=g.cards.every(c=>c.done);
+  return `<h2 style="margin:0">🧠 Memoria: encuentra las parejas</h2>
+  <p class="mute" style="margin-top:4px">Un pequeño descanso antes de seguir. Encuentra las ${g.cards.length/2} parejas.</p>
+  <div class="mini-grid">${g.cards.map(c=>`<button class="mini-card ${c.open||c.done?'flip':''}" data-act="miniPick" data-id="${c.id}" ${g.busy||c.open||c.done?'disabled':''}><span>${c.open||c.done?c.e:'❓'}</span></button>`).join('')}</div>
+  ${allDone?`<div class="row" style="margin-top:14px"><button class="btn success big" data-act="miniDone">🎉 ¡Seguir con los ejercicios!</button></div>`:`<p class="mute" style="margin-top:10px">Movimientos: ${g.moves}</p>`}`;
+}
+/* ---- ahorcado ---- */
+function makeAhorcadoState(){
+  const word=MINI_WORDS[Math.floor(Math.random()*MINI_WORDS.length)];
+  return {word,guessed:[],fails:0,maxFails:5,done:false};
+}
+function ahorcadoHTML(){
+  const g=ui.mgame,letters='abcdefghijklmnñopqrstuvwxyz'.split('');
+  const shown=g.word.split('').map(ch=>g.guessed.includes(ch)?ch:'_').join(' ');
+  const face=MINI_FACES[Math.min(g.fails,MINI_FACES.length-1)];
+  return `<h2 style="margin:0">🔤 Ahorcado</h2>
+  <p class="mute" style="margin-top:4px">Un pequeño descanso antes de seguir. Adivina la palabra.</p>
+  <div class="panel" style="text-align:center">
+  <div style="font-size:2.6rem">${face}</div>
+  <div style="font-size:2rem;font-weight:800;letter-spacing:6px;margin:10px 0">${esc(shown.toUpperCase())}</div>
+  <div class="mute">Fallos: ${g.fails} de ${g.maxFails}</div></div>
+  ${g.done?`<div class="msg ${g.done==='won'?'right':'wrong'}" style="margin-top:10px">${g.done==='won'?'🎉 ¡Muy bien! Era: ':'😅 Era: '}<b>${esc(g.word.toUpperCase())}</b></div>
+  <div class="row" style="margin-top:10px"><button class="btn success big" data-act="miniDone">Seguir con los ejercicios ➜</button></div>`
+  :`<div class="mini-kb">${letters.map(l=>`<button class="btn" data-act="miniLetter" data-l="${l}" ${g.guessed.includes(l)?'disabled':''}>${l.toUpperCase()}</button>`).join('')}</div>`}`;
+}
+/* ---- tres en raya ---- */
+function makeTresState(){return {board:Array(9).fill(null),done:null};}
+function ticWinner(b){
+  const L=[[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+  for(const [a,b1,c] of L)if(b[a]&&b[a]===b[b1]&&b[a]===b[c])return b[a];
+  return b.every(Boolean)?'draw':null;
+}
+function ticAIMove(b){
+  const me='o',opp='p';
+  const tryWin=mark=>{for(let i=0;i<9;i++){if(!b[i]){const t=b.slice();t[i]=mark;if(ticWinner(t)===mark)return i;}}return -1;};
+  let m=tryWin(me);if(m<0)m=tryWin(opp);
+  if(m<0&&!b[4])m=4;
+  if(m<0){const corners=[0,2,6,8].filter(i=>!b[i]);if(corners.length)m=corners[Math.floor(Math.random()*corners.length)];}
+  if(m<0){const free=b.map((v,i)=>v?null:i).filter(v=>v!==null);m=free[Math.floor(Math.random()*free.length)];}
+  return m;
+}
+function tresHTML(){
+  const g=ui.mgame;
+  return `<h2 style="margin:0">⭕ Tres en raya</h2>
+  <p class="mute" style="margin-top:4px">Un pequeño descanso. Tú eres la ❌, la app es la ⭕.</p>
+  <div class="mini-grid" style="grid-template-columns:repeat(3,1fr);max-width:260px">${g.board.map((v,i)=>`<button class="mini-card" data-act="miniTic" data-i="${i}" ${v||g.done?'disabled':''}>${v==='p'?'❌':v==='o'?'⭕':''}</button>`).join('')}</div>
+  ${g.done?`<div class="msg ${g.done==='p'?'right':g.done==='draw'?'':'wrong'}" style="margin-top:10px">${g.done==='p'?'🎉 ¡Has ganado!':g.done==='draw'?'😊 ¡Empate!':'La app ha ganado esta vez'}</div>
+  <div class="row" style="margin-top:10px"><button class="btn success big" data-act="miniDone">Seguir con los ejercicios ➜</button></div>`:''}`;
+}
+/* ---- caza la respuesta ---- */
+function makeCazaState(){const g={round:0,total:5,score:0,q:null,left:0,timer:null,done:false};cazaNewRound(g);return g;}
+function cazaNewRound(g){
+  miniClearTimer(g);
+  const a=1+Math.floor(Math.random()*9),b=1+Math.floor(Math.random()*9),op=Math.random()<0.5?'+':'×';
+  const ans=op==='+'?a+b:a*b;
+  const opts=new Set([ans]);
+  while(opts.size<4){const d=ans+(Math.floor(Math.random()*9)-4);if(d>0&&d!==ans)opts.add(d);}
+  g.q={text:`${a} ${op==='×'?'×':'+'} ${b}`,ans,opts:shuffleArr([...opts])};
+  g.left=6;g.round++;
+}
+function cazaTick(){
+  const g=ui.mgame;if(!g||g.kind!=='caza'||g.done)return;
+  g.left--;
+  if(g.left<=0)cazaAdvance(g,false);else render();
+}
+function cazaAdvance(g,ok){
+  miniClearTimer(g);
+  if(ok)g.score++;
+  if(g.round>=g.total){g.done=true;render();return;}
+  cazaNewRound(g);render();
+}
+function cazaHTML(){
+  const g=ui.mgame;
+  if(!g.timer&&!g.done)g.timer=setInterval(cazaTick,1000);
+  return `<h2 style="margin:0">🎯 Caza la respuesta</h2>
+  <p class="mute" style="margin-top:4px">Un pequeño descanso. Pulsa la respuesta correcta antes de que se acabe el tiempo.</p>
+  ${g.done?`<div class="panel" style="text-align:center"><div style="font-size:1.4rem;font-weight:800">${g.score} de ${g.total} aciertos</div></div>
+  <div class="row" style="margin-top:10px"><button class="btn success big" data-act="miniDone">Seguir con los ejercicios ➜</button></div>`
+  :`<div class="panel" style="text-align:center"><div class="bar" style="margin-bottom:10px"><i style="width:${Math.max(0,g.left/6*100)}%"></i></div>
+  <div style="font-size:1.8rem;font-weight:800">${esc(g.q.text)}</div></div>
+  <div class="mini-grid" style="grid-template-columns:repeat(2,1fr);max-width:320px">${g.q.opts.map(o=>`<button class="mini-card" style="font-size:1.4rem" data-act="miniCaza" data-v="${o}">${o}</button>`).join('')}</div>
+  <p class="mute" style="margin-top:8px">Pregunta ${g.round} de ${g.total}</p>`}`;
+}
+/* ---- rompecabezas deslizante ---- */
+function puzzleNeighbors(i){
+  const r=Math.floor(i/3),c=i%3,out=[];
+  if(r>0)out.push(i-3);if(r<2)out.push(i+3);if(c>0)out.push(i-1);if(c<2)out.push(i+1);
+  return out;
+}
+function puzzleSolved(t){for(let i=0;i<8;i++)if(t[i]!==i+1)return false;return t[8]===null;}
+function makePuzzleState(){
+  let tiles=[1,2,3,4,5,6,7,8,null],blank=8;
+  for(let k=0;k<120;k++){
+    const moves=puzzleNeighbors(blank),m=moves[Math.floor(Math.random()*moves.length)];
+    [tiles[blank],tiles[m]]=[tiles[m],tiles[blank]];blank=m;
+  }
+  return {tiles,moves:0,done:puzzleSolved(tiles)};
+}
+function puzzleHTML(){
+  const g=ui.mgame;
+  return `<h2 style="margin:0">🧩 Rompecabezas</h2>
+  <p class="mute" style="margin-top:4px">Un pequeño descanso. Ordena los números del 1 al 8 deslizando las piezas.</p>
+  <div class="mini-grid" style="grid-template-columns:repeat(3,1fr);max-width:260px">${g.tiles.map((v,i)=>v===null?`<span class="mini-card" style="background:transparent;border-style:dashed"></span>`:`<button class="mini-card" data-act="miniPuzzle" data-i="${i}" ${g.done?'disabled':''}>${v}</button>`).join('')}</div>
+  ${g.done?`<div class="msg right" style="margin-top:10px">🎉 ¡Resuelto en ${g.moves} movimientos!</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="miniDone">Seguir con los ejercicios ➜</button></div>`:`<p class="mute" style="margin-top:8px">Movimientos: ${g.moves}</p>`}`;
+}
+/* ---- simón con colores ---- */
+const SIMON_COLORS=['red','green','blue','yellow'];
+const SIMON_EMOJI={red:'🔴',green:'🟢',blue:'🔵',yellow:'🟡'};
+function makeSimonState(){return {seq:[],pos:0,round:0,maxRound:6,active:null,input:false,done:false};}
+function simonNextRound(g){
+  g.seq.push(SIMON_COLORS[Math.floor(Math.random()*4)]);
+  g.round++;g.pos=0;g.input=false;
+  simonPlay(g,0);
+}
+function simonPlay(g,idx){
+  if(idx>=g.seq.length){g.active=null;g.input=true;render();return;}
+  g.active=g.seq[idx];render();
+  setTimeout(()=>{const g2=ui.mgame;if(!g2||g2.kind!=='simon')return;g2.active=null;render();
+    setTimeout(()=>{const g3=ui.mgame;if(!g3||g3.kind!=='simon')return;simonPlay(g3,idx+1);},250);
+  },550);
+}
+function simonHTML(){
+  const g=ui.mgame;
+  return `<h2 style="margin:0">🔴 Simón dice</h2>
+  <p class="mute" style="margin-top:4px">Un pequeño descanso. Repite la secuencia de colores. Ronda ${g.round} de ${g.maxRound}.</p>
+  <div class="mini-grid" style="grid-template-columns:repeat(2,1fr);max-width:240px">${SIMON_COLORS.map(c=>`<button class="mini-card" data-act="miniSimon" data-c="${c}" style="background:${g.active===c?'#fff':'#ece9fb'};font-size:2.2rem" ${g.input&&!g.done?'':'disabled'}>${SIMON_EMOJI[c]}</button>`).join('')}</div>
+  ${g.done?`<div class="msg ${g.done==='won'?'right':'wrong'}" style="margin-top:10px">${g.done==='won'?'🎉 ¡Genial memoria!':'😊 ¡Buen intento! Llegaste a la ronda '+g.round}</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="miniDone">Seguir con los ejercicios ➜</button></div>`:!g.input?`<p class="mute" style="margin-top:8px">Mira bien la secuencia…</p>`:''}`;
+}
+/* ---- acciones ---- */
+const miniActions={
+  miniPick(b){
+    const g=ui.mgame;if(!g||g.kind!=='memoria'||g.busy)return;
+    const id=+b.dataset.id,c=g.cards.find(x=>x.id===id);
+    if(!c||c.open||c.done)return;
+    c.open=true;g.picked.push(c);
+    if(g.picked.length<2){render();return;}
+    g.moves++;
+    const [a,bb]=g.picked;
+    if(a.e===bb.e){a.done=true;bb.done=true;a.open=false;bb.open=false;g.picked=[];render();}
+    else{g.busy=true;render();setTimeout(()=>{a.open=false;bb.open=false;g.picked=[];g.busy=false;render();},900);}
+  },
+  miniLetter(b){
+    const g=ui.mgame;if(!g||g.kind!=='ahorcado'||g.done)return;
+    const l=b.dataset.l;if(g.guessed.includes(l))return;
+    g.guessed.push(l);
+    if(!g.word.includes(l)){g.fails++;if(g.fails>=g.maxFails)g.done='lost';}
+    else if(g.word.split('').every(ch=>g.guessed.includes(ch)))g.done='won';
+    render();
+  },
+  miniTic(b){
+    const g=ui.mgame;if(!g||g.kind!=='tres'||g.done)return;
+    const i=+b.dataset.i;if(g.board[i])return;
+    g.board[i]='p';
+    const w=ticWinner(g.board);
+    if(w){g.done=w;render();return;}
+    render();
+    setTimeout(()=>{
+      const g2=ui.mgame;if(!g2||g2.kind!=='tres'||g2.done)return;
+      const m=ticAIMove(g2.board);if(m>=0)g2.board[m]='o';
+      const w2=ticWinner(g2.board);if(w2)g2.done=w2;
+      render();
+    },500);
+  },
+  miniCaza(b){
+    const g=ui.mgame;if(!g||g.kind!=='caza'||g.done)return;
+    cazaAdvance(g,+b.dataset.v===g.q.ans);
+  },
+  miniPuzzle(b){
+    const g=ui.mgame;if(!g||g.kind!=='puzzle'||g.done)return;
+    const i=+b.dataset.i,blank=g.tiles.indexOf(null);
+    if(!puzzleNeighbors(blank).includes(i))return;
+    [g.tiles[blank],g.tiles[i]]=[g.tiles[i],g.tiles[blank]];
+    g.moves++;
+    if(puzzleSolved(g.tiles))g.done=true;
+    render();
+  },
+  miniSimon(b){
+    const g=ui.mgame;if(!g||g.kind!=='simon'||!g.input||g.done)return;
+    const c=b.dataset.c;
+    if(c!==g.seq[g.pos]){g.done='lost';render();return;}
+    g.pos++;
+    if(g.pos>=g.seq.length){
+      if(g.round>=g.maxRound){g.done='won';render();return;}
+      g.input=false;render();
+      setTimeout(()=>{const g2=ui.mgame;if(!g2||g2.kind!=='simon')return;simonNextRound(g2);},700);
+    }else render();
+  },
+  miniDone(){endMiniGame();},
+  miniPreview(b){
+    const kind=b.dataset.kind;if(!MINI_KINDS.includes(kind))return;
+    ui.mgPreviewReturnTab=ui.tab||'ajustes';
+    ui.role='alumna';
+    startMiniGame('__tutorpreview__',kind);
+  }
+};
 /* ================= área tutor ================= */
 function renderTutor(){
   if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
   if(!ui.unlocked){app.innerHTML=`<h2>🔐 Área de tutor</h2><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" data-enter="pin" placeholder="PIN"><br><br><button class="btn primary big" data-act="pinEnter">Entrar</button></div>`;return;}
-  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['examenes','📚 Teoría y exámenes'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['ajustes','⚙️ Dictado y ajustes']];
+  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['examenes','📚 Teoría y exámenes'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
   app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><button class="btn" data-act="lock">🔒 Bloquear</button></div>
   <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>`;
-  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,reglas:tabReglas,historial:tabHistorial,ajustes:tabAjustes}[ui.tab])();
+  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,reglas:tabReglas,historial:tabHistorial,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
+}
+function tabNotas(){
+  $('#tab').innerHTML=`<div class="panel"><h3 style="margin-top:0">🗒 Bloc de notas</h3>
+  <p class="mute" style="margin-top:0">Apunta aquí las mejoras o ideas que se te ocurran para la app, para que no se te olviden. Solo lo ves tú (en el área de tutor) y se guarda solo mientras escribes.</p>
+  <textarea id="tutorNotesTa" placeholder="Ideas, mejoras pendientes, cosas que arreglar…" style="min-height:320px">${esc(state.tutorNotes||'')}</textarea></div>`;
 }
 function tabDictados(){
   const t=$('#tab');
@@ -2369,6 +2762,10 @@ function tabAjustes(){
   <div class="row" style="margin-top:12px"><button class="btn primary" data-act="testAI">🔊 Probar voz IA</button></div>
   <p class="mute" style="margin-bottom:0">Si cambias la voz, el modelo o el largo de las frases, hay que pulsar «Generar voz» en cada dictado (o se genera sola la primera vez que Julia lo empieza). Si falla algo, la app usa la voz del iPad.</p></div>
   <div class="panel"><h3>PIN</h3><button class="btn" data-act="changePin">Cambiar PIN</button></div>
+  <div class="panel"><h3>🎮 Minijuegos</h3><p class="mute" style="margin-top:0">Cada cuántos ejercicios seguidos (mates, exámenes, estudio de temas) aparece un minijuego de descanso. También sale uno, siempre, justo después de corregir cada dictado.</p>
+  <label class="f">Frecuencia <span class="v" id="v_miniGameEvery">cada ${state.miniGameEvery||15} ejercicios</span><input type="range" min="5" max="30" step="1" value="${state.miniGameEvery||15}" data-set2="miniGameEvery"></label>
+  <p class="mute" style="margin:12px 0 6px">Prueba aquí cada juego, tal cual lo verá Julia:</p>
+  <div class="row" style="flex-wrap:wrap;gap:8px">${MINI_KINDS.map(k=>`<button class="btn" data-act="miniPreview" data-kind="${k}">▶ ${MINI_LABELS[k]}</button>`).join('')}</div></div>
   <div class="panel"><h3>☁️ Sincronización</h3><p class="mute" style="margin-top:0">Los dictados, las reglas, los ajustes y el historial se guardan en el servidor y aparecen en todos los dispositivos (iPad, iPhone, ordenador). La voz elegida y la clave de OpenAI se quedan en cada dispositivo.</p><div id="cloudSt" style="margin:8px 0;font-weight:700">${Cloud.html()}</div><button class="btn" data-act="syncNow">🔄 Sincronizar ahora</button></div>
   <div class="panel"><h3>Copia de seguridad</h3><p class="mute" style="margin-top:0">Los datos se guardan en este iPad. Descarga una copia o pásala a otro dispositivo.</p><div class="row"><button class="btn" data-act="export">⬇️ Descargar copia</button><label class="btn" style="display:inline-flex;align-items:center">⬆️ Restaurar copia<input type="file" accept="application/json,.json" id="imp" hidden></label></div></div>`;
 }
@@ -2418,7 +2815,7 @@ const studentActions={
   goHome(){if(ui.role==='tutor'){ui.role='alumna';}Dict.stop();ui.item=null;ui.screen='home';render();},
   goList(){ui.screen='list';render();},
   backList(){Dict.stop();ui.screen=ui.item?'today':'list';render();},
-  openDict(b){ui.item=null;ui.t0=Date.now();ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.screen='run';render();},
+  openDict(b){ui.item=null;ui.t0=Date.now();ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.dictTheoryOpen=true;ui.screen='run';render();},
   start:startDictado,
   pause(){Dict.cur&&Dict.cur.paused?Dict.resume():Dict.pause();},
   repeat(){Dict.repeat();},skip(){Dict.skip();},prev(){Dict.prev();},stop(){Dict.stop();updateRun();},
@@ -2426,16 +2823,18 @@ const studentActions={
   again(){ui.t0=Date.now();ui.answer='';ui.photo=null;ui.fix=null;ui.screen='run';render();},
   setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();}
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions,studyActions);
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions,studyActions,miniActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
   if(t.id==='exans'&&ui.ex){ui.ex.ans[ui.ex.i]=t.value;return;}
+  if(t.id==='tutorNotesTa'){state.tutorNotes=t.value;save();return;}
   if(exInput(t)||tfInput(t))return;
   if(t.dataset.set){const k=t.dataset.set;state.settings[k]=t.type==='checkbox'?t.checked:(t.type==='range'||k==='ppause')?+t.value:t.value;save();
     if(k==='repeat'){const gb=$('#gapBox');if(gb)gb.style.display=state.settings.repeat>1?'':'none';}
     const lab=$('#v_'+k);if(lab)lab.textContent=k==='rate'?rateLabel(state.settings.rate):k==='pause'||k==='gap'?state.settings[k]+' s':k==='repeat'?state.settings.repeat+(state.settings.repeat>1?' veces':' vez'):state.settings[k];}
   if(t.dataset.ai){const k=t.dataset.ai;state.ai[k]=t.type==='checkbox'?t.checked:k==='speed'?+t.value:t.value;save();if(k==='speed'){const l=$('#v_aispeed');if(l)l.textContent=state.ai.speed+'×';}}
+  if(t.dataset.set2==='miniGameEvery'){state.miniGameEvery=+t.value;save();const l=$('#v_miniGameEvery');if(l)l.textContent='cada '+state.miniGameEvery+' ejercicios';}
   if(t.dataset.cr){state.customRules[+t.dataset.i][t.dataset.cr]=t.value;save();}
 });
 document.addEventListener('change',e=>{const t=e.target;
