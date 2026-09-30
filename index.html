@@ -729,26 +729,31 @@ function mergeSpans(spans){
 /* letras/tramos (en las coordenadas de la propia palabra tal como aparece en el texto, con
    mayúsculas y tildes) que hay que pintar de rojo en esta palabra, o [] si no le toca ninguna
    regla letra a letra. */
-function wordRuleSpans(wOrig){
-  if(!/\p{L}/u.test(wOrig))return [];
+/* igual que antes, pero además recuerda QUÉ regla(s) concretas (id + texto) han marcado cada
+   tramo, para poder mostrarlas luego si Julia toca la palabra (ver dictadoAffectedWordsHTML). */
+function wordRuleInfo(wOrig){
+  if(!/\p{L}/u.test(wOrig))return {spans:[],rules:[]};
   const wl=wOrig.toLowerCase(),wcs=strip(wl);
-  let spans=[];
+  let spans=[];const rules=[];
+  const addRule=(id,text)=>{if(text&&!rules.some(r=>r.id===id))rules.push({id,text});};
+  const push=(id,sp)=>{if(sp&&sp.length)spans=spans.concat(sp);addRule(id,ruleTextById(id));};
   const tid=classifyTilde(wl);
-  if(tid){const m=wOrig.match(/[áéíóúÁÉÍÓÚ]/);spans.push(m?[m.index,m.index+1]:[0,wOrig.length]);}
-  if(wl.includes('ü')){const i=wl.indexOf('ü');spans.push([i,i+1]);}
-  const hid=classifyH(wcs);if(hid)spans=spans.concat(ruleHighlightSpans(hid,wcs));
-  const bid=classifyB(wcs);if(bid)spans=spans.concat(ruleHighlightSpans(bid,wcs));
-  const vid=classifyV(wcs);if(vid)spans=spans.concat(ruleHighlightSpans(vid,wcs));
-  const gid=classifyG(wcs);if(gid)spans=spans.concat(ruleHighlightSpans(gid,wcs));
-  const jid=classifyJ(wcs);if(jid)spans=spans.concat(ruleHighlightSpans(jid,wcs));
-  const llid=classifyLL(wcs);if(llid)spans=spans.concat(ruleHighlightSpans(llid,wcs));
-  const yid=classifyY(wcs);if(yid)spans=spans.concat(ruleHighlightSpans(yid,wcs));
-  const rrid=classifyRR(wcs);if(rrid)spans=spans.concat(ruleHighlightSpans(rrid,wcs));
-  classifyCZS(wcs).forEach(id=>spans=spans.concat(ruleHighlightSpans(id,wcs)));
-  classifyX(wcs).forEach(id=>spans=spans.concat(ruleHighlightSpans(id,wcs)));
-  classifyMN(wcs).forEach(id=>spans=spans.concat(ruleHighlightSpans(id,wcs)));
-  return mergeSpans(spans);
+  if(tid){const m=wOrig.match(/[áéíóúÁÉÍÓÚ]/);spans.push(m?[m.index,m.index+1]:[0,wOrig.length]);addRule(tid.id,tid.text||ruleTextById(tid.id));}
+  if(wl.includes('ü')){const i=wl.indexOf('ü');spans.push([i,i+1]);addRule('dier',ruleTextById('dier'));}
+  const hid=classifyH(wcs);if(hid)push(hid,ruleHighlightSpans(hid,wcs));
+  const bid=classifyB(wcs);if(bid)push(bid,ruleHighlightSpans(bid,wcs));
+  const vid=classifyV(wcs);if(vid)push(vid,ruleHighlightSpans(vid,wcs));
+  const gid=classifyG(wcs);if(gid)push(gid,ruleHighlightSpans(gid,wcs));
+  const jid=classifyJ(wcs);if(jid)push(jid,ruleHighlightSpans(jid,wcs));
+  const llid=classifyLL(wcs);if(llid)push(llid,ruleHighlightSpans(llid,wcs));
+  const yid=classifyY(wcs);if(yid)push(yid,ruleHighlightSpans(yid,wcs));
+  const rrid=classifyRR(wcs);if(rrid)push(rrid,ruleHighlightSpans(rrid,wcs));
+  classifyCZS(wcs).forEach(id=>push(id,ruleHighlightSpans(id,wcs)));
+  classifyX(wcs).forEach(id=>push(id,ruleHighlightSpans(id,wcs)));
+  classifyMN(wcs).forEach(id=>push(id,ruleHighlightSpans(id,wcs)));
+  return {spans:mergeSpans(spans),rules};
 }
+function wordRuleSpans(wOrig){return wordRuleInfo(wOrig).spans;}
 function wordMarkedHTML(wOrig,spans){
   if(!spans.length)return esc(wOrig);
   let html='',p=0;
@@ -769,20 +774,31 @@ function dictadoTextHighlightHTML(text){
   out+=esc(text.slice(pos));
   return out;
 }
-/* debajo del texto: solo las palabras afectadas (sin repetir), cada una con sus letras en rojo */
+/* debajo del texto: solo las palabras afectadas (sin repetir), cada una con sus letras en rojo.
+   Son pulsables: al tocar una, debajo de ESA palabra (no de todas) aparece la regla ortográfica
+   que le corresponde — se guarda en ui.dictRuleOpen cuál está abierta (por su forma sin tildes,
+   que es la misma "key" que ya se usaba para no repetir palabras). */
 function dictadoAffectedWordsHTML(text){
   let words;try{words=getWords(text||'');}catch(e){return '';}
   const seen=new Map();
   words.forEach(w=>{
     const key=strip(w.t.toLowerCase());
     if(seen.has(key))return;
-    const spans=wordRuleSpans(w.t);
-    if(!spans.length)return;
-    seen.set(key,wordMarkedHTML(w.t,spans));
+    const info=wordRuleInfo(w.t);
+    if(!info.spans.length)return;
+    seen.set(key,{html:wordMarkedHTML(w.t,info.spans),rules:info.rules});
   });
   if(!seen.size)return '';
-  return `<div style="margin-top:12px"><b>Palabras con letras que siguen una regla:</b>
-  <div style="margin-top:8px;font-size:1.15rem;line-height:2.4">${Array.from(seen.values()).map(h=>`<span style="display:inline-block;background:#f6f5ff;border:1px solid var(--line);border-radius:10px;padding:4px 10px;margin:2px">${h}</span>`).join('')}</div></div>`;
+  const open=ui.dictRuleOpen;
+  const chips=Array.from(seen.entries()).map(([key,v])=>{
+    const isOpen=open===key;
+    return `<span style="display:inline-flex;flex-direction:column;align-items:flex-start;vertical-align:top">
+    <button data-act="dictRuleToggle" data-k="${esc(key)}" style="font:inherit;cursor:pointer;background:${isOpen?'#ece9fb':'#f6f5ff'};border:1px solid ${isOpen?'var(--pri)':'var(--line)'};border-radius:10px;padding:4px 10px;margin:2px">${v.html}</button>
+    ${isOpen?`<div class="rule" style="margin:0 2px 8px;max-width:260px;font-size:.88rem;line-height:1.35">${v.rules.map(r=>esc(r.text)).join('<br>')}</div>`:''}
+    </span>`;
+  }).join('');
+  return `<div style="margin-top:12px"><b>Palabras con letras que siguen una regla:</b> <small class="mute">(toca una para ver su regla)</small>
+  <div style="margin-top:8px;font-size:1.15rem;line-height:2.4;display:flex;flex-wrap:wrap">${chips}</div></div>`;
 }
 /* panel completo que se ve ANTES de empezar el dictado: el texto con las letras en rojo, debajo
    las palabras afectadas sueltas, y debajo la lista de reglas (como estaba). Desaparece entero
@@ -797,7 +813,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.01-8';
+const APP_VERSION='2026.10.01-10';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -816,7 +832,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -1587,7 +1603,7 @@ const taskActions={
   openItem(b){
     const it=itemsOf(todayStr()).find(x=>x.id===b.dataset.id);if(!it)return;
     const [s]=recItem(it);touchSes(s);ui.item=it.id;
-    if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.dictTheoryOpen=true;ui.screen='run';render();}
+    if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.dictTheoryOpen=true;ui.dictRuleOpen=null;ui.screen='run';render();}
     else if(it.type==='examen')startExam(it.eid,it.id);
     else startMath(it.cfg,it.seed,it.id);
   },
@@ -2657,7 +2673,7 @@ const SIMON_COLORS=['red','green','blue','yellow'];
 const SIMON_EMOJI={red:'🔴',green:'🟢',blue:'🔵',yellow:'🟡'};
 const SIMON_HEX={red:'#e11d48',green:'#16a34a',blue:'#2563eb',yellow:'#f59e0b'};
 const SIMON_LIGHT={red:'#ffd7de',green:'#c9f2d8',blue:'#cfe0ff',yellow:'#ffe6a8'};
-function makeSimonState(){return {seq:[],pos:0,round:0,maxRound:6,active:null,input:false,ready:true,done:false};}
+function makeSimonState(){return {seq:[],pos:0,round:0,maxRound:8,active:null,input:false,ready:true,done:false};}
 function simonNextRound(g){
   g.seq.push(SIMON_COLORS[Math.floor(Math.random()*4)]);
   g.round++;g.pos=0;g.input=false;g.active=null;g.ready=true;render();
@@ -3002,7 +3018,8 @@ const studentActions={
   goHome(){if(ui.role==='tutor'){ui.role='alumna';}Dict.stop();ui.item=null;ui.screen='home';render();},
   goList(){ui.screen='list';render();},
   backList(){Dict.stop();ui.screen=ui.item?'today':'list';render();},
-  openDict(b){ui.item=null;ui.t0=Date.now();ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.dictTheoryOpen=true;ui.screen='run';render();},
+  openDict(b){ui.item=null;ui.t0=Date.now();ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.dictTheoryOpen=true;ui.dictRuleOpen=null;ui.screen='run';render();},
+  dictRuleToggle(b){const k=b.dataset.k;ui.dictRuleOpen=ui.dictRuleOpen===k?null:k;const y=scrollY;render();scrollTo(0,y);},
   start:startDictado,
   pause(){Dict.cur&&Dict.cur.paused?Dict.resume():Dict.pause();},
   repeat(){Dict.repeat();},skip(){Dict.skip();},prev(){Dict.prev();},stop(){Dict.stop();updateRun();},
