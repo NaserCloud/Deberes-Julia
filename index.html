@@ -797,7 +797,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.01-3';
+const APP_VERSION='2026.10.01-7';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -806,7 +806,9 @@ const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tar
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
   const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},studyProgress:{},tutorNotes:'',miniGameEvery:15};
-  s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-4o'},s.ai||{});s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
+  s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-5-chat-latest'},s.ai||{});
+  if(s.ai.visionModel==='gpt-4o')s.ai.visionModel='gpt-5-chat-latest'; // migración automática: quien ya tenía gpt-4o guardado pasa a gpt-5 sin tener que tocar nada
+  s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
   s.sync.isnap=s.sync.isnap||{};s.sync.itomb=s.sync.itomb||{};
   if(!s.dictados)s.dictados=[SAMPLE];
   return s;
@@ -814,7 +816,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -1476,6 +1478,7 @@ function sessionReport(s){
       o.det=x.wrong.map(w=>`${w.q.replace(/\s*=\s*$/,'')} = ${w.a}${w.given&&w.given.length?' (puso '+w.given.join(', ')+')':''}`);}
     else if(r.kind==='examen'&&r.res){const x=r.res;o.line=`${(Math.round(x.score*10)/10).toString().replace('.',',')} de ${x.n} puntos (${Math.round(100*x.score/x.n)}%)`;o.det=x.qa.filter(a=>exEff(a)<0.7).map(a=>`${a.q} → ${a.correct}`);}
     else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (sin foto)'}`;}
+    else if(r.kind==='minijuego'&&r.res){o.line=r.res.line;}
     else o.line=r.done?'Hecho':'Empezado, sin terminar';
     return o;
   };
@@ -1760,7 +1763,12 @@ function exVarKey(q){
    "aplica esta regla a un caso nuevo"). A propósito ya NO se descarta nada por "misma respuesta"
    ni por "mismo dato evaluado": eso estaba tirando muchísimas preguntas legítimas (p.ej. muchas
    palabras distintas que son todas "adverbio de tiempo" comparten respuesta pero son preguntas
-   distintas), así que el único criterio real de duplicado es el texto de la pregunta en sí. */
+   distintas), así que el único criterio real de duplicado es el texto de la pregunta en sí.
+   OJO con las preguntas-plantilla (n.w/m.w = caso concreto marcado, p.ej. «ayer» vs «pronto»):
+   comparten CASI TODO el texto salvo esa palabra, así que su parecido de texto (Jaccard) sale
+   igual de alto que si fueran la misma pregunta, aunque NO lo sean. Por eso, si ambas preguntas
+   tienen un caso concreto marcado, la ÚNICA comparación válida es si ese caso es el mismo — nunca
+   se comparan por parecido de texto entre sí (eso era lo que seguía tirando la mayoría). */
 function exCurate(existing,fresh){
   const kept=existing.filter(q=>!q.off||true).slice(),dropped=[],add=[];
   const info=q=>({qt:exToks(q.q),w:exVarKey(q)});
@@ -1768,8 +1776,8 @@ function exCurate(existing,fresh){
   fresh.forEach(q=>{
     const n=info(q);let why='';
     for(let i=0;i<kept.length&&!why;i++){const m=infos[i],p=kept[i];
-      if(n.w&&m.w&&n.w===m.w)why=`Ya se preguntó por lo mismo (${p.v||exQuotedWord(p)}): «${p.q}»`;
-      else if(exJac(n.qt,m.qt)>=0.94)why=`Es prácticamente la misma pregunta que: «${p.q}»`;
+      if(n.w&&m.w){if(n.w===m.w)why=`Ya se preguntó por lo mismo (${p.v||exQuotedWord(p)}): «${p.q}»`;continue;}
+      if(exJac(n.qt,m.qt)>=0.94)why=`Es prácticamente la misma pregunta que: «${p.q}»`;
     }
     if(why)dropped.push({q:q.q,why});else{kept.push(q);infos.push(n);add.push(q);}
   });
@@ -1865,7 +1873,7 @@ function genPrompt(exam,chunk,ci,nc,k){
 2) Los datos concretos (fechas, cifras, nombres, hechos) deben salir SOLO de los apuntes; no inventes datos externos. PERO si los apuntes explican una REGLA, MÉTODO o CLASIFICACIÓN general en vez de (o además de) datos concretos —por ejemplo: cómo separar la raíz y los morfemas de una palabra y qué significa cada uno, identificar sinónimos/antónimos, familias de palabras, clasificar palabras o frases en sus TIPOS (tipos de adverbios, de sustantivos, de pronombres, de oraciones, sujeto o predicado, etc.), conjugar un tiempo verbal, clasificar sílabas, etc.— entonces NO te limites al único ejemplo que aparezca en los apuntes: aplica esa MISMA regla o clasificación una y otra vez a casos NUEVOS y variados (palabras, frases, verbos, números…), reales y habituales para un alumno de 10-11 años (elígelos tú; no hace falta que estén en los apuntes). Este tipo de teoría se aprende por REPETICIÓN, así que genera TANTAS preguntas de este estilo como se te pidan, todas con la misma plantilla de pregunta y el mismo formato de respuesta, cambiando solo el caso concreto cada vez (nunca repitas el mismo caso dos veces); que muchos casos distintos acaben teniendo la MISMA respuesta final (p. ej. varias palabras que son todas "adverbio de tiempo") es NORMAL y no un problema. IMPORTANTE — no te salgas del alcance exacto de la teoría: solo varía dentro de las categorías, tiempos o tipos que los apuntes explican explícitamente, nunca añadas otros que el alumno no ha estudiado todavía. Por ejemplo, si los apuntes solo explican el presente y el futuro, todos los verbos deben practicarse en presente o futuro — NUNCA metas pretérito ni otro tiempo que no esté en los apuntes; si los apuntes solo explican tipos de adverbios de tiempo y lugar, no introduzcas otros tipos (de modo, cantidad…) que no se hayan visto. Si los apuntes SÍ cubren varias categorías (p. ej. verbos regulares e irregulares, o varios tipos de adverbio), entonces sí reparte las preguntas entre esas categorías para cubrirlas todas, pero sin salirte de lo que los apuntes cubren. Marca SIEMPRE el caso concreto en el campo "var" del JSON (ver formato abajo) además de mencionarlo en la pregunta — esto es obligatorio en cualquier pregunta de este tipo (clasificación incluida), p. ej.: "q":"Analiza la palabra «perrito»: ¿cuál es la raíz? ¿qué morfema(s) tiene y qué significa(n)?","var":"perrito"; "q":"Escribe el verbo «cantar» en futuro: ...","var":"cantar"; "q":"¿Qué tipo de adverbio es «ayer»?","var":"ayer".
 3) Preguntas claras y autocontenidas, adecuadas a 10-11 años. Sin «según el texto». Sin verdadero/falso ni sí/no.
 4) Test: 4 opciones plausibles y claramente distintas, solo una correcta, sin «todas las anteriores». La opción correcta no debe ser siempre la más larga.
-5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una); si es una pregunta de "aplica la regla a un caso nuevo", la respuesta modelo debe dar el análisis completo de ese caso (p. ej. "Raíz: perr-. Morfemas: -it- (diminutivo), -o (género masculino)") y las palabras clave deben incluir cada parte del análisis.
+5) Redactada: respuesta modelo de 1-2 frases y 2-5 palabras clave imprescindibles (una o dos palabras cada una). Elige como palabra clave SOLO el concepto central sin el cual la respuesta no tendría sentido (p. ej. "raíz", "futuro", "sustantivo"), NUNCA un sinónimo concreto, un detalle accesorio o una forma de decirlo muy literal — una niña de 10-11 años que responda bien pero con otras palabras o de forma más corta debe seguir acertando esa palabra clave. Si es una pregunta de "aplica la regla a un caso nuevo", la respuesta modelo debe dar el análisis completo de ese caso (p. ej. "Raíz: perr-. Morfemas: -it- (diminutivo), -o (género masculino)") y las palabras clave deben incluir cada parte del análisis, siempre eligiendo el concepto central de cada parte (p. ej. "perr" y "diminutivo", no la frase completa).
 6) ${langRule(exam.lang)}
 ${exam.hint?`7) El profesor ha dado estas indicaciones para estas preguntas — síguelas con prioridad, dentro de lo que permiten los apuntes y sin salirte del alcance de la teoría (regla 2): "${exam.hint}"\n`:''}Devuelve SOLO un JSON válido: {"questions":[...]} con objetos de estos formatos:
 test: {"t":"test","q":"...","o":["...","...","...","..."],"c":0,"e":"explicación breve","fact":"dato evaluado en 3-6 palabras","var":"caso concreto si aplica la regla 2, si no, omite este campo"}
@@ -2297,12 +2305,12 @@ function studyOpen(id){
   }
   if(!qs)qs=shuffleArr(pool);
   ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk,n:qs.length,recorded:false};
-  ui.studyPhotoView=null;ui.screen='study';studySave();render();
+  ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 function studyRound(temaId,level,showPhoto){
   const e=exGet(temaId),pool=e.pool.filter(q=>!q.off);
   ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],firstOk:0,n:pool.length,recorded:false};
-  ui.studyPhotoView=null;studySave();render();
+  ui.studyPhotoView=null;ui.studyQuitAsk=false;studySave();render();
 }
 function studyPhotosHTML(id){
   const L=(state.examFotos[id]||[]).filter(p=>!p.err);if(!L.length)return '';
@@ -2343,7 +2351,7 @@ function studyAnswerHTML(st,q){
       body=q.o.map((o,k)=>`<button class="item" style="display:block;width:100%;text-align:left;font:inherit;background:${st.picked===k?'#ece9fb':'#fff'};border:2px solid ${st.picked===k?'var(--pri)':'var(--line)'};border-radius:var(--r);padding:14px 16px;margin:8px 0;cursor:pointer;color:var(--ink)" data-act="studyPick" data-k="${k}"><b style="color:var(--pri2)">${'ABCDE'[k]}.</b> ${esc(o)}</button>`).join('');
       body+=`<div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyCheck" ${st.picked==null?'disabled':''}>✔ Comprobar</button></div>`;
     }else{
-      body=`<textarea id="studyAns" placeholder="Escribe tu respuesta…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:110px">${esc(st.given||'')}</textarea><div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyCheck">✔ Comprobar</button></div>`;
+      body=`<textarea id="studyAns" data-enter="studyAns" placeholder="Escribe tu respuesta…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:110px" ${st.checking?'disabled':''}>${esc(st.given||'')}</textarea><div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyCheck" ${st.checking?'disabled':''}>${st.checking?'⏳ Corrigiendo…':'✔ Comprobar'}</button></div>`;
     }
     return body;
   }
@@ -2378,6 +2386,17 @@ function renderStudyDone(){
   <button class="btn" data-act="studyQuitOk">← Volver a temas y exámenes</button>
   </div>`;
 }
+function studyQuitOverlay(){
+  if(!ui.studyQuitAsk)return '';
+  return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.studyQuitCancel()"><div class="exph-box" style="max-width:420px;text-align:center">
+  <h3 style="margin-top:0">¿Salir de este tema?</h3>
+  <p class="mute">Puedes salir y seguir luego justo en esta misma pregunta, o salir sin guardar nada (la próxima vez empezarás de cero).</p>
+  <div class="row" style="flex-direction:column;gap:8px;margin-top:10px">
+  <button class="btn primary big" data-act="studyQuitResume">📌 Salir y seguir luego aquí mismo</button>
+  <button class="btn danger" data-act="studyQuitDiscard">🗑 Salir sin guardar (empezar de cero)</button>
+  <button class="btn" data-act="studyQuitCancel">Cancelar, seguir estudiando</button>
+  </div></div></div>`;
+}
 function renderStudy(){
   const st=ui.study;if(!st){ui.screen='exlist';return render();}
   const e=exGet(st.temaId);if(!e){ui.study=null;ui.screen='exlist';return render();}
@@ -2391,14 +2410,14 @@ function renderStudy(){
   <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="studyPrev" ${st.i?'':'disabled'}>⬅ Anterior</button>${levelBtn}</span></div>
   ${st.showPhoto?studyTheoryOrWarn(e):'<p class="mute" style="margin:4px 0 10px">🙈 Nivel 2: sin la foto. ¡A ver cuánto recuerdas!</p>'}
   <div class="panel"><div style="font-size:1.2rem;font-weight:800;line-height:1.4;margin-bottom:12px">${esc(q.q)}</div>
-  ${studyAnswerHTML(st,q)}</div>${overlay}`;
+  ${studyAnswerHTML(st,q)}</div>${overlay}${studyQuitOverlay()}`;
   const ta=$('#studyAns');if(ta)ta.focus();
 }
 const studyActions={
   studyOpen(b){studyOpen(b.dataset.id);},
   studyPick(b){if(ui.study){ui.study.picked=+b.dataset.k;const y=scrollY;render();scrollTo(0,y);}},
-  studyCheck(){
-    const st=ui.study;if(!st)return;const q=st.qs[st.i];
+  async studyCheck(){
+    const st=ui.study;if(!st||st.checking)return;const q=st.qs[st.i];
     let ok;
     if(q.t==='test'){
       if(st.picked==null)return toast('Elige una opción');
@@ -2406,7 +2425,16 @@ const studyActions={
     }else{
       const v=($('#studyAns')?.value||'').trim();st.given=v;
       if(!v)return toast('Escribe algo primero');
-      ok=exGrade(q,v).ok==='ok';
+      const g=exGrade(q,v);ok=g.ok==='ok';
+      /* si el corrector rápido de palabras clave no la da por buena, le pedimos una segunda
+         opinión a la IA (más tolerante con respuestas correctas dichas con otras palabras)
+         antes de marcarla como fallo. Si no hay IA activada o falla la conexión, nos quedamos
+         con el veredicto del corrector rápido. */
+      if(!ok&&state.ai.photoOn){
+        st.checking=true;const y0=scrollY;render();scrollTo(0,y0);
+        try{const r=await aiGradeWritten({q:q.q,correct:q.a,hits:g.hits,miss:g.miss,given:v});if(r.score>=0.6)ok=true;}catch(e){}
+        st.checking=false;
+      }
     }
     if(ok){st.firstOk++;st.stage='ok';}
     else{st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.stage='rule';}
@@ -2436,8 +2464,11 @@ const studyActions={
   studyRepeat(){const st=ui.study;if(!st)return;studyRound(st.temaId,st.level,st.showPhoto);},
   studyPhotoOpen(b){ui.studyPhotoView=b.dataset.id;render();},
   studyPhotoClose(){ui.studyPhotoView=null;render();},
-  studyQuit(){if(confirm('¿Salir? Perderás el progreso de esta ronda.')){ui.study=null;ui.studyPhotoView=null;ui.screen='exlist';render();}},
-  studyQuitOk(){ui.study=null;ui.studyPhotoView=null;ui.screen='exlist';render();}
+  studyQuit(){ui.studyQuitAsk=true;const y=scrollY;render();scrollTo(0,y);},
+  studyQuitCancel(){ui.studyQuitAsk=false;const y=scrollY;render();scrollTo(0,y);},
+  studyQuitResume(){ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.screen='exlist';render();},
+  studyQuitDiscard(){const st=ui.study;if(st)studyClearProgress(st.temaId);ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.screen='exlist';render();},
+  studyQuitOk(){ui.study=null;ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='exlist';render();}
 };
 /* ================= minijuegos: cada 15 preguntas, un descanso interactivo =================
    Se insertan al azar dentro de las tandas largas de ejercicios (mates, exámenes, estudio de
@@ -2453,12 +2484,39 @@ function startMiniGame(returnScreen,forceKind){
   const kind=forceKind||MINI_KINDS[Math.floor(Math.random()*MINI_KINDS.length)];
   const makers={memoria:makeMemoriaState,ahorcado:makeAhorcadoState,tres:makeTresState,caza:makeCazaState,puzzle:makePuzzleState,simon:makeSimonState};
   ui.mgame=Object.assign(makers[kind](),{kind,returnScreen});
+  if(!ui.mgame.t0)ui.mgame.t0=Date.now();
   ui.screen='minigame';
   if(kind==='simon')simonNextRound(ui.mgame);else render();
 }
+/* ¿ha terminado la partida (con o sin premio)? memoria no guarda un "done" propio, se calcula
+   mirando sus cartas; el resto sí tiene g.done (won/lost/draw/true/'timeout'). */
+function miniIsDone(g){return g.kind==='memoria'?g.cards.every(c=>c.done):!!g.done;}
+/* una frase corta con el resultado, para el historial de actividad del tutor */
+function miniResultLine(g){
+  switch(g.kind){
+    case 'memoria':return `Completado en ${g.moves} movimientos`;
+    case 'ahorcado':return g.done==='won'?`Acertó la palabra «${g.word}» (${g.fails} fallo${g.fails===1?'':'s'})`:`No acertó la palabra «${g.word}» (se quedó sin intentos)`;
+    case 'tres':return g.done==='p'?'Ganó la partida':g.done==='draw'?'Empate':'Perdió la partida';
+    case 'caza':return `${g.score} de ${g.total} aciertos`;
+    case 'puzzle':return g.done===true?`Resuelto en ${g.moves} movimientos`:'No lo terminó a tiempo';
+    case 'simon':return g.done==='won'?`Completó las ${g.maxRound} rondas`:`Llegó a la ronda ${g.round} de ${g.maxRound}`;
+    default:return '';
+  }
+}
+/* registra la partida terminada en la actividad del día (igual que dictados, mates, exámenes y
+   teoría). Si Julia la salta con "Saltar este juego" sin terminarla, o es una prueba del tutor
+   (miniPreview), no se registra nada. */
+function recordMiniGame(g){
+  const s=getSes(todayStr(),true);const start=g.t0||Date.now();if(!s.started)s.started=start;
+  const secs=Math.max(0,Math.round((Date.now()-start)/1000));
+  s.extra.push({id:uid(),kind:'minijuego',title:'Minijuego: '+(MINI_LABELS[g.kind]||g.kind),start,end:Date.now(),secs,done:true,res:{line:miniResultLine(g)}});
+  touchSes(s);
+}
 function endMiniGame(){
   const g=ui.mgame;miniClearTimer(g);
-  const rs=g&&g.returnScreen;ui.mgame=null;
+  const rs=g&&g.returnScreen;
+  if(g&&rs!=='__tutorpreview__'&&miniIsDone(g))recordMiniGame(g);
+  ui.mgame=null;
   if(rs==='__tutorpreview__'){ui.role='tutor';ui.tab=ui.mgPreviewReturnTab||'ajustes';render();return;}
   ui.screen=rs||'home';render();
 }
@@ -2857,7 +2915,8 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
   if(t.dataset.enter==='word')fixActions.word({dataset:{i:t.dataset.i}});
   if(t.dataset.enter==='mans')taskActions.mcheck();
   if(t.dataset.enter==='opin')fixActions.origGo();
-  if(t.dataset.enter==='pin')tutorActions.pinEnter();});
+  if(t.dataset.enter==='pin')tutorActions.pinEnter();
+  if(t.dataset.enter==='studyAns')studyActions.studyCheck();});
 render();
 async function readDictPhotos(files){
   const st=$('#dictPhotoSt');if(!state.ai.photoOn){if(st)st.textContent='';return toast('Activa la IA de fotos en Ajustes para leer fotos');}
