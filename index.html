@@ -124,6 +124,7 @@ table{width:100%;border-collapse:collapse}td{padding:6px 4px;vertical-align:top}
 #toast.on{opacity:1}
 details summary{font-weight:800;cursor:pointer;min-height:44px;display:flex;align-items:center}
 @keyframes shake{25%{transform:translateX(-6px)}75%{transform:translateX(6px)}}.shake{animation:shake .3s}
+.appver{position:fixed;bottom:3px;right:8px;font-size:.65rem;color:var(--mute);opacity:.55;z-index:50;cursor:pointer;background:var(--bg);padding:1px 6px;border-radius:8px}
 </style>
 </head>
 <body>
@@ -133,6 +134,7 @@ details summary{font-weight:800;cursor:pointer;min-height:44px;display:flex;alig
 </header>
 <main id="app"></main>
 <div id="toast"></div>
+<div class="appver" id="appVer" data-act="showVersion"></div>
 <script>
 // <PURE>
 const strip=s=>s.replace(/ñ/g,'\u0001').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/\u0001/g,'ñ');
@@ -795,6 +797,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
+const APP_VERSION='2026.09.30-1';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -818,6 +821,7 @@ const app=$('#app');
 let toastT;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2600);}
 const nWords=t=>getWords(t).length;
+(function(){const v=$('#appVer');if(v)v.textContent='v'+APP_VERSION;})();
 
 /* ================= voz / dictado ================= */
 const Dict=(()=>{
@@ -2821,7 +2825,8 @@ const studentActions={
   repeat(){Dict.repeat();},skip(){Dict.skip();},prev(){Dict.prev();},stop(){Dict.stop();updateRun();},
   correct:goCorrect,
   again(){ui.t0=Date.now();ui.answer='';ui.photo=null;ui.fix=null;ui.screen='run';render();},
-  setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();}
+  setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();},
+  showVersion(){const l=state.sync.last?new Date(state.sync.last).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'nunca';toast(`Versión v${APP_VERSION} · última sincronización: ${l}`);}
 };
 const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions,studyActions,miniActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
