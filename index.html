@@ -9,6 +9,7 @@
 <meta name="theme-color" content="#6c5ce7">
 <title>Deberes de Julia</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📚</text></svg>">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 :root{--bg:#fff8f0;--card:#fff;--ink:#2d2a45;--mute:#6f6c86;--pri:#6c5ce7;--pri2:#5546d6;--ok:#16a34a;--okbg:#e7f8ee;--bad:#e11d48;--badbg:#ffe8ed;--warn:#f59e0b;--line:#e7e1f5;--r:18px}
 *{box-sizing:border-box}
@@ -813,7 +814,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.01-11';
+const APP_VERSION='2026.10.07-1';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -822,8 +823,8 @@ const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tar
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
   const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},studyProgress:{},tutorNotes:'',miniGameEvery:15};
-  s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-5-chat-latest'},s.ai||{});
-  if(s.ai.visionModel==='gpt-4o')s.ai.visionModel='gpt-5-chat-latest'; // migración automática: quien ya tenía gpt-4o guardado pasa a gpt-5 sin tener que tocar nada
+  s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-6.1-sol'},s.ai||{});
+  if(s.ai.visionModel==='gpt-4o'||s.ai.visionModel==='gpt-5-chat-latest')s.ai.visionModel='gpt-6.1-sol'; // migración automática: OpenAI retiró gpt-5-chat-latest, pasamos a todo el mundo a gpt-6.1-sol sin tener que tocar nada
   s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
   s.sync.isnap=s.sync.isnap||{};s.sync.itomb=s.sync.itomb||{};
   if(!s.dictados)s.dictados=[SAMPLE];
@@ -1876,6 +1877,84 @@ function rotateDataUrl(dataUrl,deg){
     img.src=dataUrl;
   });
 }
+/* Reescala una imagen (dataURL) a un tamaño máximo, igual que jpegFromFile pero partiendo de una
+   dataURL en vez de un File (lo usamos para sacar la miniatura de una página de PDF ya renderizada). */
+function dataUrlResize(dataUrl,max){
+  return new Promise((res,rej)=>{
+    const img=new Image();
+    img.onload=()=>{
+      const k=Math.min(1,max/Math.max(img.width,img.height)),w=Math.round(img.width*k),h=Math.round(img.height*k);
+      const c=document.createElement('canvas');c.width=w;c.height=h;
+      const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,w,h);x.drawImage(img,0,0,w,h);
+      res(c.toDataURL('image/jpeg',0.85));
+    };
+    img.onerror=()=>rej(new Error('No se ha podido procesar la página'));
+    img.src=dataUrl;
+  });
+}
+if(window.pdfjsLib)pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+const EX_MAXPDFPAGES=20;
+/* Abre un PDF en el navegador (sin IA, sin subirlo a ningún sitio) y dibuja cada página en un
+   <canvas> para convertirla en una imagen, igual que si fuera una foto del cuaderno. Así reutilizamos
+   tal cual el mismo lector de teoría (readNotesPhoto) que ya usamos para las fotos. */
+async function pdfFileToImages(file,maxPages){
+  if(!window.pdfjsLib)throw new Error('No se ha podido cargar el lector de PDF. Comprueba tu conexión e inténtalo de nuevo.');
+  const buf=await file.arrayBuffer();
+  const doc=await pdfjsLib.getDocument({data:buf}).promise;
+  const n=Math.min(doc.numPages,maxPages);
+  const out=[];
+  for(let i=1;i<=n;i++){
+    const page=await doc.getPage(i);
+    const base=page.getViewport({scale:1});
+    const scale=Math.max(1,Math.min(3,1800/Math.max(base.width,base.height)));
+    const viewport=page.getViewport({scale});
+    const c=document.createElement('canvas');c.width=Math.round(viewport.width);c.height=Math.round(viewport.height);
+    const x=c.getContext('2d');x.fillStyle='#fff';x.fillRect(0,0,c.width,c.height);
+    await page.render({canvasContext:x,viewport}).promise;
+    out.push(c.toDataURL('image/jpeg',0.85));
+  }
+  return {images:out,total:doc.numPages};
+}
+async function readNotesPdfs(files){
+  const e=exGet(ui.exId),st=()=>$('#exSt');if(!e)return;
+  if(!state.ai.photoOn){if(st())st().textContent='';return toast('Activa la IA de fotos en Ajustes para leer PDFs');}
+  const gallery=state.examFotos[e.id]=(state.examFotos[e.id]||[]);
+  const out=[];let okN=0,errN=0,dupN=0,truncN=0,openErr='';
+  const seenHashes=new Set(gallery.map(p=>p.hash).filter(Boolean));
+  for(let fi=0;fi<files.length;fi++){
+    const file=files[fi];
+    if(st())st().innerHTML=`📄 Abriendo «${esc(file.name)}»…`;
+    const fhash=await fileHash(file);
+    let images,total;
+    try{const r=await pdfFileToImages(file,EX_MAXPDFPAGES);images=r.images;total=r.total;}
+    catch(er){errN++;openErr=er.message;continue;}
+    if(total>EX_MAXPDFPAGES)truncN++;
+    for(let pi=0;pi<images.length;pi++){
+      const hash=fhash?`${fhash}:${pi+1}`:'';
+      if(hash&&seenHashes.has(hash)){dupN++;continue;}
+      if(hash)seenHashes.add(hash);
+      if(st())st().innerHTML=`🔎 Leyendo la página ${pi+1} de ${images.length} de «${esc(file.name)}»…`;
+      const entry={id:uid(),thumb:'',full:images[pi],text:'',err:'',rot:0,hash,name:`${file.name} · pág. ${pi+1}`};
+      try{entry.thumb=await dataUrlResize(images[pi],260);entry.text=await readNotesPhoto(images[pi]);out.push(entry.text);okN++;}
+      catch(er){entry.err=er.message;errN++;}
+      gallery.push(entry);
+    }
+  }
+  state.examFotos[e.id]=gallery.slice(-40);
+  if(out.length){e.notes=(e.notes.trim()?e.notes.trim()+'\n\n':'')+out.join('\n\n');const ta=$('[data-exf=notes]');if(ta)ta.value=e.notes;}
+  save();
+  const y=scrollY;render();scrollTo(0,y);
+  const s2=$('#exSt');
+  if(s2){
+    let msg=okN?`✅ <b>${okN} ${okN===1?'página leída':'páginas leídas'} del PDF.</b> Revisa el texto por si la IA se ha equivocado y luego pulsa «Generar preguntas».`:'';
+    if(dupN)msg+=(msg?' ':'')+`♻️ ${dupN} ${dupN===1?'página estaba repetida (ya la tenías subida) y no se ha':'páginas estaban repetidas (ya las tenías subidas) y no se han'} vuelto a contar.`;
+    if(errN&&okN)msg+=(msg?' ':'')+`⚠️ ${errN} ${errN===1?'página no se pudo leer':'páginas no se pudieron leer'} (toca su miniatura para ver el motivo).`;
+    else if(openErr&&!okN)msg=(msg?msg+' ':'')+`⚠️ No se ha podido abrir el PDF: ${esc(openErr)}`;
+    if(truncN)msg+=(msg?' ':'')+`<br><small>Algún PDF tenía más de ${EX_MAXPDFPAGES} páginas; solo se han procesado las primeras ${EX_MAXPDFPAGES}.</small>`;
+    if(!msg)msg='Ese PDF ya estaba subido, no se ha vuelto a añadir.';
+    s2.innerHTML=msg;
+  }
+}
 /* En vez de pedirle a la IA que "calcule" el ángulo de giro (poco fiable), le enseñamos la MISMA
    foto ya girada en las 4 orientaciones posibles y le pedimos que elija cuál se lee bien: para un
    modelo de visión, elegir entre 4 opciones es mucho más fiable que razonar un ángulo de memoria. */
@@ -1970,7 +2049,7 @@ function tabExamenes(){
   </div>
   ${combBar}
   <h3 style="margin-bottom:6px">📘 Teoría y estudio</h3>
-  <p class="mute" style="margin-top:0">Sube fotos de los apuntes; Julia las verá en pantalla y practicará pregunta a pregunta con su tutor, con opción de pasar a «nivel 2» sin ver la foto.</p>
+  <p class="mute" style="margin-top:0">Sube fotos de los apuntes o un PDF; Julia las verá en pantalla y practicará pregunta a pregunta con su tutor, con opción de pasar a «nivel 2» sin ver la foto.</p>
   ${temas.map(temaRow).join('')||'<p class="mute">Aún no hay temas. Crea uno, sube fotos de la teoría y la app generará el banco de preguntas.</p>'}
   ${exams.length?`<h3 style="margin-bottom:6px">📝 Exámenes</h3><p class="mute" style="margin-top:0">Se crean combinando varios temas. Julia los hace de un tirón, sin ver la foto, y se corrigen al final.</p>${exams.map(examRow).join('')}`:''}`;
 }
@@ -2010,8 +2089,12 @@ function exEditView(t,e){
   <label class="f">Idioma<select data-exf="lang"><option value="auto" ${e.lang==='auto'?'selected':''}>El de los apuntes</option><option value="es" ${e.lang==='es'?'selected':''}>Español</option><option value="en" ${e.lang==='en'?'selected':''}>English</option></select></label></div>
   <p class="mute" style="margin:6px 0 0">${e.isExam?'El banco se genera una sola vez con IA; cada examen sortea preguntas distintas del banco sin gastar más.':'Julia estudiará todas las preguntas activas del banco, una a una, con la foto delante.'}</p></div>
   <div class="panel"><h3 style="margin-top:0">📷 Teoría a estudiar</h3>
-  ${(!e.isExam&&e.pool.length&&!e.notes.trim()&&!(state.examFotos[e.id]||[]).length)?'<p class="msg wrong" style="margin-top:0">⚠️ Este tema ya tiene preguntas generadas pero no le queda ninguna foto ni texto de apuntes guardado (puede que se borrara una foto y se borrase también su texto). Julia no verá nada que estudiar antes de las preguntas hasta que vuelvas a subir la foto o pegues el texto aquí abajo.</p>':''}
-  <div class="row" style="align-items:center;gap:12px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label><small class="mute">Hasta ${EX_MAXPH} fotos por tanda; puedes subir varias tandas seguidas.</small></div>
+  ${(!e.isExam&&e.pool.length&&!e.notes.trim()&&!(state.examFotos[e.id]||[]).length)?'<p class="msg wrong" style="margin-top:0">⚠️ Este tema ya tiene preguntas generadas pero no le queda ninguna foto ni texto de apuntes guardado (puede que se borrara una foto y se borrase también su texto). Julia no verá nada que estudiar antes de las preguntas hasta que vuelvas a subir la foto o el PDF, o pegues el texto aquí abajo.</p>':''}
+  <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap">
+  <label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label>
+  <label class="btn" style="display:inline-flex;align-items:center;gap:6px">📄 Subir un PDF<input type="file" accept="application/pdf,.pdf" id="exPdf" multiple hidden></label>
+  <small class="mute">Hasta ${EX_MAXPH} fotos por tanda (puedes subir varias tandas); del PDF se leen hasta ${EX_MAXPDFPAGES} páginas.</small>
+  </div>
   <div id="exSt" class="mute" style="margin:6px 0"></div>
   ${examPhotosHTML(e.id)}
   <label class="f">Texto de los apuntes (revísalo y corrígelo si hace falta)<textarea data-exf="notes" style="min-height:200px" placeholder="Sube fotos o pega aquí el texto de la teoría.">${esc(e.notes)}</textarea></label></div>
@@ -2031,6 +2114,7 @@ function exEditView(t,e){
 }
 function exInput(t){
   if(t.id==='exPhotos'){if(t.type==='file'&&t.files&&t.files.length){const f=[...t.files];t.value='';readNotesPhotos(f);}return true;}
+  if(t.id==='exPdf'){if(t.type==='file'&&t.files&&t.files.length){const f=[...t.files];t.value='';readNotesPdfs(f);}return true;}
   if(t.dataset.exph){
     const e=exGet(ui.exId);if(!e)return true;
     const L=state.examFotos[e.id]||[];const p=L.find(x=>x.id===t.dataset.id);if(!p)return true;
