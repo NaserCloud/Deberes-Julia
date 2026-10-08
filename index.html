@@ -815,7 +815,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.07-2';
+const APP_VERSION='2026.10.08-1';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -894,6 +894,15 @@ const AI_STYLE='v1';
 const AI_INSTR='Habla en español de España, como una maestra de primaria dictando a una niña de diez años: voz cálida, clara y pausada, con muy buena dicción. Pronuncia cada palabra con calma, sin prisa y sin añadir ni quitar nada del texto. Los signos de puntuación escritos como palabras (coma, punto, punto y aparte, abrir exclamación…) dilos de forma natural, como hace una profesora al dictar.';
 const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 const apiErr=s=>s===401?'La clave de OpenAI no es correcta o no está configurada':s===429?'Límite de uso o saldo agotado en OpenAI':s===403?'Esta web no tiene permiso para usar la IA':s===413?'La foto es demasiado grande':'Error de OpenAI ('+s+')';
+/* Intenta leer el detalle real del error que devuelve OpenAI (p.ej. "content_policy_violation" o
+   "context_length_exceeded") en vez de quedarnos solo con el código HTTP -- así, si algo falla, el
+   mensaje que ve David ya dice el motivo exacto y no hace falta ir a mirar los logs de Supabase. */
+async function apiErrDetail(r){
+  let msg='';
+  try{const j=await r.json();msg=(j&&j.error&&(j.error.message||j.error.code||j.error.type))||(typeof j.error==='string'?j.error:'')||'';}catch(e){}
+  const base=apiErr(r.status);
+  return msg?base+': '+String(msg).slice(0,300):base;
+}
 const VISION_SYS='Eres un transcriptor literal de texto manuscrito (OCR). La imagen es la hoja de cuaderno de una niña de primaria que ha escrito un dictado y puede tener faltas de ortografía. Tu única tarea es copiar EXACTAMENTE lo que hay escrito, letra por letra, sin corregir NADA: no corrijas la ortografía, ni las tildes (si falta una tilde, no la pongas; si hay una tilde de más, déjala), ni las mayúsculas o minúsculas, ni los signos de puntuación, ni las palabras mal separadas o pegadas. Si una letra está equivocada, escríbela tal como está. Conserva los saltos de línea. Ignora los tachones y lo tachado. Si una palabra es totalmente ilegible, escribe [?] en su lugar. Incluye la fecha o el título si los ha escrito. Responde SOLO con el texto transcrito, sin comillas, sin comentarios y sin explicaciones.';
 const useKey=()=>!!(state.ai.key&&state.ai.key.trim());
 async function aiCall(kind,path,payload){
@@ -905,7 +914,7 @@ async function readNotebook(dataUrl){
   const body={model:a.visionModel||'gpt-4o',temperature:0,messages:[{role:'system',content:VISION_SYS},{role:'user',content:[{type:'text',text:'Transcribe literalmente el texto manuscrito de esta foto, sin corregir ninguna falta.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}]};
   let r;try{r=await aiCall('vision','/v1/chat/completions',body);}
   catch(e){throw new Error('Sin conexión con el servidor de voz');}
-  if(!r.ok)throw new Error(apiErr(r.status));
+  if(!r.ok)throw new Error(await apiErrDetail(r));
   const j=await r.json();const t=(j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||'').trim();
   if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja bien recta.');
   return t.replace(/^```[a-z]*\n?|```$/g,'').trim();
@@ -914,7 +923,7 @@ const PRINT_SYS='Eres un transcriptor fiel de texto (impreso o escrito) para cre
 async function readPrinted(dataUrl){
   const body={model:state.ai.visionModel||'gpt-4o',temperature:0,max_tokens:1500,messages:[{role:'system',content:PRINT_SYS},{role:'user',content:[{type:'text',text:'Transcribe el texto de esta imagen para usarlo como dictado.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}]};
   let r;try{r=await aiCall('vision','/v1/chat/completions',body);}catch(e){throw new Error('Sin conexión con el servidor de voz');}
-  if(!r.ok)throw new Error(apiErr(r.status));
+  if(!r.ok)throw new Error(await apiErrDetail(r));
   const j=await r.json();let t=(j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||'').trim().replace(/^```[a-z]*\n?|```$/g,'').trim();
   if(!t)throw new Error('No he podido leer texto en la foto. Prueba con más luz y la página recta.');
   let title='';const m=t.match(/^T[ÍI]TULO:\s*(.+?)\s*(?:\n+|$)/i);if(m){title=m[1].trim();t=t.slice(m[0].length).trim();}
@@ -953,7 +962,7 @@ const Voz=(()=>{
     if(/^gpt-4o/.test(a.model))body.instructions=AI_INSTR;
     let r;try{r=await aiCall('tts','/v1/audio/speech',body);}
     catch(e){throw new Error('Sin conexión con el servidor de voz');}
-    if(!r.ok)throw new Error(apiErr(r.status));
+    if(!r.ok)throw new Error(await apiErrDetail(r));
     return await r.blob();
   }
   async function missing(texts){const out=[];for(const t of [...new Set(texts)]){const v=await idb('readonly',s=>s.getKey(K(t))).catch(()=>undefined);if(v===undefined)out.push(t);}return out;}
@@ -1855,7 +1864,7 @@ const langRule=l=>l==='es'?'Escribe todo en español.':l==='en'?'Write everythin
 const NOTES_SYS='Eres un transcriptor fiel de apuntes escolares (teoría de una asignatura de primaria, Year 6 de un colegio británico). Copia ÚNICAMENTE la teoría de la imagen como texto limpio: títulos, definiciones, datos, fechas, cifras, listas y vocabulario clave. Si hay esquemas, tablas o dibujos con información teórica, descríbelos brevemente con palabras. Si en la imagen hay también ejercicios, problemas o preguntas de ejemplo (estén resueltos o no), IGNÓRALOS por completo: no los transcribas ni los menciones, no forman parte de la teoría. Conserva el idioma original, no traduzcas, no resumas y no inventes nada. Ignora números de página y decoración. Separa los apartados con una línea en blanco. Responde SOLO con el texto de la teoría.';
 async function aiText(messages,max){
   let r;try{r=await aiCall('vision','/v1/chat/completions',{model:state.ai.visionModel||'gpt-4o',temperature:0,max_tokens:max||1500,messages});}catch(e){throw new Error('Sin conexión con el servidor');}
-  if(!r.ok)throw new Error(apiErr(r.status));
+  if(!r.ok)throw new Error(await apiErrDetail(r));
   const j=await r.json();return (j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content||'').trim();
 }
 async function readNotesPhoto(dataUrl){
@@ -1983,10 +1992,15 @@ async function pptxFileToSlideTexts(file){
   for(const name of slides){const xml=await zip.files[name].async('text');out.push(pptxSlideXmlToText(xml));}
   return {texts:out,total:names.length};
 }
-/* Agrupa diapositivas en tandas de hasta ~4000 caracteres para no mandar prompts gigantes a la IA. */
-function pptxChunks(texts,size=4000){
+/* Agrupa diapositivas en tandas de hasta ~3500 caracteres para no mandar prompts gigantes a la IA.
+   Si UNA sola diapositiva tiene muchísimo texto (una tabla densa, un párrafo entero pegado...) la
+   recortamos a 2500 caracteres: así ningún bloque puede quedar enorme por sí solo y cada tanda que
+   mandamos a la IA tiene un tamaño acotado y predecible, venga como venga la presentación. */
+function pptxChunks(texts,size=3500){
   const chunks=[];let cur=[],len=0;
-  texts.forEach((t,i)=>{const block=`Diapositiva ${i+1}:\n${t||'(sin texto)'}`;
+  texts.forEach((t,i)=>{
+    let body=t||'(sin texto)';if(body.length>2500)body=body.slice(0,2500)+'…';
+    const block=`Diapositiva ${i+1}:\n${body}`;
     if(cur.length&&len+block.length>size){chunks.push(cur.join('\n\n'));cur=[];len=0;}
     cur.push(block);len+=block.length;});
   if(cur.length)chunks.push(cur.join('\n\n'));
