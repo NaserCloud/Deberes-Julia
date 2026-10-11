@@ -815,7 +815,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.11-1';
+const APP_VERSION='2026.10.11-3';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -849,7 +849,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -920,8 +920,27 @@ async function apiErrDetail(r){
 }
 const VISION_SYS='Eres un transcriptor literal de texto manuscrito (OCR). La imagen es la hoja de cuaderno de una niña de primaria que ha escrito un dictado y puede tener faltas de ortografía. Tu única tarea es copiar EXACTAMENTE lo que hay escrito, letra por letra, sin corregir NADA: no corrijas la ortografía, ni las tildes (si falta una tilde, no la pongas; si hay una tilde de más, déjala), ni las mayúsculas o minúsculas, ni los signos de puntuación, ni las palabras mal separadas o pegadas. Si una letra está equivocada, escríbela tal como está. Conserva los saltos de línea. Ignora los tachones y lo tachado. Si una palabra es totalmente ilegible, escribe [?] en su lugar. Incluye la fecha o el título si los ha escrito. Responde SOLO con el texto transcrito, sin comillas, sin comentarios y sin explicaciones.';
 const useKey=()=>!!(state.ai.key&&state.ai.key.trim());
+/* Modelos "clásicos" (gpt-4o / gpt-4o-mini): aceptan max_tokens y temperature libre. Los modelos
+   nuevos de razonamiento (gpt-6.1-sol y similares) NO aceptan max_tokens (hay que mandar
+   max_completion_tokens) ni una temperature distinta de la de por defecto -- mandar cualquiera de
+   los dos da un error 400 de OpenAI ("Unsupported parameter"). El proxy de Supabase ya hace esta
+   adaptación, pero cuando el usuario pone su propia clave de OpenAI (useKey()) nos saltamos el
+   proxy y hablamos directo con la API, así que hay que adaptar el payload aquí también o el error
+   reaparece en cuanto alguien use su propia clave. */
+function adaptVisionBody(payload){
+  if(!payload||typeof payload!=='object')return payload;
+  const legacy=payload.model==='gpt-4o'||payload.model==='gpt-4o-mini';
+  if(legacy)return payload;
+  const b=Object.assign({},payload);
+  if('max_tokens' in b){b.max_completion_tokens=b.max_tokens;delete b.max_tokens;}
+  delete b.temperature;delete b.top_p;
+  return b;
+}
 async function aiCall(kind,path,payload){
-  if(useKey())return fetch('https://api.openai.com'+path,{method:'POST',headers:{'Authorization':'Bearer '+state.ai.key.trim(),'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  if(useKey()){
+    const body=kind==='vision'?adaptVisionBody(payload):payload;
+    return fetch('https://api.openai.com'+path,{method:'POST',headers:{'Authorization':'Bearer '+state.ai.key.trim(),'Content-Type':'application/json'},body:JSON.stringify(body)});
+  }
   return fetch(SB_URL+'/functions/v1/openai-proxy',{method:'POST',headers:{apikey:SB_KEY,'Content-Type':'application/json'},body:JSON.stringify({kind,payload})});
 }
 async function readNotebook(dataUrl){
@@ -2551,6 +2570,10 @@ const examActions={
   },
   /* Julia */
   goExams(){ui.screen='exlist';ui.item=null;render();},
+  exlAsigOpen(b){ui.exlAsig=b.dataset.id;ui.exlTema=null;render();},
+  exlAsigBack(){ui.exlAsig=null;render();},
+  exlTemaOpen(b){ui.exlTema=b.dataset.id;render();},
+  exlTemaBack(){ui.exlTema=null;render();},
   exStart(b){startExam(b.dataset.id,null);},
   exPick(b){ui.ex.ans[ui.ex.i]=+b.dataset.k;const y=scrollY;render();scrollTo(0,y);},
   exPrev(){if(ui.ex.i>0){ui.ex.i--;render();}},
@@ -2566,23 +2589,55 @@ function startExam(eid,itemId){
   ui.ex={eid,qs,ans:[],i:0,itemId,t0:Date.now()};ui.t0=Date.now();ui.screen='exrun';render();
 }
 function renderExlist(){
-  const cards=state.examenes.filter(e=>e.status==='ready'&&!e.isExam).sort((a,b)=>a.date<b.date?-1:1);
-  const exams=state.examenes.filter(e=>e.status==='ready'&&e.isExam).sort((a,b)=>a.date<b.date?-1:1);
-  const groups={};
-  cards.forEach(e=>{
-    const tm=state.temas.find(x=>x.id===e.temaId),a=tm&&state.asignaturas.find(x=>x.id===tm.asigId);
-    const key=a?a.id:'_sin';
-    (groups[key]=groups[key]||{name:a?a.name:'Sin asignatura',items:[]}).items.push(e);
-  });
-  const groupOrder=Object.keys(groups).sort((x,y)=>groups[x].name.localeCompare(groups[y].name,'es'));
-  const cardsHTML=groupOrder.map(gk=>{
-    const g=groups[gk];
-    return `<h4 style="margin:14px 0 4px">${esc(g.name)}</h4><div class="list">${g.items.map(e=>{const nph=(state.examFotos[e.id]||[]).length;return `<button class="item" data-act="studyOpen" data-id="${esc(e.id)}"><span><b>Tarjeta de teoría: ${esc(e.title)}</b><br><small class="mute">${e.pool.filter(q=>!q.off).length} preguntas${nph?` · ${nph} ${nph===1?'foto':'fotos'}`:''}</small></span><span style="font-size:1.6rem">▶️</span></button>`;}).join('')}</div>`;
-  }).join('');
+  if(ui.exlTema){const tm=state.temas.find(x=>x.id===ui.exlTema);if(tm)return renderExlTema(tm);ui.exlTema=null;}
+  if(ui.exlAsig){const a=state.asignaturas.find(x=>x.id===ui.exlAsig);if(a)return renderExlAsig(a);ui.exlAsig=null;}
+  return renderExlHome();
+}
+function examRowJ(e){
+  return `<button class="item" data-act="exStart" data-id="${esc(e.id)}"><span><b>${esc(e.title)}</b><br><small class="mute">Examen ${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${Math.min(e.n,e.pool.filter(q=>!q.off).length)} preguntas · ${e.mode==='test'?'test':e.mode==='red'?'redactadas':'test y redactadas'}</small></span><span style="font-size:1.6rem">▶️</span></button>`;
+}
+function cardRowJ(e){
+  const nph=(state.examFotos[e.id]||[]).length;
+  return `<button class="item" data-act="studyOpen" data-id="${esc(e.id)}"><span><b>Tarjeta de teoría: ${esc(e.title)}</b><br><small class="mute">${e.pool.filter(q=>!q.off).length} preguntas${nph?` · ${nph} ${nph===1?'foto':'fotos'}`:''}</small></span><span style="font-size:1.6rem">▶️</span></button>`;
+}
+function exlAsigStats(a){
+  const temaIds=state.temas.filter(x=>x.asigId===a.id).map(x=>x.id);
+  const readyCards=state.examenes.filter(e=>e.status==='ready'&&!e.isExam&&temaIds.includes(e.temaId));
+  const nTemas=new Set(readyCards.map(e=>e.temaId)).size;
+  const nExams=state.examenes.filter(e=>e.status==='ready'&&e.isExam&&e.asigId===a.id).length;
+  return {nTemas,nCards:readyCards.length,nExams};
+}
+function renderExlHome(){
+  const asigs=state.asignaturas.filter(a=>{const c=exlAsigStats(a);return c.nCards>0||c.nExams>0;});
+  const general=state.examenes.filter(e=>e.status==='ready'&&e.isExam&&!e.asigId).sort((a,b)=>a.date<b.date?-1:1);
+  const asigRow=a=>{
+    const c=exlAsigStats(a);
+    return `<button class="item" data-act="exlAsigOpen" data-id="${esc(a.id)}"><span><b>📚 ${esc(a.name)}</b><br><small class="mute">${c.nTemas} ${c.nTemas===1?'tema':'temas'} · ${c.nCards} ${c.nCards===1?'tarjeta de teoría':'tarjetas de teoría'}${c.nExams?` · ${c.nExams} ${c.nExams===1?'examen':'exámenes'}`:''}</small></span><span style="font-size:1.6rem">▶️</span></button>`;
+  };
   app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>📚 Teoría y exámenes</h2>`+
-  (cards.length?`<h3 style="margin-bottom:4px">📘 Teoría y estudio</h3><p class="mute" style="margin-top:0">Estudia con la foto delante, junto a tu tutor.</p>${cardsHTML}`:'')+
-  (exams.length?`<h3 style="margin-bottom:4px">📝 Exámenes</h3><p class="mute" style="margin-top:0">Se corrigen al final, sin ver la foto.</p><div class="list">${exams.map(e=>`<button class="item" data-act="exStart" data-id="${esc(e.id)}"><span><b>${esc(e.title)}</b><br><small class="mute">Examen ${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${Math.min(e.n,e.pool.filter(q=>!q.off).length)} preguntas · ${e.mode==='test'?'test':e.mode==='red'?'redactadas':'test y redactadas'}</small></span><span style="font-size:1.6rem">▶️</span></button>`).join('')}</div><p class="mute">Cada vez que practiques un examen saldrán preguntas distintas.</p>`:'')+
-  (!cards.length&&!exams.length?`<div class="panel">Todavía no hay temas ni exámenes preparados. Tu tutor los añadirá aquí.</div>`:'');
+  (asigs.length?`<div class="list">${asigs.map(asigRow).join('')}</div>`:'')+
+  (general.length?`<h3 style="margin-bottom:4px">📝 Exámenes</h3><p class="mute" style="margin-top:0">Se corrigen al final, sin ver la foto.</p><div class="list">${general.map(examRowJ).join('')}</div><p class="mute">Cada vez que practiques un examen saldrán preguntas distintas.</p>`:'')+
+  (!asigs.length&&!general.length?`<div class="panel">Todavía no hay temas ni exámenes preparados. Tu tutor los añadirá aquí.</div>`:'');
+}
+function renderExlAsig(a){
+  const temas=state.temas.filter(x=>x.asigId===a.id).filter(tm=>state.examenes.some(e=>e.status==='ready'&&!e.isExam&&e.temaId===tm.id));
+  const asigExams=state.examenes.filter(e=>e.status==='ready'&&e.isExam&&e.asigId===a.id&&e.scope!=='tema').sort((x,y)=>x.date<y.date?-1:1);
+  const temaRow=tm=>{
+    const nCards=state.examenes.filter(e=>e.status==='ready'&&!e.isExam&&e.temaId===tm.id).length;
+    return `<button class="item" data-act="exlTemaOpen" data-id="${esc(tm.id)}"><span><b>🗂 ${esc(tm.name)}</b><br><small class="mute">${nCards} ${nCards===1?'tarjeta de teoría':'tarjetas de teoría'}</small></span><span style="font-size:1.6rem">▶️</span></button>`;
+  };
+  app.innerHTML=`<button class="link" data-act="exlAsigBack">← Todas las asignaturas</button><h2 style="margin:4px 0">📚 ${esc(a.name)}</h2>`+
+  (temas.length?`<div class="list">${temas.map(temaRow).join('')}</div>`:'<div class="panel">Todavía no hay temas listos en esta asignatura.</div>')+
+  (asigExams.length?`<h3 style="margin-bottom:4px">📝 Exámenes</h3><p class="mute" style="margin-top:0">Se corrigen al final, sin ver la foto.</p><div class="list">${asigExams.map(examRowJ).join('')}</div><p class="mute">Cada vez que practiques un examen saldrán preguntas distintas.</p>`:'');
+}
+function renderExlTema(tm){
+  const a=state.asignaturas.find(x=>x.id===tm.asigId);
+  const cards=state.examenes.filter(e=>e.status==='ready'&&!e.isExam&&e.temaId===tm.id).sort((x,y)=>x.date<y.date?-1:1);
+  const ex=state.examenes.find(e=>e.status==='ready'&&e.isExam&&e.scope==='tema'&&e.temaId===tm.id);
+  app.innerHTML=`<button class="link" data-act="exlTemaBack">← ${a?esc(a.name):'Asignatura'}</button><h2 style="margin:4px 0">🗂 ${esc(tm.name)}</h2>`+
+  `<h3 style="margin-bottom:4px">📘 Teoría y estudio</h3><p class="mute" style="margin-top:0">Estudia con la foto delante, junto a tu tutor.</p>`+
+  `<div class="list">${cards.map(cardRowJ).join('')||'<p class="mute">Todavía no hay tarjetas listas en este tema.</p>'}</div>`+
+  (ex?`<h3 style="margin-bottom:4px">📝 Examen de este tema</h3><p class="mute" style="margin-top:0">Se corrige al final, sin ver la foto.</p><div class="list">${examRowJ(ex)}</div>`:'');
 }
 function renderExrun(){
   const x=ui.ex;if(!x){ui.screen='home';return render();}
