@@ -815,7 +815,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.11-3';
+const APP_VERSION='2026.10.11-4';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -2340,7 +2340,7 @@ function exPhotoOverlay(examId){
     ?'max-width:52vh;max-height:80vw;width:auto;height:auto'
     :'max-width:100%;max-height:52vh;width:auto;height:auto';
   return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.exPhotoClose()"><div class="exph-box">
-  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b>Foto ${L.indexOf(p)+1} de ${L.length}</b><span class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exPhotoRotate" data-id="${esc(p.id)}">🔄 Girar</button><button class="btn danger" style="min-height:36px;padding:4px 12px" data-act="exPhotoDel" data-id="${esc(p.id)}">🗑 Eliminar</button><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></span></div>
+  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><span class="row" style="gap:6px;align-items:center"><button class="btn" style="min-height:36px;padding:4px 10px" data-act="exPhotoPrev" ${L.length<2?'disabled':''}>◀</button><b>Foto ${L.indexOf(p)+1} de ${L.length}</b><button class="btn" style="min-height:36px;padding:4px 10px" data-act="exPhotoNext" ${L.length<2?'disabled':''}>▶</button></span><span class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exPhotoRotate" data-id="${esc(p.id)}">🔄 Girar</button><button class="btn danger" style="min-height:36px;padding:4px 12px" data-act="exPhotoDel" data-id="${esc(p.id)}">🗑 Eliminar</button><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exPhotoClose">✕ Cerrar</button></span></div>
   <div style="text-align:center;padding:${turned?'26px 0':'0'};margin-top:10px">
   <img src="${p.full||p.thumb}" alt="Foto de apuntes" style="${imgStyle};transform:rotate(${rot}deg);border-radius:10px;display:inline-block"></div>
   <div class="grid2" style="margin-top:10px">
@@ -2520,6 +2520,8 @@ const examActions={
   },
   exPhotoOpen(b){ui.exPhotoView=b.dataset.id;render();},
   exPhotoClose(){ui.exPhotoView=null;render();},
+  exPhotoPrev(){const e=exGet(ui.exId);const L=e&&state.examFotos[e.id]||[];if(L.length<2)return;const i=L.findIndex(x=>x.id===ui.exPhotoView);ui.exPhotoView=L[(i-1+L.length)%L.length].id;render();},
+  exPhotoNext(){const e=exGet(ui.exId);const L=e&&state.examFotos[e.id]||[];if(L.length<2)return;const i=L.findIndex(x=>x.id===ui.exPhotoView);ui.exPhotoView=L[(i+1)%L.length].id;render();},
   exPhotoRotate(b){const e=exGet(ui.exId);const L=e&&state.examFotos[e.id]||[];const p=L.find(x=>x.id===b.dataset.id);if(!p)return;p.rot=((p.rot||0)+90)%360;save();render();},
   exPhotoDel(b){
     const e=exGet(ui.exId);if(!e)return;
