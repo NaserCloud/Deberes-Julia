@@ -113,7 +113,7 @@ sup{color:var(--bad);font-weight:800}
 .wrule-btn{all:unset;display:inline;cursor:pointer;border-radius:6px;padding:0 2px;margin:0 -2px;transition:background .15s}
 .wrule-btn:hover,.wrule-btn:focus{background:#ece9fb;outline:none}
 .wrule-tip{display:none;position:absolute;top:100%;left:0;z-index:6;background:#eef6ff;border-left:6px solid #3b82f6;border-radius:10px;padding:8px 12px;margin-top:6px;font-size:.85rem;font-weight:400;line-height:1.35;white-space:normal;width:max-content;max-width:260px;box-shadow:0 4px 10px rgba(45,42,69,.15)}
-.wrule:hover .wrule-tip,.wrule-btn:focus+.wrule-tip{display:block}
+.wrule-btn:hover+.wrule-tip,.wrule-btn:focus+.wrule-tip{display:block}
 .mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;max-width:420px}
 .mini-card{aspect-ratio:1;border:2px solid var(--line);border-radius:14px;background:#ece9fb;font-size:1.8rem;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .mini-card.flip{background:#fff;border-color:var(--pri)}
@@ -830,7 +830,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.12-4';
+const APP_VERSION='2026.10.12-10';
 /* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
    la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
    esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
@@ -841,11 +841,52 @@ const APP_VERSION='2026.10.12-4';
    aciertos) queda registrado igual que los dictados y exámenes.
    v2026.10.12-4: las tarjetas de teoría (no solo los exámenes) también tienen ya su botón "📅
    Agregar a deberes", visible directamente en la lista de tarjetas de un tema y de exámenes, sin
-   tener que entrar a editarlas primero. */
+   tener que entrar a editarlas primero.
+   v2026.10.12-5: en la pestaña Morfología del tutor, al crear/editar un texto hay un botón "🤖
+   Generar texto con IA" que escribe un texto corto (unas 30 palabras, nivel Year 6) con buena
+   variedad de categorías gramaticales, listo para editar y guardar.
+   v2026.10.12-6: al añadir palabras a una lista de Spelling (escritas a mano o desde foto), la IA
+   revisa que estén bien escritas en inglés; si encuentra alguna falta, corrige el texto del cuadro
+   y pide confirmación antes de añadirlas (con la opción de añadirlas tal cual si se prefiere).
+   v2026.10.12-7: arreglado "✨ Generar frases" en Spelling, que fallaba con "La IA no devolvió
+   frases válidas" en listas largas (p.ej. 19 palabras de golpe): ahora se piden en grupos
+   pequeños, cada uno con más margen de tokens, así que una lista larga ya no hace que la
+   respuesta de la IA se corte a medias; si algún grupo falla igualmente, los demás se generan sin
+   problema y solo haría falta pulsar otra vez para reintentar las palabras que fallaron. La
+   revisión ortográfica al añadir palabras también trocea las listas largas por el mismo motivo.
+   Además, en el dictado de spelling, al pulsar "🔊 Escuchar" el cursor va directo al cuadro de
+   escribir (ya no hace falta pulsar con el ratón antes de teclear) y se añade una pequeña espera
+   antes de reproducir la palabra; y en Ajustes hay un nuevo selector para elegir qué voz en
+   inglés usa el dictado de spelling (independiente de la voz del dictado normal en español),
+   con su botón "Probar voz".
+   v2026.10.12-8: cuando una lista de Spelling es el deber del día, ya no se elige libremente
+   entre dictado o frases: se hacen 2 rondas de "escuchar palabras" y, si la lista ya tiene
+   frases, 1 ronda de "frases para completar", encadenadas, y el deber solo se marca como hecho
+   al terminar todas (si practica esa misma lista suelta, sigue pudiendo elegir como antes).
+   Además, en el dictado de spelling, tras escribir cada palabra hay que escribir también su
+   significado en español antes de pasar a la siguiente (solo en "escuchar", no en las frases).
+   En el Análisis Morfológico: arreglado que la teoría al pasar el ratón aparecía también al
+   pasar al lado del botón, no solo encima; la respuesta de cada palabra explica ahora también
+   el porqué ("Es adjetivo calificativo, porque expresa una cualidad del sustantivo"); y hay un
+   botón "← Anterior" para volver a repasar o corregir la palabra de antes (solo hacia atrás,
+   nunca se puede saltar hacia delante).
+   v2026.10.12-9: nuevo "Nivel 2" en Análisis Morfológico (además del Nivel 1 de siempre): para
+   pronombre, adverbio y adjetivo ya no basta con elegir la categoría general, hay que acertar
+   también el subtipo exacto (p.ej. "Adverbio de tiempo", "Adverbio de lugar"...). Nivel 1 y
+   Nivel 2 se pueden hacer en modo Estudio o en modo Examen, como antes; y una vez elegido
+   Examen, ya no se puede cambiar de nivel ni volver a Estudio hasta terminar esa ronda.
+   v2026.10.12-10: en el Análisis Morfológico ya no existe la opción "Otra / no lo sé": la IA
+   siempre clasifica cada palabra en una de las 8 categorías (eligiendo la que más se le parezca,
+   incluso para números o palabras dudosas), así que esa opción deja de aparecer entre las
+   respuestas. Además, la voz del dictado de Spelling (inglés) ya no prioriza por defecto el
+   acento británico por encima de todo: ahora se elige automáticamente la voz de mejor calidad
+   del dispositivo (premium/neural/mejorada, igual que con la voz del dictado en español), que
+   suena más clara y menos "cerrada"; en Ajustes, el selector de voz del Spelling también marca
+   con ⭐ las voces de mejor calidad para poder elegir a mano. */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
-const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,voice:''};
+const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,voice:'',spVoice:''};
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
@@ -875,7 +916,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,morfoEditId:null,taskAdd:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,spCheckedText:null,spOrigWords:null,morfoEditId:null,morfoDraft:null,morfoGenBusy:false,taskAdd:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -1069,14 +1110,14 @@ const Cloud=(()=>{
      que todavía lo tenía. */
   const IK=['examenes','tareas','asignaturas','temas','notas','notasAlumna','spelling','morfos'];
   const hdr={apikey:SB_KEY,'Content-Type':'application/json'};
-  const part=k=>{if(k==='ai'){const o=Object.assign({},state.ai);delete o.key;return o;}if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;return o;}return state[k];};
+  const part=k=>{if(k==='ai'){const o=Object.assign({},state.ai);delete o.key;return o;}if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;delete o.spVoice;return o;}return state[k];};
   const js=k=>JSON.stringify(part(k)===undefined?null:part(k));
   const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':(v&&typeof v==='object')?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
   const canonNoUpd=it=>canon(Object.assign({},it,{upd:0}));
   const byIdAsc=(a,b)=>a.id<b.id?-1:1;
   const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
     if(k==='studyProgress')return !v||!Object.keys(v).length;if(k==='miniGameEvery')return !v||v===15;
-    if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;return canon(o)===canon(d);}return false;};
+    if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;delete o.spVoice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;delete d.spVoice;return canon(o)===canon(d);}return false;};
   let timer=null,busy=false,again=false,started=false;
   const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
     set(s,e){C.status=s;C.err=e||'';const el=$('#cloudSt');if(el)el.innerHTML=C.html();},
@@ -1142,7 +1183,7 @@ const Cloud=(()=>{
         let lt=first&&rv?0:(s.t[k]||0);let rt=rv?(rv.t&&rv.t[k]||0):-1;
         if(first&&rv&&rv.d&&rv.d[k]!==undefined&&pristine(k,rv.d[k])&&!pristine(k,part(k)))rt=0;
         if(rv&&rv.d&&rv.d[k]!==undefined&&rt>lt){
-          if(k==='settings')state.settings=Object.assign({},DEF_SETTINGS,rv.d[k],{voice:state.settings.voice});else if(k==='ai')state.ai=Object.assign({},state.ai,rv.d[k],{key:state.ai.key});else state[k]=rv.d[k];
+          if(k==='settings')state.settings=Object.assign({},DEF_SETTINGS,rv.d[k],{voice:state.settings.voice,spVoice:state.settings.spVoice});else if(k==='ai')state.ai=Object.assign({},state.ai,rv.d[k],{key:state.ai.key});else state[k]=rv.d[k];
           if(k==='dictados')adoptedD=true;
           s.t[k]=rt;s.j[k]=js(k);changed=true;out.t[k]=rt;out.d[k]=rv.d[k];
         }else{out.t[k]=lt||Date.now();s.t[k]=out.t[k];out.d[k]=part(k)===undefined?null:part(k);}
@@ -1594,7 +1635,11 @@ function sessionReport(s){
     else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (sin foto)'}`;}
     else if(r.kind==='minijuego'&&r.res){o.line=r.res.line;}
     else if(r.kind==='morfo'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien clasificadas`;}
-    else if(r.kind==='spelling'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien (${x.kind==='dict'?'dictado':'frases'})`;o.det=(x.wrong||[]).map(w=>`${w.word}${w.given?' (puso '+w.given+')':''}`);}
+    else if(r.kind==='spelling'&&r.res){const x=r.res;
+      /* los deberes de Spelling del día son 2 rondas de escuchar + 1 de frases (x.kind==='hw',
+         ver spHwFinishAll en p7b.js); la práctica suelta sigue siendo una sola ronda. */
+      o.line=x.kind==='hw'&&x.rounds?`${x.ok} de ${x.n} palabras bien (${x.rounds.length} ronda${x.rounds.length===1?'':'s'}: ${x.rounds.map(rr=>rr.kind==='dict'?'escuchar':'frases').join(', ')})`:`${x.ok} de ${x.n} palabras bien (${x.kind==='dict'?'dictado':'frases'})`;
+      o.det=(x.wrong||[]).map(w=>`${w.word}${w.given?' (puso '+w.given+')':''}${w.meaning?' · significado: '+w.meaning:''}`);}
     else if(r.kind==='vocab'&&r.res){const x=r.res;o.line=`${x.n} palabras consultadas · ${x.ok} ya las sabía`;}
     else o.line=r.done?'Hecho':'Empezado, sin terminar';
     return o;
@@ -3321,23 +3366,24 @@ const MORFO_CATS=[
   {k:'articulo',l:'Artículo'},
   {k:'pronombre',l:'Pronombre'},
   {k:'preposicion',l:'Preposición'},
-  {k:'conjuncion',l:'Conjunción'},
-  {k:'otro',l:'Otra / no lo sé'}
+  {k:'conjuncion',l:'Conjunción'}
 ];
 const MORFO_LABEL=Object.fromEntries(MORFO_CATS.map(c=>[c.k,c.l]));
 const MORFO_SET=new Set(MORFO_CATS.map(c=>c.k));
 /* teoría breve de cada categoría (sin ejemplos), para el modo Estudio: al pasar el ratón por el
    botón de una categoría aparece esta explicación debajo. En modo Examen no se muestra nada. */
+/* redactadas como frase que empieza por verbo (nunca "Palabra que...") para que encajen tanto
+   sueltas (teoría, al pasar el ratón) como detrás de "porque" en la respuesta del ejercicio
+   (ver morfoWhy): "Es un sustantivo, porque nombra personas, animales...". */
 const MORFO_THEORY={
-  sustantivo:'Palabra que nombra personas, animales, objetos, lugares o ideas.',
-  verbo:'Palabra que expresa una acción, un estado o un proceso, y se conjuga (cambia según la persona y el tiempo).',
-  adjetivo:'Palabra que acompaña a un sustantivo y expresa una cualidad o característica suya.',
-  adverbio:'Palabra que modifica a un verbo, a un adjetivo o a otro adverbio, indicando cómo, cuándo, dónde o cuánto.',
-  articulo:'Palabra que acompaña al sustantivo y señala su género y número, sin aportar significado propio.',
-  pronombre:'Palabra que sustituye a un sustantivo para no repetirlo.',
-  preposicion:'Palabra invariable que une elementos de la oración y expresa una relación entre ellos (lugar, tiempo, modo…).',
-  conjuncion:'Palabra invariable que une palabras, frases u oraciones.',
-  otro:'No encaja claramente en ninguna de las demás categorías.'
+  sustantivo:'Nombra personas, animales, objetos, lugares o ideas.',
+  verbo:'Expresa una acción, un estado o un proceso, y se conjuga (cambia según la persona y el tiempo).',
+  adjetivo:'Acompaña a un sustantivo y expresa una cualidad o característica suya.',
+  adverbio:'Modifica a un verbo, a un adjetivo o a otro adverbio, indicando cómo, cuándo, dónde o cuánto.',
+  articulo:'Acompaña al sustantivo y señala su género y número, sin aportar significado propio.',
+  pronombre:'Sustituye a un sustantivo para no repetirlo.',
+  preposicion:'Une elementos de la oración y expresa una relación entre ellos (lugar, tiempo, modo…), y es invariable.',
+  conjuncion:'Une palabras, frases u oraciones, y es invariable.'
 };
 /* subtipos de pronombre, adverbio y adjetivo: la IA, además de la categoría, decide uno de estos
    subtipos (o "" si no aplica). Se usan tanto para enriquecer la respuesta ("Era: Pronombre
@@ -3370,15 +3416,40 @@ const MORFO_SUBTYPES={
   ]
 };
 function morfoSubLabel(cat,subKey){const list=MORFO_SUBTYPES[cat];if(!list||!subKey)return '';const f=list.find(x=>x.k===subKey);return f?f.l:'';}
+/* la explicación de "por qué" es esa categoría/subtipo: la del subtipo si lo hay (más concreta,
+   p.ej. adjetivo calificativo -> "Expresa una cualidad del sustantivo."), si no la de la
+   categoría general. Se usa tanto en la respuesta del ejercicio ("Es adjetivo calificativo,
+   porque expresa...") como podría reutilizarse en otros sitios. */
+function morfoWhy(cat,subKey){
+  const list=MORFO_SUBTYPES[cat];
+  if(subKey&&list){const f=list.find(x=>x.k===subKey);if(f&&f.d)return f.d;}
+  return MORFO_THEORY[cat]||'';
+}
+const lcFirst=s=>s?s.charAt(0).toLowerCase()+s.slice(1):s;
+const stripDot=s=>String(s||'').replace(/\.\s*$/,'');
 function morfoTheoryText(k){
   let t=MORFO_THEORY[k]||'';
   const subs=MORFO_SUBTYPES[k];
   if(subs&&subs.length)t+=' Tipos: '+subs.map(s=>`${s.l} — ${s.d}`).join(' · ')+'.';
   return t;
 }
+/* nivel 1 (como hasta ahora): las opciones de respuesta son solo las categorías generales. Nivel
+   2: para las categorías que tienen subtipos (pronombre, adverbio, adjetivo) hay que acertar
+   también el subtipo exacto, así que las opciones se "aplanan" para incluir cada subtipo por
+   separado ("Adverbio de tiempo", "Adverbio de lugar"...) en vez de una sola opción "Adverbio". */
+function morfoOptions(nivel){
+  if(nivel!==2)return MORFO_CATS.map(c=>({cat:c.k,sub:'',l:c.l}));
+  const out=[];
+  MORFO_CATS.forEach(c=>{
+    const subs=MORFO_SUBTYPES[c.k];
+    if(subs&&subs.length)subs.forEach(s=>out.push({cat:c.k,sub:s.k,l:`${c.l} ${s.l.toLowerCase()}`}));
+    else out.push({cat:c.k,sub:'',l:c.l});
+  });
+  return out;
+}
 function morfoPrompt(text,tokens){
   const list=tokens.map((w,i)=>`${i}: "${w.t}"`).join('\n');
-  return [{role:'system',content:`Eres un profesor de Lengua de primaria (Year 6, 10-11 años, colegio británico) que clasifica morfológicamente cada palabra de un texto en español. Para cada palabra de la lista, usando el contexto del texto completo, decide su categoría gramatical más apropiada para ese nivel. Usa EXCLUSIVAMENTE una de estas categorías (en minúsculas, tal cual, sin acentos): sustantivo, verbo, adjetivo, adverbio, articulo, pronombre, preposicion, conjuncion, otro (usa "otro" solo para números, interjecciones o palabras que de verdad no encajen en ninguna anterior). Además, SOLO cuando la categoría sea "pronombre", "adverbio" o "adjetivo", decide también un SUBTIPO (para las demás categorías el subtipo es siempre "" vacío):
+  return [{role:'system',content:`Eres un profesor de Lengua de primaria (Year 6, 10-11 años, colegio británico) que clasifica morfológicamente cada palabra de un texto en español. Para cada palabra de la lista, usando el contexto del texto completo, decide su categoría gramatical más apropiada para ese nivel. Usa EXCLUSIVAMENTE una de estas categorías (en minúsculas, tal cual, sin acentos): sustantivo, verbo, adjetivo, adverbio, articulo, pronombre, preposicion, conjuncion. Incluso para números, interjecciones o palabras dudosas, elige siempre la categoría de esta lista que más se le parezca; nunca dejes una palabra sin clasificar. Además, SOLO cuando la categoría sea "pronombre", "adverbio" o "adjetivo", decide también un SUBTIPO (para las demás categorías el subtipo es siempre "" vacío):
 - Si es "pronombre", el subtipo es uno de: personal, posesivo, demostrativo, indefinido, numeral, relativo, interrogativo
 - Si es "adverbio", el subtipo es uno de: tiempo, lugar, modo, cantidad, afirmacion, negacion, duda
 - Si es "adjetivo", el subtipo es uno de: calificativo, demostrativo, posesivo, numeral, indefinido
@@ -3392,7 +3463,7 @@ async function morfoAnalyze(text){
   const m=raw.match(/\{[\s\S]*\}/);if(!m)throw new Error('La IA no ha devuelto una clasificación válida');
   let j;try{j=JSON.parse(m[0]);}catch(e){throw new Error('La IA no ha devuelto una clasificación válida');}
   if(!Array.isArray(j.cats))throw new Error('La IA no ha devuelto una clasificación válida');
-  const cats=tokens.map((_,i)=>MORFO_SET.has(j.cats[i])?j.cats[i]:'otro');
+  const cats=tokens.map((_,i)=>MORFO_SET.has(j.cats[i])?j.cats[i]:'sustantivo');
   const subsRaw=Array.isArray(j.subs)?j.subs:[];
   const subs=tokens.map((_,i)=>{
     const cat=cats[i],allowed=MORFO_SUBTYPES[cat];if(!allowed)return '';
@@ -3401,8 +3472,23 @@ async function morfoAnalyze(text){
   });
   return {tokens,cats,subs};
 }
+/* generar con IA un texto corto (para que el tutor no tenga que escribirlo él) pensado para que
+   salga buena variedad de categorías gramaticales al analizarlo: unas 30 palabras, nivel Year 6. */
+const MORFO_GEN_TOPICS=['la vida diaria','la naturaleza y los animales','un cuento breve','el colegio','el deporte','una noticia sencilla','una excursión o un viaje','la comida','el tiempo y las estaciones','una fiesta o celebración'];
+function morfoGenPrompt(){
+  const topic=MORFO_GEN_TOPICS[Math.floor(Math.random()*MORFO_GEN_TOPICS.length)];
+  return [{role:'system',content:`Eres un profesor de Lengua de primaria (Year 6, 10-11 años, colegio británico) que prepara textos cortos en español para practicar análisis morfológico (clasificar cada palabra por su categoría gramatical). Escribe un texto natural de entre 28 y 32 palabras sobre "${topic}", con vocabulario sencillo adecuado a esa edad. El texto debe incluir, de forma natural y sin que suene forzado, la mayor variedad posible de categorías gramaticales: sustantivos, verbos, adjetivos, adverbios, artículos, pronombres, preposiciones y conjunciones. Devuelve SOLO un JSON válido, sin explicaciones: {"title":"título breve de 3 a 6 palabras","text":"el texto"}`},
+   {role:'user',content:'Genera un texto nuevo.'}];
+}
+async function morfoGenText(){
+  const raw=await aiText(morfoGenPrompt(),500);
+  const m=raw.match(/\{[\s\S]*\}/);if(!m)throw new Error('La IA no ha devuelto un texto válido');
+  let j;try{j=JSON.parse(m[0]);}catch(e){throw new Error('La IA no ha devuelto un texto válido');}
+  const text=String(j.text||'').trim();if(!text)throw new Error('La IA no ha devuelto un texto válido');
+  return {title:String(j.title||'Texto generado').trim()||'Texto generado',text};
+}
 function morfoStart(text,title,backScreen){
-  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',back:backScreen||'list',start:Date.now()};
+  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',nivel:1,back:backScreen||'list',start:Date.now()};
   ui.screen='morfo';render();
   morfoAnalyze(text).then(r=>{
     const st=ui.morfo;if(!st||st.stage!=='loading')return;
@@ -3439,27 +3525,38 @@ function morfoBody(){
   if(st.stage==='done'){
     const bad=st.results.map((r,i)=>({r,w:st.tokens[i].t})).filter(x=>!x.r.ok);
     return `<div class="panel" style="border-color:var(--ok);background:var(--okbg)"><h2 style="margin:0">${st.ok===st.tokens.length?'🎉 ¡Perfecto!':'💪 ¡Bien hecho!'}</h2><div style="font-size:1.4rem;font-weight:800;margin-top:6px">${st.ok} de ${st.tokens.length} palabras bien clasificadas</div></div>
-    ${bad.length?`<h3>Repasa estas</h3><div class="list">${bad.map(x=>{const correctTxt=esc(MORFO_LABEL[x.r.correct])+(x.r.correctSub?` (${esc(morfoSubLabel(x.r.correct,x.r.correctSub))})`:'');return `<div class="panel" style="padding:10px 14px"><b>${esc(x.w)}</b>: pusiste <span class="wrong">${esc(MORFO_LABEL[x.r.pick]||x.r.pick)}</span>, era <span class="right">${correctTxt}</span></div>`;}).join('')}</div>`:''}
+    ${bad.length?`<h3>Repasa estas</h3><div class="list">${bad.map(x=>{const correctTxt=esc(MORFO_LABEL[x.r.correct])+(x.r.correctSub?` (${esc(morfoSubLabel(x.r.correct,x.r.correctSub))})`:'');const pickTxt=esc(MORFO_LABEL[x.r.pick]||x.r.pick)+(x.r.pickSub?` (${esc(morfoSubLabel(x.r.pick,x.r.pickSub))})`:'');const why=morfoWhy(x.r.correct,x.r.correctSub);const whyTxt=why?`, porque ${esc(lcFirst(stripDot(why)))}`:'';return `<div class="panel" style="padding:10px 14px"><b>${esc(x.w)}</b>: pusiste <span class="wrong">${pickTxt}</span>, era <span class="right">${correctTxt}</span>${whyTxt}</div>`;}).join('')}</div>`:''}
     <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="morfoBack">← Volver</button></div>`;
   }
   const w=st.tokens[st.i];
   const cat=st.cats[st.i],sub=(st.subcats&&st.subcats[st.i])||'',subTxt=sub?` (${esc(morfoSubLabel(cat,sub))})`:'';
+  const whyTxt=(()=>{const why=morfoWhy(cat,sub);return why?`, porque ${esc(lcFirst(stripDot(why)))}`:'';})();
   return `<p class="mute" style="margin:4px 0 10px">Palabra ${st.i+1} de ${st.tokens.length}</p>
   <div class="panel" style="line-height:2">${morfoTextHTML(st)}</div>
   <div class="panel" style="text-align:center"><div style="font-size:1.6rem;font-weight:800">${esc(w.t)}</div><p class="mute" style="margin:4px 0 0">¿Qué tipo de palabra es?</p></div>
-  ${st.stage==='answer'?`<div class="opts" style="grid-template-columns:repeat(2,1fr)">${MORFO_CATS.map(c=>st.level==='examen'
-    ?`<button data-act="morfoPick" data-k="${c.k}">${c.l}</button>`
-    :`<span class="wrule" style="display:block"><button class="wrule-btn" data-act="morfoPick" data-k="${c.k}">${c.l}</button><span class="wrule-tip" style="max-width:340px">${esc(morfoTheoryText(c.k))}</span></span>`
-  ).join('')}</div>`
-   :`<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?`✅ ¡Correcto!${subTxt?` Es ${esc(MORFO_LABEL[cat])}${subTxt}.`:''}`:`❌ Era: ${esc(MORFO_LABEL[cat])}${subTxt}`}</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`}
-  <div class="row" style="margin-top:14px"><button class="link" data-act="morfoBack">← Salir</button></div>`;
+  ${st.stage==='answer'?`<div class="opts" style="grid-template-columns:repeat(${st.nivel===2?1:2},1fr)">${morfoOptions(st.nivel).map(o=>{
+    const tip=o.sub?morfoWhy(o.cat,o.sub):morfoTheoryText(o.cat);
+    return st.level==='examen'
+      ?`<button data-act="morfoPick" data-k="${o.cat}" data-sub="${esc(o.sub)}">${esc(o.l)}</button>`
+      :`<span class="wrule" style="display:block"><button class="wrule-btn" data-act="morfoPick" data-k="${o.cat}" data-sub="${esc(o.sub)}">${esc(o.l)}</button><span class="wrule-tip" style="max-width:340px">${esc(tip)}</span></span>`;
+  }).join('')}</div>`
+   :`<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?`✅ ¡Correcto! Es ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`:`❌ Era: ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`}</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`}
+  <div class="row" style="margin-top:14px;justify-content:space-between">${st.i>0?`<button class="link" data-act="morfoPrev">← Anterior</button>`:'<span></span>'}<button class="link" data-act="morfoBack">← Salir</button></div>`;
 }
 function renderMorfo(){
   const st=ui.morfo;if(!st){ui.screen='list';return render();}
-  const lvlRow=st.tokens.length?`<div class="row" style="margin:6px 0 10px;gap:8px">
-  <button class="btn ${st.level==='examen'?'':'primary'}" data-act="morfoLevel" data-lv="estudio">📖 Estudio</button>
-  <button class="btn ${st.level==='examen'?'primary':''}" data-act="morfoLevel" data-lv="examen">📝 Examen</button>
-  </div><p class="mute" style="margin:0 0 10px;font-size:.88rem">${st.level==='examen'?'Modo examen: sin ayuda, solo se ve el nombre de cada categoría.':'Modo estudio: pasa el ratón por una categoría para ver qué significa.'}</p>`:'';
+  /* una vez elegido el modo Examen, se bloquea tanto el modo como el nivel hasta terminar la
+     ronda (stage 'done'): "cuando se elige examen ya no se puede volver a la forma normal hasta
+     que no se acabe". */
+  const locked=st.level==='examen'&&st.stage!=='done';
+  const lvlRow=st.tokens.length?`<div class="row" style="margin:6px 0;gap:8px;flex-wrap:wrap">
+  <button class="btn ${st.nivel===2?'':'primary'}" data-act="morfoNivel" data-nv="1" ${locked?'disabled':''}>Nivel 1</button>
+  <button class="btn ${st.nivel===2?'primary':''}" data-act="morfoNivel" data-nv="2" ${locked?'disabled':''}>Nivel 2</button>
+  </div>
+  <div class="row" style="margin:0 0 10px;gap:8px;flex-wrap:wrap">
+  <button class="btn ${st.level==='examen'?'':'primary'}" data-act="morfoLevel" data-lv="estudio" ${locked?'disabled':''}>📖 Estudio</button>
+  <button class="btn ${st.level==='examen'?'primary':''}" data-act="morfoLevel" data-lv="examen" ${locked?'disabled':''}>📝 Examen</button>
+  </div><p class="mute" style="margin:0 0 10px;font-size:.88rem">${st.nivel===2?'Nivel 2: hay que acertar también el subtipo exacto (p. ej. «Adverbio de tiempo»).':'Nivel 1: solo la categoría general.'} ${st.level==='examen'?'Modo examen: sin ayuda, solo se ve el nombre de cada opción' + (locked?', y no se puede cambiar de nivel ni de modo hasta terminar':'') + '.':'Modo estudio: pasa el ratón por una opción para ver qué significa.'}</p>`:'';
   app.innerHTML=`<h2 style="margin:0">🔤 Análisis Morfológico</h2><p class="mute" style="margin:2px 0 10px">${esc(st.title)}</p>${lvlRow}${morfoBody()}`;
 }
 const morfoActions={
@@ -3482,9 +3579,11 @@ const morfoActions={
   },
   morfoPick(b){
     const st=ui.morfo;if(!st||st.stage!=='answer')return;
-    const pick=b.dataset.k,correct=st.cats[st.i],ok=pick===correct;
-    const correctSub=(st.subcats&&st.subcats[st.i])||'';
-    st.results[st.i]={ok,pick,correct,correctSub};if(ok)st.ok++;
+    const pick=b.dataset.k,pickSub=b.dataset.sub||'';
+    const correct=st.cats[st.i],correctSub=(st.subcats&&st.subcats[st.i])||'';
+    /* en nivel 2 hay que acertar también el subtipo exacto, no solo la categoría. */
+    const ok=st.nivel===2?(pick===correct&&pickSub===correctSub):(pick===correct);
+    st.results[st.i]={ok,pick,pickSub,correct,correctSub};if(ok)st.ok++;
     st.stage=ok?'ok':'wrong';
     const y=scrollY;render();scrollTo(0,y);
   },
@@ -3494,10 +3593,29 @@ const morfoActions={
     if(st.i>=st.tokens.length){st.stage='done';morfoFinish();}else st.stage='answer';
     const y=scrollY;render();scrollTo(0,y);
   },
+  /* "solo atrás": deja volver a la palabra anterior para repasarla o corregir la respuesta, pero
+     nunca saltar hacia delante (eso sigue siendo solo con "Siguiente", palabra por palabra). Al
+     volver se deshace su resultado (y se descuenta de los aciertos si estaba bien) para que se
+     pueda responder de nuevo. */
+  morfoPrev(){
+    const st=ui.morfo;if(!st||st.i<=0)return;
+    st.i--;
+    const prev=st.results[st.i];
+    if(prev){if(prev.ok)st.ok=Math.max(0,st.ok-1);st.results[st.i]=null;}
+    st.stage='answer';
+    const y=scrollY;render();scrollTo(0,y);
+  },
   morfoBack(){const back=(ui.morfo&&ui.morfo.back)||'list';ui.morfo=null;ui.screen=back;render();},
   morfoLevel(b){
     const st=ui.morfo;if(!st)return;
+    if(st.level==='examen'&&st.stage!=='done')return; // en examen no se puede cambiar de modo hasta terminar
     st.level=b.dataset.lv==='examen'?'examen':'estudio';
+    render();
+  },
+  morfoNivel(b){
+    const st=ui.morfo;if(!st)return;
+    if(st.level==='examen'&&st.stage!=='done')return; // en examen no se puede cambiar de nivel hasta terminar
+    st.nivel=b.dataset.nv==='2'?2:1;
     render();
   }
 };
@@ -3599,12 +3717,56 @@ async function readSpellingPhoto(file){
 function spParseWords(txt){
   return [...new Set((txt||'').split(/[\n,;]+/).map(w=>w.trim().replace(/^[-•*\d.)\s]+/,'').trim()).filter(Boolean))];
 }
+/* revisión ortográfica de las palabras en inglés antes de añadirlas a una lista (habitualmente son
+   en inglés y si el tutor se equivoca al escribirlas, Julia las practicaría mal) -- la IA solo
+   corrige faltas de ortografía claras, nunca cambia una palabra solo por ser poco común, y respeta
+   nombres propios. */
+const SPELL_WORDCHECK_SYS='Eres un profesor de inglés que revisa, antes de usarla en un dictado de spelling, una lista de palabras en inglés escrita por el tutor de una alumna de Year 6 de colegio británico (10-11 años). Para cada palabra, comprueba si está bien escrita en inglés estándar (un nombre propio válido también cuenta como bien escrito). Si está bien escrita, "fix" debe ser una cadena vacía "". Si tiene una falta de ortografía clara, "fix" debe ser la corrección en inglés. No "corrijas" una palabra solo por ser poco frecuente o informal: corrige únicamente faltas de ortografía reales. Devuelve SOLO un JSON válido, sin texto alrededor: una lista de objetos {"word":"<la palabra exacta tal cual te la han dado>","fix":"<la corrección, o \"\" si ya está bien>"}, un objeto por cada palabra de la lista, en el mismo orden, sin añadir ni quitar ninguna.';
+/* igual que con las frases (ver spGenSentencesFor), con listas largas troceamos en grupos
+   pequeños para no agotar el presupuesto de tokens de la respuesta -incluido el "pensamiento"
+   interno de los modelos de razonamiento- antes de terminar el JSON. */
+const SPELL_WORDCHECK_CHUNK=10;
+async function spCheckSpellingChunk(words){
+  if(!words.length)return [];
+  const max=Math.min(2500,400+words.length*60);
+  const t=await aiText([{role:'system',content:SPELL_WORDCHECK_SYS},{role:'user',content:'Palabras:\n'+words.join('\n')}],max);
+  const m=t.match(/\[[\s\S]*\]/);if(!m)throw new Error('La IA no ha podido revisar la ortografía');
+  let arr;try{arr=JSON.parse(m[0]);}catch(e){throw new Error('La IA no ha podido revisar la ortografía');}
+  if(!Array.isArray(arr))throw new Error('La IA no ha podido revisar la ortografía');
+  return words.map(w=>{
+    const f=arr.find(x=>x&&String(x.word||'').trim().toLowerCase()===w.toLowerCase());
+    const fix=f&&f.fix?String(f.fix).trim():'';
+    return {word:w,fix:(fix&&fix.toLowerCase()!==w.toLowerCase())?fix:''};
+  });
+}
+async function spCheckSpelling(words){
+  if(!words.length)return [];
+  if(words.length<=SPELL_WORDCHECK_CHUNK)return spCheckSpellingChunk(words);
+  const chunks=[];for(let i=0;i<words.length;i+=SPELL_WORDCHECK_CHUNK)chunks.push(words.slice(i,i+SPELL_WORDCHECK_CHUNK));
+  const out=[];
+  for(const c of chunks)out.push(...await spCheckSpellingChunk(c));
+  return out;
+}
+const reEscape=s=>s.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
 const SPELL_SENT_SYS='Eres un profesor de inglés que prepara ejercicios de spelling para una alumna de Year 6 de un colegio británico (10-11 años, el inglés es su idioma extranjero). Para cada palabra de la lista que te dan, escribe UNA frase sencilla en inglés -vocabulario y gramática de ese nivel, nunca más difícil- que use esa palabra de forma natural y sin ambigüedad: no debería poder sustituirse por ninguna otra palabra de la lista sin que la frase deje de tener sentido. En el lugar de la palabra pon exactamente tres guiones bajos: ___ . Todo en inglés, no traduzcas nada. Devuelve SOLO un JSON (sin texto alrededor ni markdown): una lista de objetos {"word":"<la palabra exacta tal cual te la han dado>","sentence":"<la frase con ___ en el hueco>"}.';
-async function spGenSentencesFor(words){
-  const t=await aiText([{role:'system',content:SPELL_SENT_SYS},{role:'user',content:'Palabras: '+words.join(', ')}],1200);
-  const m=t.match(/\[[\s\S]*\]/);if(!m)throw new Error('La IA no devolvió frases válidas');
-  const arr=JSON.parse(m[0]);if(!Array.isArray(arr))throw new Error('La IA no devolvió frases válidas');
-  return arr;
+/* Con listas largas (p.ej. 19 palabras de golpe) un único mensaje a la IA tenía que generar
+   muchísimo JSON en una sola respuesta; con los modelos de razonamiento (gpt-6.1-sol y
+   similares) el presupuesto de tokens de la respuesta también incluye el "pensamiento" interno
+   del modelo, así que con una lista larga se quedaba sin tokens antes de terminar el JSON y la
+   respuesta llegaba cortada (de ahí el "La IA no devolvió frases válidas"). Troceamos la lista en
+   grupos pequeños -cada uno con su propio presupuesto de tokens generoso- para que cada petición
+   sea mucho más corta y, si un grupo falla, los demás se generen igualmente en vez de perderse
+   toda la tanda. */
+const SPELL_SENT_CHUNK=6;
+function spGenSentencesFor(words){
+  const max=Math.min(3000,500+words.length*220);
+  return aiText([{role:'system',content:SPELL_SENT_SYS},{role:'user',content:'Palabras: '+words.join(', ')}],max).then(t=>{
+    const m=t.match(/\[[\s\S]*\]/);
+    if(!m)throw new Error('La IA no devolvió frases válidas'+(t?' (respuesta incompleta o inesperada)':' (respuesta vacía)'));
+    let arr;try{arr=JSON.parse(m[0]);}catch(e){throw new Error('La IA no devolvió frases válidas (JSON incompleto, prueba con menos palabras a la vez)');}
+    if(!Array.isArray(arr))throw new Error('La IA no devolvió frases válidas');
+    return arr;
+  });
 }
 function tabSpelling(){
   const t=$('#tab');
@@ -3644,13 +3806,14 @@ function spEditView(t,l){
   </div>
   <label class="f">Título<input type="text" data-spf="title" value="${esc(l.title)}" placeholder="Ej.: Spelling semana 5"></label>
   <div class="panel" style="margin-top:10px"><b>➕ Añadir palabras</b>
-  <p class="mute" style="margin:4px 0">Escríbelas (una por línea, o separadas por comas) o sube una foto de la lista; revisa el texto antes de añadirlo.</p>
+  <p class="mute" style="margin:4px 0">Escríbelas (una por línea, o separadas por comas) o sube una foto de la lista. Al añadirlas, la IA revisa que estén bien escritas en inglés y te propone corregirlas si hay alguna falta.</p>
   <textarea id="spWordsTa" placeholder="beautiful
 library
 because"></textarea>
   <div class="row" style="margin-top:8px;flex-wrap:wrap">
   <button class="btn primary" data-act="spWordsAdd">➕ Añadir estas palabras</button>
   <label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir foto de la lista<input type="file" accept="image/*" id="spPhoto" hidden></label>
+  ${ui.spOrigWords?'<button class="btn" data-act="spWordsAddAsIs">✏️ Añadir tal cual, sin corregir</button>':''}
   </div><div id="spSt" class="mute" style="margin-top:6px"></div></div>
   <h3 style="margin:14px 0 6px">🔤 Palabras (${l.words.length})</h3>
   ${l.words.map(wordRow).join('')||'<p class="mute">Todavía no hay palabras en esta lista.</p>'}
@@ -3665,34 +3828,70 @@ function spInput(t){
   if(t.dataset.spsent){const l=spGet(ui.spId);if(l){const s=l.sentences.find(x=>x.id===t.dataset.spsent);if(s){s.text=t.value;save();}}return true;}
   return false;
 }
+/* añade las palabras (ya revisadas, o sin revisar) a la lista, vacía el cuadro de texto y limpia
+   cualquier corrección pendiente de confirmar. Lo usan tanto el flujo normal (añadir sin faltas, o
+   tras confirmar las correcciones) como "Añadir tal cual" (el tutor descarta la corrección de la IA). */
+function spCommitWords(l,words){
+  const have=new Set(l.words.map(w=>w.w.toLowerCase()));
+  let added=0;
+  words.forEach(w=>{if(!have.has(w.toLowerCase())){l.words.push({id:'w'+uid(),w});have.add(w.toLowerCase());added++;}});
+  const ta=$('#spWordsTa');if(ta)ta.value='';
+  ui.spCheckedText=null;ui.spOrigWords=null;
+  save();render();
+  toast(added?`✅ ${added} ${added===1?'palabra añadida':'palabras añadidas'}`:'Esas palabras ya estaban en la lista');
+}
 const spellActions={
   spNew(){
     const l={id:'sp'+uid(),title:'',date:todayStr(),status:'draft',words:[],sentences:[]};
+    ui.spCheckedText=null;ui.spOrigWords=null;
     state.spelling.push(l);save();ui.spId=l.id;render();
   },
-  spOpen(b){ui.spId=b.dataset.id;render();},
-  spBack(){ui.spId=null;render();},
+  spOpen(b){ui.spId=b.dataset.id;ui.spCheckedText=null;ui.spOrigWords=null;render();},
+  spBack(){ui.spId=null;ui.spCheckedText=null;ui.spOrigWords=null;render();},
   spDel(b){
     if(!confirm('¿Borrar esta lista de spelling? Se perderán sus palabras y frases.'))return;
     state.spelling=state.spelling.filter(l=>l.id!==b.dataset.id);
     if(ui.spId===b.dataset.id)ui.spId=null;
     save();render();
   },
-  spWordsAdd(){
+  async spWordsAdd(){
     const l=spGet(ui.spId);if(!l)return;
-    const ta=$('#spWordsTa');const words=spParseWords(ta&&ta.value);
+    const ta=$('#spWordsTa');const raw=(ta&&ta.value)||'';
+    const words=spParseWords(raw);
     if(!words.length)return toast('Escribe o sube al menos una palabra');
-    const have=new Set(l.words.map(w=>w.w.toLowerCase()));
-    let added=0;
-    words.forEach(w=>{if(!have.has(w.toLowerCase())){l.words.push({id:'w'+uid(),w});have.add(w.toLowerCase());added++;}});
-    if(ta)ta.value='';
-    save();render();
-    toast(added?`✅ ${added} ${added===1?'palabra añadida':'palabras añadidas'}`:'Esas palabras ya estaban en la lista');
+    /* si este mismo texto ya se revisó (el tutor no lo ha vuelto a tocar desde que se propusieron
+       correcciones) se añade directamente sin volver a preguntar a la IA: un segundo clic sobre
+       "Añadir estas palabras" confirma lo que se ve en el cuadro, corregido o no. */
+    if(!state.ai.photoOn||raw.trim()===ui.spCheckedText){spCommitWords(l,words);return;}
+    const st=$('#spSt');if(st)st.textContent='🔎 Comprobando que las palabras estén bien escritas en inglés…';
+    try{
+      const fixes=await spCheckSpelling(words);
+      const bad=fixes.filter(f=>f.fix);
+      if(bad.length){
+        let newRaw=raw;
+        bad.forEach(f=>{newRaw=newRaw.replace(new RegExp('\\b'+reEscape(f.word)+'\\b','gi'),f.fix);});
+        if(ta)ta.value=newRaw;
+        ui.spCheckedText=newRaw.trim();ui.spOrigWords=words;
+        render();
+        const st2=$('#spSt');if(st2)st2.innerHTML=`✏️ <b>He corregido ${bad.length} ${bad.length===1?'palabra':'palabras'}:</b> ${bad.map(f=>`${esc(f.word)} → ${esc(f.fix)}`).join(', ')}. Revisa el texto de arriba y pulsa «Añadir estas palabras» otra vez para confirmarlo, o «Añadir tal cual» si prefieres mantener lo que escribiste.`;
+        return;
+      }
+      ui.spCheckedText=raw.trim();
+    }catch(e){
+      spCommitWords(l,words);
+      return toast('No se ha podido comprobar la ortografía (sin conexión); palabras añadidas sin revisar.');
+    }
+    spCommitWords(l,words);
+  },
+  spWordsAddAsIs(){
+    const l=spGet(ui.spId);if(!l||!ui.spOrigWords)return;
+    spCommitWords(l,ui.spOrigWords);
   },
   async spPhotoUpload(){
     const l=spGet(ui.spId);if(!l)return;
     if(!state.ai.photoOn)return toast('Activa la IA de fotos en Ajustes para leer fotos');
     const inp=$('#spPhoto');const file=inp&&inp.files&&inp.files[0];if(!file)return;
+    ui.spCheckedText=null;ui.spOrigWords=null;
     const st=()=>$('#spSt');if(st())st().textContent='🔎 Leyendo la foto…';
     try{
       const txt=await readSpellingPhoto(file);
@@ -3712,24 +3911,33 @@ const spellActions={
     const pending=l.words.filter(w=>!l.sentences.some(s=>s.wordId===w.id));
     const target=pending.length?pending:l.words;
     if(!target.length)return toast('No hay palabras para generar frases');
-    const st=$('#spSt');if(st)st.textContent='✨ Generando frases…';
-    try{
-      const arr=await spGenSentencesFor(target.map(w=>w.w));
-      let okN=0;
-      arr.forEach(r=>{
-        if(!r||!r.word||!r.sentence)return;
-        const w=target.find(x=>x.w.toLowerCase()===String(r.word).trim().toLowerCase());
-        if(!w)return;
-        l.sentences=l.sentences.filter(s=>s.wordId!==w.id);
-        l.sentences.push({id:'s'+uid(),wordId:w.id,text:String(r.sentence).trim()});
-        okN++;
-      });
-      save();render();
-      const missing=target.length-okN;
-      toast(missing?`✅ ${okN} frases generadas (${missing} no se pudieron emparejar, pulsa otra vez)`:`✅ ${okN} frases generadas`);
-    }catch(e){
-      save();render();
-      const st2=$('#spSt');if(st2)st2.innerHTML=`⚠️ ${esc(e.message)}`;
+    const chunks=[];for(let i=0;i<target.length;i+=SPELL_SENT_CHUNK)chunks.push(target.slice(i,i+SPELL_SENT_CHUNK));
+    let okN=0;const failedWords=[];let lastErr=null;
+    for(let ci=0;ci<chunks.length;ci++){
+      const chunk=chunks[ci];
+      const st=$('#spSt');if(st)st.textContent=chunks.length>1?`✨ Generando frases… (grupo ${ci+1} de ${chunks.length})`:'✨ Generando frases…';
+      try{
+        const arr=await spGenSentencesFor(chunk.map(w=>w.w));
+        chunk.forEach(w=>{
+          const r=arr.find(x=>x&&String(x.word||'').trim().toLowerCase()===w.w.toLowerCase());
+          if(!r||!r.sentence){failedWords.push(w.w);return;}
+          l.sentences=l.sentences.filter(s=>s.wordId!==w.id);
+          l.sentences.push({id:'s'+uid(),wordId:w.id,text:String(r.sentence).trim()});
+          okN++;
+        });
+        save();render();
+      }catch(e){
+        lastErr=e;failedWords.push(...chunk.map(w=>w.w));
+      }
+    }
+    save();render();
+    const st2=$('#spSt');
+    if(!failedWords.length){
+      toast(`✅ ${okN} frases generadas`);
+    }else if(okN){
+      if(st2)st2.innerHTML=`✅ ${okN} frases generadas. ⚠️ No se pudo con ${failedWords.length} (${esc(failedWords.slice(0,10).join(', '))}${failedWords.length>10?'…':''}); pulsa «Generar frases» otra vez para reintentar solo esas.`;
+    }else{
+      if(st2)st2.innerHTML=`⚠️ ${esc(lastErr?lastErr.message:'La IA no devolvió frases válidas')} Prueba otra vez; si sigue sin funcionar, inténtalo con menos palabras a la vez.`;
     }
   },
   spSentDel(b){
@@ -3757,16 +3965,31 @@ const spellActions={
 function spWordObjs(l,ids){const byId={};l.words.forEach(w=>byId[w.id]=w);return ids.map(id=>byId[id]).filter(Boolean);}
 function spGrade(given,word){return (given||'').trim().toLowerCase()===String(word||'').trim().toLowerCase();}
 /* voz en inglés para dictar las palabras -- deliberadamente separada del módulo Dict (afinado
-   para dictados en español): usa la voz nativa del navegador en inglés (preferiblemente
-   británica, ya que el nivel es Year 6 de colegio británico). */
+   para dictados en español): usa la voz nativa del navegador en inglés. El tutor puede elegir
+   qué voz usar en Ajustes (se guarda en state.settings.spVoice, por dispositivo, igual que la voz
+   del dictado); si no ha elegido ninguna (o la elegida ya no está disponible), se usa la de mejor
+   calidad disponible (mismo criterio que la voz del dictado en español: se prefieren las voces
+   "premium"/"neural"/"mejoradas", que se pronuncian más claras, frente a las voces básicas/
+   "compact" del sistema, que suenan más cerradas y cuestan más de entender a un oído español) y,
+   entre voces de calidad similar, se prioriza ligeramente el acento británico (nivel Year 6 de
+   colegio británico), pero nunca a costa de la claridad. */
+const EnVoice=(()=>{
+  const synth=window.speechSynthesis;let voices=[];
+  const score=v=>(/premium/i.test(v.name)?30:0)+(/siri/i.test(v.name)?25:0)+(/natural|neural|online/i.test(v.name)?25:0)+(/enhanced|mejorada|ampliada/i.test(v.name)?20:0)+(/^en-GB/i.test(v.lang)?3:0)-(/compact|eloquence|espeak/i.test(v.name)?15:0);
+  const loadV=()=>{try{voices=(synth.getVoices()||[]).filter(v=>/^en/i.test(v.lang));voices.forEach(v=>v._q=score(v));voices.sort((a,b)=>b._q-a._q);}catch(e){}};
+  if(synth){loadV();const prev=synth.onvoiceschanged;synth.onvoiceschanged=function(){loadV();if(typeof prev==='function')prev();};}
+  return{
+    voices:()=>voices,
+    pick(name){return (name&&voices.find(v=>v.name===name))||voices[0]||null;}
+  };
+})();
 function sayWordEN(text,cb){
   const synth=window.speechSynthesis;
   let done=false,g;const fin=()=>{if(done)return;done=true;clearTimeout(g);cb&&cb();};
   try{
     if(!synth)return fin();
     const u=new SpeechSynthesisUtterance(text);
-    const voices=synth.getVoices()||[];
-    const v=voices.find(x=>/^en-GB/i.test(x.lang))||voices.find(x=>/^en/i.test(x.lang));
+    const v=EnVoice.pick(state.settings&&state.settings.spVoice);
     if(v)u.voice=v;u.lang=v?v.lang:'en-GB';u.rate=0.85;
     u.onend=fin;u.onerror=fin;
     g=setTimeout(fin,4000+text.length*200);
@@ -3774,11 +3997,18 @@ function sayWordEN(text,cb){
   }catch(e){fin();}
 }
 function renderSpellList(){
-  let filterId=null;
-  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling')filterId=it.spid;}
+  let filterId=null,isHw=false;
+  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling'){filterId=it.spid;isHw=true;}}
   const list=state.spelling.filter(l=>l.status==='ready'&&(!filterId||l.id===filterId));
   const row=l=>{
     const nSent=l.sentences.length;
+    /* cuando esta lista es el deber del día, no se elige libremente: se hacen 2 rondas de
+       escuchar palabras y 1 de frases, en orden (ver spHwStart/spHwRunStep). Si practica esta
+       misma lista suelta (no como deber), sigue pudiendo elegir entre dictado o frases, como
+       siempre. */
+    if(isHw)return `<div class="panel"><b>🔤 ${esc(l.title)}</b><br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'}</small>
+    <p class="mute" style="margin:6px 0">Hoy toca: 2 rondas escuchando las palabras${nSent?' y 1 de frases para completar':' (todavía no hay frases preparadas, así que hoy solo escuchar)'}.</p>
+    <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="spHwStart" data-id="${esc(l.id)}">▶ Empezar</button></div></div>`;
     return `<div class="panel"><b>🔤 ${esc(l.title)}</b><br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'}</small>
     <div class="row" style="margin-top:8px;flex-wrap:wrap">
     <button class="btn primary" data-act="spDictStart" data-id="${esc(l.id)}">🔊 Dictado de spelling</button>
@@ -3808,9 +4038,11 @@ function renderSpellDict(){
     <p class="mute">Palabra ${r.i+1} de ${words.length} · escríbela en tu hoja</p>
     <div class="panel" style="text-align:center">
     <button class="btn primary big" data-act="spDictPlay">🔊 Escuchar la palabra</button>
+    <label class="f" style="margin-top:14px;text-align:left">¿Qué significa en español?<input type="text" id="spDictMeaning" data-enter="spDictMeaning" autocomplete="off" value="${esc((r.photoMeanings&&r.photoMeanings[r.i])||'')}" placeholder="Escribe el significado…" style="font-size:1.05rem;text-align:center;width:100%"></label>
     <div class="row" style="justify-content:center;margin-top:14px">
     <button class="btn success big" data-act="spDictPhoneNext">${r.i+1<words.length?'➡ Siguiente palabra':'✅ He terminado, voy a subir la foto'}</button>
     </div></div>`;
+    const inpm=$('#spDictMeaning');if(inpm)inpm.focus();
     return;
   }
   const w=words[r.i];
@@ -3821,9 +4053,11 @@ function renderSpellDict(){
   <input type="text" id="spDictAns" data-enter="spDictAns" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Escribe la palabra…" value="${esc(r.given)}" ${r.stage==='checked'?'disabled':''} style="font-size:1.2rem;text-align:center;width:100%">
   ${r.stage==='typing'?`<div class="row" style="justify-content:center;margin-top:12px"><button class="btn primary big" data-act="spDictCheck">✔ Comprobar</button></div>`:''}
   ${r.stage==='checked'?`<div class="msg ${r.ok?'right':'wrong'}" style="margin-top:12px;text-align:center;font-size:1.1rem">${r.ok?'✅ ¡Correcto!':`❌ Era: <b>${esc(w.w)}</b>`}</div>
+  <label class="f" style="margin-top:12px">¿Qué significa <b>${esc(w.w)}</b> en español?<input type="text" id="spDictMeaning" data-enter="spDictMeaning" autocomplete="off" value="${esc(r.meaning||'')}" placeholder="Escribe el significado…" style="font-size:1.05rem;text-align:center;width:100%"></label>
   <div class="row" style="justify-content:center;margin-top:12px"><button class="btn success big" data-act="spDictNext">${r.i+1<words.length?'Siguiente ➜':'Ver resultado ➜'}</button></div>`:''}
   </div>`;
-  const inp=$('#spDictAns');if(inp)inp.focus();
+  const fsel=r.stage==='checked'?'#spDictMeaning':'#spDictAns';
+  const inpF=$(fsel);if(inpF)inpF.focus();
 }
 function renderSpellPhotoUpload(l,r){
   app.innerHTML=`<button class="link" data-act="spDictQuit">← Salir</button><h2>📷 Sube la foto de tu hoja</h2>
@@ -3853,10 +4087,24 @@ function renderSpellSent(){
 function renderSpellDone(l,r,kind){
   const n=r.results.length,okN=r.results.filter(x=>x.ok).length;
   const pct=n?Math.round(100*okN/n):100;
+  const rows=r.results.map(x=>`<div class="panel row" style="justify-content:space-between"><span>${x.ok?'✅':'❌'} <b>${esc(x.word)}</b>${!x.ok?` <span class="mute">(escribiste: ${esc(x.given||'(nada)')})</span>`:''}${x.meaning?` <span class="mute">· significado: ${esc(x.meaning)}</span>`:''}</span></div>`).join('');
+  /* cuando esta ronda es parte de los deberes del día (ui.spHw: 2 rondas de escuchar + 1 de
+     frases), en vez de "Repetir"/"Volver" se encadena directamente a la siguiente ronda, y solo
+     al terminar la última se cierra el deber (spHwNext/spHwFinishAll). */
+  if(ui.spHw){
+    const hw=ui.spHw,more=hw.step+1<hw.steps.length;
+    const stepLabel=kind==='sent'?'Frases para completar':'Escuchar palabras';
+    app.innerHTML=`<h2>${pct>=80?'🎉 ¡Genial!':pct>=50?'👍 ¡Buen trabajo!':'💪 ¡Sigue practicando!'}</h2>
+    <p class="mute" style="margin-top:0">Ronda ${hw.step+1} de ${hw.steps.length}: ${esc(stepLabel)}</p>
+    <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${okN} de ${n}</div></div>
+    <div class="list">${rows}</div>
+    <div class="row" style="margin-top:10px"><button class="btn primary big" data-act="spHwNext">${more?'➡ Siguiente ronda':'✅ Terminar Spelling'}</button></div>`;
+    return;
+  }
   const backAct=kind==='dict'?'spDictQuit':'spSentQuit',repAct=kind==='dict'?'spDictRepeat':'spSentRepeat';
   app.innerHTML=`<button class="link" data-act="${backAct}">← Spelling</button><h2>${pct>=80?'🎉 ¡Genial!':pct>=50?'👍 ¡Buen trabajo!':'💪 ¡Sigue practicando!'}</h2>
   <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${okN} de ${n}</div></div>
-  <div class="list">${r.results.map(x=>`<div class="panel row" style="justify-content:space-between"><span>${x.ok?'✅':'❌'} <b>${esc(x.word)}</b>${!x.ok?` <span class="mute">(escribiste: ${esc(x.given||'(nada)')})</span>`:''}</span></div>`).join('')}</div>
+  <div class="list">${rows}</div>
   <div class="row" style="margin-top:10px"><button class="btn primary big" data-act="${repAct}">🔁 Repetir</button><button class="btn" data-act="${backAct}">← Volver a Spelling</button></div>`;
 }
 const SPELL_CHECK_SYS='Eres un transcriptor literal de texto manuscrito (OCR). La imagen es la hoja de una niña de primaria que ha escrito, al dictado, una lista de palabras en inglés, una debajo de otra (puede haber números delante). Transcribe EXACTAMENTE lo que ha escrito, letra por letra, sin corregir ninguna falta de ortografía: copia la palabra tal cual está, aunque esté mal escrita. Una palabra por línea, en el mismo orden en que aparecen en la hoja, sin números ni viñetas. Si una palabra es totalmente ilegible, escribe [?] en su lugar. Responde SOLO con la lista, una palabra por línea, sin comentarios.';
@@ -3870,24 +4118,75 @@ async function readSpellingAnswerPhoto(file){
 function spellFinish(l,r,kind){
   const n=r.results.length,okN=r.results.filter(x=>x.ok).length;
   const secs=Math.round((Date.now()-(ui.t0||Date.now()))/1000);
-  const res={n,ok:okN,kind,wrong:r.results.filter(x=>!x.ok).map(x=>({word:x.word,given:x.given}))};
+  const res={n,ok:okN,kind,wrong:r.results.filter(x=>!x.ok).map(x=>({word:x.word,given:x.given,meaning:x.meaning||''}))};
+  /* si esta ronda es parte de los deberes del día (2 de escuchar + 1 de frases), no se registra
+     todavía: se acumula en ui.spHw y el deber se cierra una sola vez, al terminar la última
+     ronda (ver spHwFinishAll). */
+  if(ui.spHw){ui.spHw.rounds.push(res);ui.spHw.secs=(ui.spHw.secs||0)+secs;return;}
   if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling'){const [s,rr]=recItem(it);rr.secs=(rr.secs||0)+secs;rr.end=Date.now();rr.done=true;rr.res=res;touchSes(s);return;}}
   const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;
   s.extra.push({id:uid(),kind:'spelling',title:'Spelling: '+(l?l.title:''),start:Date.now()-secs*1000,end:Date.now(),secs,res,done:true});touchSes(s);
+}
+/* ---- deberes de Spelling: 2 rondas de "escuchar palabras" + 1 de "frases para completar", en
+   orden, encadenadas (ver renderSpellList/renderSpellDone/spHwNext). Si la lista todavía no
+   tiene frases generadas, se pasa de la tercera ronda y el deber se da por terminado con las dos
+   de escuchar. ---- */
+function spHwRunStep(){
+  const hw=ui.spHw;if(!hw)return;
+  const l=spGet(hw.listId);if(!l){ui.spHw=null;ui.screen='spelllist';return render();}
+  const kind=hw.steps[hw.step];
+  if(kind==='sent'&&!l.sentences.length)return spHwFinishAll();
+  if(kind==='dict'){
+    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',photoMeanings:[]};
+    ui.screen='spelldict';
+  }else{
+    ui.spRun={listId:l.id,order:shuffleArr(l.sentences.map(s=>s.id)),i:0,given:'',stage:'answer',ok:null,results:[]};
+    ui.screen='spellsent';
+  }
+  ui.t0=Date.now();render();
+}
+function spHwFinishAll(){
+  const hw=ui.spHw;if(!hw)return;
+  const n=hw.rounds.reduce((a,r)=>a+r.n,0),ok=hw.rounds.reduce((a,r)=>a+r.ok,0);
+  const wrong=hw.rounds.flatMap(r=>r.wrong||[]);
+  const res={n,ok,kind:'hw',rounds:hw.rounds,wrong};
+  const secs=hw.secs||0;
+  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling'){const [s,rr]=recItem(it);rr.secs=(rr.secs||0)+secs;rr.end=Date.now();rr.done=true;rr.res=res;touchSes(s);}}
+  ui.spHw=null;ui.spRun=null;ui.screen='today';render();
 }
 const spellRunActions={
   goSpell(){ui.screen='spelllist';render();},
   spDictStart(b){
     const l=spGet(b.dataset.id);if(!l||l.status!=='ready')return toast('Esta lista no está disponible');
     if(!l.words.length)return toast('Esta lista no tiene palabras');
-    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:''};
+    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',photoMeanings:[]};
     ui.t0=Date.now();ui.screen='spelldict';render();
   },
-  spDictModeTyping(){const r=ui.spRun;if(!r)return;r.stage='typing';r.i=0;r.given='';r.ok=null;r.results=[];render();},
-  spDictModePhoto(){const r=ui.spRun;if(!r)return;r.stage='photowait';r.i=0;render();},
+  spHwStart(b){
+    const l=spGet(b.dataset.id);if(!l||l.status!=='ready')return toast('Esta lista no está disponible');
+    if(!l.words.length)return toast('Esta lista no tiene palabras');
+    ui.spHw={listId:l.id,step:0,steps:['dict','dict','sent'],rounds:[],secs:0};
+    spHwRunStep();
+  },
+  spHwNext(){
+    const hw=ui.spHw;if(!hw)return;
+    hw.step++;
+    if(hw.step>=hw.steps.length)return spHwFinishAll();
+    spHwRunStep();
+  },
+  spDictModeTyping(){const r=ui.spRun;if(!r)return;r.stage='typing';r.i=0;r.given='';r.ok=null;r.results=[];r.meaning='';render();},
+  spDictModePhoto(){const r=ui.spRun;if(!r)return;r.stage='photowait';r.i=0;r.photoMeanings=[];render();},
   spDictPlay(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
-    const words=spWordObjs(l,r.order);const w=words[r.i];if(w)sayWordEN(w.w,()=>{});
+    const words=spWordObjs(l,r.order);const w=words[r.i];if(!w)return;
+    /* al pulsar "Escuchar" el foco del botón se queda en el propio botón -- ponemos el cursor ya
+       en el cuadro de escribir para que Julia pueda teclear sin tener que pulsar antes con el
+       ratón. Esperamos 1 segundo antes de reproducir la palabra (si se llama a la voz demasiado
+       pegado al clic, a veces se corta el principio de la palabra). */
+    const inp=$('#spDictAns');if(inp)inp.focus();
+    setTimeout(()=>{
+      sayWordEN(w.w,()=>{const inp2=$('#spDictAns');if(inp2)inp2.focus();});
+    },1000);
   },
   spDictCheck(){
     const r=ui.spRun;if(!r||r.stage!=='typing')return;const l=spGet(r.listId);if(!l)return;
@@ -3901,12 +4200,20 @@ const spellRunActions={
   spDictNext(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
     const words=spWordObjs(l,r.order);
+    /* antes de pasar a la siguiente palabra, hace falta haber escrito también su significado en
+       español (solo en el dictado de spelling, no en las frases para completar). */
+    const mv=($('#spDictMeaning')&&$('#spDictMeaning').value||'').trim();
+    if(!mv)return toast('Escribe también el significado en español antes de continuar');
+    if(r.results.length)r.results[r.results.length-1].meaning=mv;
     if(r.i+1>=words.length){r.stage='done';spellFinish(l,r,'dict');return render();}
-    r.i++;r.given='';r.ok=null;r.stage='typing';
+    r.i++;r.given='';r.ok=null;r.meaning='';r.stage='typing';
     const y=scrollY;render();scrollTo(0,y);
   },
   spDictPhoneNext(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
+    const mv=($('#spDictMeaning')&&$('#spDictMeaning').value||'').trim();
+    if(!mv)return toast('Escribe también el significado en español antes de continuar');
+    r.photoMeanings=r.photoMeanings||[];r.photoMeanings[r.i]=mv;
     const words=spWordObjs(l,r.order);
     if(r.i+1>=words.length){r.stage='photoupload';return render();}
     r.i++;render();
@@ -3920,7 +4227,7 @@ const spellRunActions={
     try{
       const txt=await readSpellingAnswerPhoto(file);
       const lines=txt.split('\n').map(x=>x.trim()).filter(Boolean);
-      r.results=words.map((w,i)=>{const given=lines[i]||'';return {wordId:w.id,word:w.w,given,ok:spGrade(given,w.w)};});
+      r.results=words.map((w,i)=>{const given=lines[i]||'';return {wordId:w.id,word:w.w,given,ok:spGrade(given,w.w),meaning:(r.photoMeanings&&r.photoMeanings[i])||''};});
       r.stage='done';spellFinish(l,r,'dict');render();
     }catch(e){
       r.photoErr=e.message;
@@ -3930,10 +4237,10 @@ const spellRunActions={
   },
   spDictRepeat(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
-    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:''};
+    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',photoMeanings:[]};
     ui.t0=Date.now();render();
   },
-  spDictQuit(){ui.spRun=null;ui.screen='spelllist';render();},
+  spDictQuit(){const wasHw=!!ui.spHw;ui.spRun=null;ui.spHw=null;ui.screen=wasHw?'today':'spelllist';render();},
   spSentStart(b){
     const l=spGet(b.dataset.id);if(!l||l.status!=='ready')return toast('Esta lista no está disponible');
     if(!l.sentences.length)return toast('Esta lista todavía no tiene frases');
@@ -3961,7 +4268,7 @@ const spellRunActions={
     ui.spRun={listId:l.id,order:shuffleArr(l.sentences.map(s=>s.id)),i:0,given:'',stage:'answer',ok:null,results:[]};
     ui.t0=Date.now();render();
   },
-  spSentQuit(){ui.spRun=null;ui.screen='spelllist';render();}
+  spSentQuit(){const wasHw=!!ui.spHw;ui.spRun=null;ui.spHw=null;ui.screen=wasHw?'today':'spelllist';render();}
 };
 /* ================= área tutor ================= */
 function renderTutor(){
@@ -4002,9 +4309,13 @@ function tabDictados(){
 function tabMorfologia(){
   const t=$('#tab');
   if(ui.morfoEditId!==null){
-    const d=state.morfos.find(x=>x.id===ui.morfoEditId)||{title:'',text:''};
-    t.innerHTML=`<div class="panel"><h3>${d.id?'Editar texto':'Nuevo texto para analizar'}</h3><label class="f">Título<input type="text" id="mTitle" value="${esc(d.title)}" placeholder="Ej.: Análisis de la semana 5"></label><br>
-    <label class="f">Texto a analizar<textarea id="mText" placeholder="Escribe o pega aquí el texto que Julia clasificará palabra por palabra." autocapitalize="off">${esc(d.text)}</textarea></label>
+    const isEdit=!!ui.morfoEditId;
+    const d=ui.morfoDraft||(isEdit?state.morfos.find(x=>x.id===ui.morfoEditId):null)||{title:'',text:''};
+    t.innerHTML=`<div class="panel"><h3>${isEdit?'Editar texto':'Nuevo texto para analizar'}</h3>
+    <div class="row" style="margin:0 0 12px"><button class="btn" data-act="genMorfoText" ${ui.morfoGenBusy?'disabled':''}>${ui.morfoGenBusy?'🤖 Generando…':'🤖 Generar texto con IA (30 palabras, Year 6)'}</button></div>
+    <p class="mute" style="margin:0 0 10px">La IA escribe un texto corto con buena variedad de sustantivos, verbos, adjetivos, adverbios, artículos, pronombres, preposiciones y conjunciones, listo para analizar. Puedes editarlo antes de guardar.</p>
+    <label class="f">Título<input type="text" id="mTitle" value="${esc(d.title)}" placeholder="Ej.: Análisis de la semana 5"></label><br>
+    <label class="f">Texto a analizar<textarea id="mText" placeholder="Escribe o pega aquí el texto que Julia clasificará palabra por palabra, o genera uno con IA." autocapitalize="off">${esc(d.text)}</textarea></label>
     <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="saveMorfo">💾 Guardar</button><button class="btn" data-act="cancelEditMorfo">Cancelar</button></div></div>`;return;}
   t.innerHTML=`<p class="mute" style="margin-top:0">Prepara aquí textos para que Julia practique el análisis morfológico (clasificar cada palabra: sustantivo, verbo, adjetivo…), de forma independiente a los dictados.</p>
   <div class="row" style="margin:6px 0"><button class="btn primary" data-act="newMorfo">＋ Nuevo texto</button></div>
@@ -4060,6 +4371,10 @@ function tabAjustes(){
   <label class="f">Pausa después de cada signo<select data-set="ppause"><option value="0.6" ${s.ppause==0.6?'selected':''}>Corta</option><option value="1" ${s.ppause==1?'selected':''}>Normal</option><option value="1.6" ${s.ppause==1.6?'selected':''}>Larga</option><option value="2.2" ${s.ppause==2.2?'selected':''}>Muy larga</option></select></label>
   ${Dict.voices().length?`<label class="f">Voz<select data-set="voice">${Dict.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.voice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en español en este dispositivo.</p>'}</div>
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
+  <div class="panel"><h3>🔤 Voz del Spelling (inglés)</h3>
+  <p class="mute" style="margin-top:0">La voz que usa la IA para dictar las palabras de Spelling (voz del dispositivo, en inglés). Si el acento suena demasiado cerrado, prueba otra voz de la lista (las de ⭐ se entienden mejor) y pulsa "Probar voz".</p>
+  ${EnVoice.voices().length?`<label class="f">Voz<select data-set="spVoice"><option value="">(automática: la de mejor calidad disponible)</option>${EnVoice.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.spVoice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testSpVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en inglés en este dispositivo.</p>'}
+  </div>
   <div class="panel"><h3>🎙 IA de OpenAI: voz y lectura de fotos</h3>
   <p class="mute" style="margin-top:0">Usa la voz de OpenAI para dictar como una profesora. El audio se genera <b>una sola vez</b> al guardar cada dictado (cuesta unos céntimos) y queda guardado en este iPad. El audio queda guardado en cada dispositivo.</p>
   <label class="f"><input type="checkbox" data-ai="on" ${state.ai.on?'checked':''}> Usar voz IA (dictados)</label><br>
@@ -4099,9 +4414,9 @@ async function genVoiceFor(id,explicit){
 const tutorActions={
   pinSet(){const a=$('#pin1').value,b=$('#pin2').value;if(!/^\d{4,8}$/.test(a))return toast('El PIN debe tener de 4 a 8 números');if(a!==b)return toast('Los PIN no coinciden');state.pin=a;save();ui.unlocked=true;render();},
   pinEnter(){if($('#pin1').value===state.pin){ui.unlocked=true;render();}else{toast('PIN incorrecto');$('#pin1').value='';}},
-  lock(){ui.unlocked=false;ui.editId=null;ui.morfoEditId=null;render();},
+  lock(){ui.unlocked=false;ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;render();},
   tab(b){
-    ui.tab=b.dataset.t;ui.editId=null;ui.morfoEditId=null;
+    ui.tab=b.dataset.t;ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;
     /* al pulsar "Teoría y exámenes" en el menú de arriba, siempre vuelve al inicio de esa sección
        (lista de asignaturas), aunque estuvieras en medio de editar una tarjeta/examen o dentro de
        una asignatura/tema -- antes se quedaba donde estuvieras, porque solo cambiar de pestaña no
@@ -4118,12 +4433,22 @@ const tutorActions={
     if(ui.editId){const d=state.dictados.find(x=>x.id===ui.editId);d.title=title;d.text=text;}else state.dictados.unshift({id:'d'+Date.now(),title,text});
     save();const nid=ui.editId||state.dictados[0].id;ui.editId=null;render();toast('Dictado guardado');if(Voz.ready())genVoiceFor(nid,false);},
   delDict(b){if(confirm('¿Borrar este dictado?')){state.dictados=state.dictados.filter(d=>d.id!==b.dataset.id);save();render();}},
-  newMorfo(){ui.morfoEditId='';render();},
-  editMorfo(b){ui.morfoEditId=b.dataset.id;render();},
-  cancelEditMorfo(){ui.morfoEditId=null;render();},
+  newMorfo(){ui.morfoEditId='';ui.morfoDraft=null;render();},
+  editMorfo(b){ui.morfoEditId=b.dataset.id;ui.morfoDraft=null;render();},
+  cancelEditMorfo(){ui.morfoEditId=null;ui.morfoDraft=null;render();},
+  async genMorfoText(){
+    if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para generar texto');
+    if(ui.morfoGenBusy)return;
+    ui.morfoGenBusy=true;render();
+    try{
+      const r=await morfoGenText();
+      ui.morfoDraft={title:r.title,text:r.text};
+    }catch(e){toast(e.message||'No se ha podido generar el texto');}
+    ui.morfoGenBusy=false;render();
+  },
   saveMorfo(){const title=$('#mTitle').value.trim(),text=$('#mText').value.trim();if(!title||!text)return toast('Pon un título y un texto');
     if(ui.morfoEditId){const d=state.morfos.find(x=>x.id===ui.morfoEditId);d.title=title;d.text=text;}else state.morfos.unshift({id:'mz'+Date.now(),title,text});
-    save();ui.morfoEditId=null;render();toast('Texto guardado');},
+    save();ui.morfoEditId=null;ui.morfoDraft=null;render();toast('Texto guardado');},
   delMorfo(b){if(confirm('¿Borrar este texto?')){state.morfos=state.morfos.filter(d=>d.id!==b.dataset.id);save();render();}},
   addRule(){state.customRules.push({word:'',rule:''});save();render();},
   delRule(b){state.customRules.splice(+b.dataset.i,1);save();render();},
@@ -4131,6 +4456,7 @@ const tutorActions={
   syncNow(){Cloud.sync(true);},
   changePin(){const p=prompt('Nuevo PIN (4 a 8 números):');if(p===null)return;if(!/^\d{4,8}$/.test(p))return toast('PIN no válido');state.pin=p;save();toast('PIN cambiado');},
   testVoice(){Dict.test(state.settings);},
+  testSpVoice(){sayWordEN('beautiful',()=>{});},
   async genVoice(b){const id=b.dataset.id;await genVoiceFor(id,true);},
   async testAI(){
     Voz.unlock();toast('Generando muestra…');
@@ -4192,6 +4518,7 @@ document.addEventListener('input',e=>{const t=e.target;
 document.addEventListener('change',e=>{const t=e.target;
   if(exInput(t)||tfInput(t)||spInput(t)||taInput(t))return;
   if(t.dataset.set==='voice'){state.settings.voice=t.value;save();}
+  if(t.dataset.set==='spVoice'){state.settings.spVoice=t.value;save();}
   if(t.id==='photoIn'&&t.files[0]){const f=t.files[0];t.value='';handlePhoto(f);return;}
   if(t.id==='dictPhoto'&&t.files.length){readDictPhotos([...t.files]);t.value='';return;}
   if(t.id==='imp'&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const s=JSON.parse(fr.result);if(!Array.isArray(s.dictados))throw 0;if(confirm('Esto reemplazará los datos actuales. ¿Continuar?')){const oldKey=state.ai.key;localStorage.setItem(KEY,JSON.stringify(s));state=loadState();if(!state.ai.key)state.ai.key=oldKey;state.sync={t:{},j:{},init:true,last:0,dirty:true,hclear:0,hj:''};save();ui.tab='dictados';render();toast('Copia restaurada');}}catch(x){toast('Archivo no válido');}};fr.readAsText(t.files[0]);}
@@ -4205,6 +4532,7 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
   if(t.dataset.enter==='dictWord')engDictActions.dictSearch();
   if(t.dataset.enter==='dictGuess')engDictActions.dictReveal();
   if(t.dataset.enter==='spDictAns'){const r=ui.spRun;if(r&&r.stage==='checked')spellRunActions.spDictNext();else spellRunActions.spDictCheck();}
+  if(t.dataset.enter==='spDictMeaning'){const r=ui.spRun;if(r&&r.stage==='photowait')spellRunActions.spDictPhoneNext();else spellRunActions.spDictNext();}
   if(t.dataset.enter==='spSentAns'){const r=ui.spRun;if(r&&r.stage==='checked')spellRunActions.spSentNext();else spellRunActions.spSentCheck();}});
 render();
 async function readDictPhotos(files){
