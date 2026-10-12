@@ -109,6 +109,11 @@ sup{color:var(--bad);font-weight:800}
 .opts button{font:inherit;text-align:left;background:#fff;border:2px solid var(--line);border-radius:14px;padding:14px;cursor:pointer;color:var(--ink);min-height:56px}
 .opts button.no{border-color:var(--bad);background:var(--badbg);opacity:.7}.opts button.yes{border-color:var(--ok);background:var(--okbg)}
 .rule{background:#eef6ff;border-left:6px solid #3b82f6;border-radius:10px;padding:10px 14px;margin-top:10px}
+.wrule{position:relative;display:inline}
+.wrule-btn{all:unset;display:inline;cursor:pointer;border-radius:6px;padding:0 2px;margin:0 -2px;transition:background .15s}
+.wrule-btn:hover,.wrule-btn:focus{background:#ece9fb;outline:none}
+.wrule-tip{display:none;position:absolute;top:100%;left:0;z-index:6;background:#eef6ff;border-left:6px solid #3b82f6;border-radius:10px;padding:8px 12px;margin-top:6px;font-size:.85rem;font-weight:400;line-height:1.35;white-space:normal;width:max-content;max-width:260px;box-shadow:0 4px 10px rgba(45,42,69,.15)}
+.wrule:hover .wrule-tip,.wrule-btn:focus+.wrule-tip{display:block}
 .mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;max-width:420px}
 .mini-card{aspect-ratio:1;border:2px solid var(--line);border-radius:14px;background:#ece9fb;font-size:1.8rem;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .mini-card.flip{background:#fff;border-color:var(--pri)}
@@ -763,6 +768,16 @@ function wordMarkedHTML(wOrig,spans){
   html+=esc(wOrig.slice(p));
   return html;
 }
+/* las palabras con regla, dentro del propio texto, son un botón: al pasar el ratón por encima se
+   destaca su fondo y aparece debajo un globo con la regla ortográfica que le corresponde (igual
+   que las palabras sueltas de la lista de abajo, pero aquí con el ratón en vez de al tocar, para
+   no desordenar el texto al abrir/cerrar). */
+function wordRuleBtnHTML(wOrig,info){
+  const marked=wordMarkedHTML(wOrig,info.spans);
+  if(!info.spans.length||!info.rules.length)return marked;
+  const tip=info.rules.map(r=>esc(r.text)).join('<br>');
+  return `<span class="wrule"><button type="button" class="wrule-btn">${marked}</button><span class="wrule-tip">${tip}</span></span>`;
+}
 /* el texto completo del dictado, con las letras afectadas ya pintadas de rojo en su sitio */
 function dictadoTextHighlightHTML(text){
   text=text||'';
@@ -770,7 +785,7 @@ function dictadoTextHighlightHTML(text){
   let out='',pos=0;
   words.forEach(w=>{
     out+=esc(text.slice(pos,w.i));
-    out+=wordMarkedHTML(w.t,wordRuleSpans(w.t));
+    out+=wordRuleBtnHTML(w.t,wordRuleInfo(w.t));
     pos=w.i+w.t.length;
   });
   out+=esc(text.slice(pos));
@@ -815,7 +830,15 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.11-9';
+const APP_VERSION='2026.10.12-3';
+/* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
+   la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
+   esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
+   v2026.10.12-3: cada actividad (dictado, examen, spelling, análisis morfológico) tiene ahora su
+   propio botón "📅 Agregar a deberes" con un pequeño calendario para elegir el día (o varios días
+   seguidos), en vez de montarlos desde un asistente centralizado en la pestaña Deberes. Las listas
+   de spelling y los textos de morfología ya se pueden poner como deberes y su resultado (tiempo,
+   aciertos) queda registrado igual que los dictados y exámenes. */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -823,7 +846,7 @@ const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:tru
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
-  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},studyProgress:{},tutorNotes:'',notas:[],notasAlumna:[],asignaturas:[],temas:[],spelling:[],miniGameEvery:15};
+  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},studyProgress:{},tutorNotes:'',notas:[],notasAlumna:[],asignaturas:[],temas:[],spelling:[],morfos:[],miniGameEvery:15};
   s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-6.1-sol'},s.ai||{});
   if(s.ai.visionModel==='gpt-4o'||s.ai.visionModel==='gpt-5-chat-latest')s.ai.visionModel='gpt-6.1-sol'; // migración automática: OpenAI retiró gpt-5-chat-latest, pasamos a todo el mundo a gpt-6.1-sol sin tener que tocar nada
   s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
@@ -849,7 +872,7 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,morfoEditId:null,taskAdd:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -1041,7 +1064,7 @@ const Cloud=(()=>{
      conjunto. Los borrados se recuerdan aparte (itomb, un pequeño registro de "id borrado en tal
      momento") para que un elemento borrado en un dispositivo no reaparezca al sincronizar con otro
      que todavía lo tenía. */
-  const IK=['examenes','tareas','asignaturas','temas','notas','notasAlumna','spelling'];
+  const IK=['examenes','tareas','asignaturas','temas','notas','notasAlumna','spelling','morfos'];
   const hdr={apikey:SB_KEY,'Content-Type':'application/json'};
   const part=k=>{if(k==='ai'){const o=Object.assign({},state.ai);delete o.key;return o;}if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;return o;}return state[k];};
   const js=k=>JSON.stringify(part(k)===undefined?null:part(k));
@@ -1183,7 +1206,7 @@ function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
-  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo,engdict:renderEngDict,notasAlumna:renderNotasAlumna,spelllist:renderSpellList,spelldict:renderSpellDict,spellsent:renderSpellSent}[ui.screen]||renderHome)();
+  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo,morfolist:renderMorfoList,engdict:renderEngDict,notasAlumna:renderNotasAlumna,spelllist:renderSpellList,spelldict:renderSpellDict,spellsent:renderSpellSent}[ui.screen]||renderHome)();
 }
 function renderList(){
   const L=state.dictados;
@@ -1523,6 +1546,8 @@ function mathTitle(cfg){const l=(cfg.gens||[]).map(g=>MATH_LABELS[g]||g);return 
 function itemTitle(it){
   if(it.type==='examen'){const e=exGet(it.eid);return 'Examen: '+(e?e.title:'(examen borrado)');}
   if(it.type==='dictado'){const d=state.dictados.find(x=>x.id===it.did);return 'Dictado: '+(d?d.title:'(dictado borrado)');}
+  if(it.type==='spelling'){const l=state.spelling.find(x=>x.id===it.spid);return 'Spelling: '+(l?l.title:'(lista borrada)');}
+  if(it.type==='morfo'){const m=state.morfos.find(x=>x.id===it.mid);return 'Análisis morfológico: '+(m?m.title:'(texto borrado)');}
   return mathTitle(it.cfg);
 }
 function touchSes(s){s.upd=Date.now();save();}
@@ -1554,6 +1579,7 @@ function sessionReport(s){
     else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (sin foto)'}`;}
     else if(r.kind==='minijuego'&&r.res){o.line=r.res.line;}
     else if(r.kind==='morfo'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien clasificadas`;}
+    else if(r.kind==='spelling'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien (${x.kind==='dict'?'dictado':'frases'})`;o.det=(x.wrong||[]).map(w=>`${w.word}${w.given?' (puso '+w.given+')':''}`);}
     else if(r.kind==='vocab'&&r.res){const x=r.res;o.line=`${x.n} palabras consultadas · ${x.ok} ya las sabía`;}
     else o.line=r.done?'Hecho':'Empezado, sin terminar';
     return o;
@@ -1582,7 +1608,15 @@ function renderHome(){
   <button class="tile" data-act="goMlist"><span class="ico">➗</span><b>Matemáticas</b><small>Practica cuando quieras</small></button>
   <button class="tile" data-act="goDict"><span class="ico">📖</span><b>Diccionario (inglés)</b><small>Adivina qué significan palabras en inglés</small></button>
   ${state.spelling.some(l=>l.status==='ready')?`<button class="tile" data-act="goSpell"><span class="ico">🔤</span><b>Spelling</b><small>Dictado de palabras y frases en inglés</small></button>`:''}
+  ${state.morfos.length?`<button class="tile" data-act="goMorfoList"><span class="ico">🔎</span><b>Análisis Morfológico</b><small>Clasifica las palabras por su tipo</small></button>`:''}
   <button class="tile" data-act="goNotesAlumna"><span class="ico">🗒</span><b>Notas</b><small>Escribe las mejoras que necesites</small></button></div>`;
+}
+/* lista de textos preparados por el tutor para análisis morfológico (independiente de los
+   dictados y del "pega tu propio texto" que ya existía en la pantalla de Dictados). */
+function renderMorfoList(){
+  app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>🔎 Análisis Morfológico</h2>
+  <p class="mute" style="margin-top:0">Elige un texto para clasificar sus palabras (sustantivo, verbo, adjetivo…).</p>
+  <div class="list">${state.morfos.map(d=>`<button class="item" data-act="morfoFromItem" data-id="${esc(d.id)}"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small></span><span style="font-size:1.6rem">▶️</span></button>`).join('')||'<p class="mute">Tu tutor todavía no ha preparado ningún texto.</p>'}</div>`;
 }
 /* ================= notas de Julia (alumna) =================
    Para que Julia pueda escribir, cuando quiera, mejoras o cosas que necesite pedirle a su tutor
@@ -1673,6 +1707,17 @@ const taskActions={
     const [s]=recItem(it);touchSes(s);ui.item=it.id;
     if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.dictTheoryOpen=true;ui.dictRuleOpen=null;ui.screen='run';render();}
     else if(it.type==='examen')startExam(it.eid,it.id);
+    else if(it.type==='spelling'){
+      const l=state.spelling.find(x=>x.id===it.spid);
+      if(!l||l.status!=='ready')return toast('Esa lista de spelling ya no está disponible');
+      ui.screen='spelllist';render();
+    }
+    else if(it.type==='morfo'){
+      const d=state.morfos.find(x=>x.id===it.mid);
+      if(!d)return toast('Ese texto ya no existe');
+      if(!state.ai.photoOn)return toast('El tutor tiene que activar la IA de fotos en Ajustes para usar el análisis morfológico');
+      morfoStart(d.text,d.title,'today');
+    }
     else startMath(it.cfg,it.seed,it.id);
   },
   mexit(){if(confirm('¿Salir? Perderás lo que llevas de esta serie.')){ui.mrun=null;ui.screen=ui.item?'today':'mlist';render();}},
@@ -1760,6 +1805,57 @@ function tfInput(t){
   const s=$('#tfSum');if(s){s.innerHTML=tfSummaryHTML();const g=$('#tfGo');if(g)g.disabled=!!tfProblem(ui.tf);}
   return true;
 }
+/* ================= "Agregar a deberes" desde cualquier actividad =================
+   Botón propio en cada dictado, examen, lista de spelling o texto de morfología: abre un
+   calendario pequeño para elegir el día (o varios días seguidos) en que se le pone esa actividad
+   como deberes a Julia, sin tener que ir al asistente de la pestaña Deberes. Reutiliza tfDates()
+   para "varios días seguidos" igual que hace ese asistente. */
+const TASK_ADD_LABEL={dictado:'✏️ Dictado',examen:'📝 Examen',spelling:'🔤 Spelling',morfo:'🔎 Análisis morfológico'};
+function taskAddOverlay(){
+  const a=ui.taskAdd;if(!a)return '';
+  const t=todayStr();
+  const tomorrow=new Date(t+'T12:00:00');tomorrow.setDate(tomorrow.getDate()+1);const tm=tomorrow.toLocaleDateString('sv-SE');
+  const ds=tfDates(a);
+  const when=ds.length===1?fmtDay(ds[0]):`${ds.length} días: del ${fmtDay(ds[0]).toLowerCase()} al ${fmtDay(ds[ds.length-1]).toLowerCase()}`;
+  const chip=(on,act,attrs,label)=>`<button class="chip${on?' on':''}" data-act="${act}" ${attrs}>${label}</button>`;
+  return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.taskAddClose()"><div class="exph-box" style="max-width:420px">
+  <h3 style="margin-top:0">📅 Agregar a deberes</h3>
+  <p class="mute" style="margin-top:0">${TASK_ADD_LABEL[a.type]||''}<br><b>${esc(a.title)}</b></p>
+  <div class="lbl" style="margin-top:0">¿Qué día?</div>
+  <div class="chips">${chip(a.date===t,'taskAddDate',`data-v="${t}"`,'Hoy')}${chip(a.date===tm,'taskAddDate',`data-v="${tm}"`,'Mañana')}<input type="date" data-ta="date" value="${esc(a.date)}" style="width:auto;padding:8px 10px;font-size:1rem;border-radius:999px"></div>
+  <div class="lbl">¿Cuántos días seguidos?</div>
+  <div class="chips">${[1,3,5,10,15].map(n=>chip(a.days===n,'taskAddDays',`data-v="${n}"`,n===1?'Solo ese día':n+' días')).join('')}</div>
+  ${a.days>1?`<div class="chips" style="margin-top:8px">${chip(a.skip,'taskAddSkip','',a.skip?'✓ Sin sábados ni domingos':'Sin sábados ni domingos')}</div>`:''}
+  <p class="mute" style="margin:10px 0">${esc(when)}</p>
+  <div class="row" style="margin-top:4px"><button class="btn primary big" data-act="taskAddConfirm">💾 Agregar a deberes</button><button class="btn" data-act="taskAddClose">Cancelar</button></div>
+  </div></div>`;
+}
+function taInput(t){
+  if(!t.dataset.ta)return false;
+  if(!ui.taskAdd)return true;
+  ui.taskAdd[t.dataset.ta]=t.value;
+  if(t.dataset.ta==='date'&&!t.value)ui.taskAdd.date=todayStr();
+  render();
+  return true;
+}
+const taskAddActions={
+  taskAddOpen(b){ui.taskAdd={type:b.dataset.type,ref:b.dataset.id,title:b.dataset.title,date:todayStr(),days:1,skip:true};render();},
+  taskAddClose(){ui.taskAdd=null;render();},
+  taskAddDate(b){ui.taskAdd.date=b.dataset.v;render();},
+  taskAddDays(b){ui.taskAdd.days=+b.dataset.v;render();},
+  taskAddSkip(){ui.taskAdd.skip=!ui.taskAdd.skip;render();},
+  taskAddConfirm(){
+    const a=ui.taskAdd;if(!a)return;
+    const ds=tfDates(a);
+    const keyByType={dictado:'did',examen:'eid',spelling:'spid',morfo:'mid'};
+    const k=keyByType[a.type];if(!k)return;
+    ds.forEach(date=>{
+      const items=[{id:'i'+uid(),type:a.type,[k]:a.ref}];
+      state.tareas.push({id:'t'+uid(),date,items});
+    });
+    save();ui.taskAdd=null;render();toast(`Agregado a deberes de ${ds.length} ${ds.length===1?'día':'días'} ✅`);
+  }
+};
 function tabActividad(){
   const S=state.sesiones.slice().sort((a,b)=>a.id<b.id?1:-1);
   $('#tab').innerHTML=S.length?`<p class="mute" style="margin-top:0">Lo que Julia ha hecho cada día: hora, tiempo, aciertos y fallos.</p>${S.map(s=>reportHTML(s,true)).join('')}`:'<p class="mute">Todavía no hay actividad. Cuando Julia haga sus deberes de hoy, aparecerá aquí.</p>';
@@ -2283,6 +2379,7 @@ function exCompactView(t,e){
   <div><h3 style="margin:0 0 4px">✅ ${e.isExam?'':'Tarjeta de teoría: '}${esc(e.title||'(sin título)')}</h3>
   <small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · ${e.n} preguntas por examen · banco de ${act}${nph?` · ${nph} ${nph===1?'foto':'fotos'}`:''}</small></div>
   <span class="row" style="gap:6px;flex-wrap:wrap">
+  ${e.isExam?`<button class="btn" data-act="taskAddOpen" data-type="examen" data-id="${esc(e.id)}" data-title="${esc(e.title||'(sin título)')}">📅 Agregar a deberes</button>`:''}
   <button class="btn" data-act="exExpand" data-id="${esc(e.id)}">✏️ Ver / editar</button>
   <button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button>
   </span></div>
@@ -3207,35 +3304,98 @@ const MORFO_CATS=[
 ];
 const MORFO_LABEL=Object.fromEntries(MORFO_CATS.map(c=>[c.k,c.l]));
 const MORFO_SET=new Set(MORFO_CATS.map(c=>c.k));
+/* teoría breve de cada categoría (sin ejemplos), para el modo Estudio: al pasar el ratón por el
+   botón de una categoría aparece esta explicación debajo. En modo Examen no se muestra nada. */
+const MORFO_THEORY={
+  sustantivo:'Palabra que nombra personas, animales, objetos, lugares o ideas.',
+  verbo:'Palabra que expresa una acción, un estado o un proceso, y se conjuga (cambia según la persona y el tiempo).',
+  adjetivo:'Palabra que acompaña a un sustantivo y expresa una cualidad o característica suya.',
+  adverbio:'Palabra que modifica a un verbo, a un adjetivo o a otro adverbio, indicando cómo, cuándo, dónde o cuánto.',
+  articulo:'Palabra que acompaña al sustantivo y señala su género y número, sin aportar significado propio.',
+  pronombre:'Palabra que sustituye a un sustantivo para no repetirlo.',
+  preposicion:'Palabra invariable que une elementos de la oración y expresa una relación entre ellos (lugar, tiempo, modo…).',
+  conjuncion:'Palabra invariable que une palabras, frases u oraciones.',
+  otro:'No encaja claramente en ninguna de las demás categorías.'
+};
+/* subtipos de pronombre, adverbio y adjetivo: la IA, además de la categoría, decide uno de estos
+   subtipos (o "" si no aplica). Se usan tanto para enriquecer la respuesta ("Era: Pronombre
+   (posesivo)") como, en modo Estudio, para añadir "Tipos: ..." a la teoría de esa categoría. */
+const MORFO_SUBTYPES={
+  pronombre:[
+    {k:'personal',l:'Personal',d:'Sustituye al nombre de una persona o cosa que ya se ha mencionado.'},
+    {k:'posesivo',l:'Posesivo',d:'Indica a quién pertenece algo.'},
+    {k:'demostrativo',l:'Demostrativo',d:'Señala la posición de algo respecto al hablante.'},
+    {k:'indefinido',l:'Indefinido',d:'Se refiere a personas o cosas de forma imprecisa, sin concretar cuáles.'},
+    {k:'numeral',l:'Numeral',d:'Expresa una cantidad u orden exactos.'},
+    {k:'relativo',l:'Relativo',d:'Sustituye a un nombre ya mencionado y a la vez introduce una oración que lo explica.'},
+    {k:'interrogativo',l:'Interrogativo/exclamativo',d:'Se usa para preguntar o exclamar sobre algo.'}
+  ],
+  adverbio:[
+    {k:'tiempo',l:'De tiempo',d:'Indica cuándo ocurre la acción.'},
+    {k:'lugar',l:'De lugar',d:'Indica dónde ocurre la acción.'},
+    {k:'modo',l:'De modo',d:'Indica cómo ocurre la acción.'},
+    {k:'cantidad',l:'De cantidad',d:'Indica en qué medida o grado ocurre algo.'},
+    {k:'afirmacion',l:'De afirmación',d:'Confirma lo que se dice.'},
+    {k:'negacion',l:'De negación',d:'Niega lo que se dice.'},
+    {k:'duda',l:'De duda',d:'Expresa posibilidad o incertidumbre.'}
+  ],
+  adjetivo:[
+    {k:'calificativo',l:'Calificativo',d:'Expresa una cualidad del sustantivo.'},
+    {k:'demostrativo',l:'Determinativo demostrativo',d:'Señala la posición del sustantivo respecto al hablante.'},
+    {k:'posesivo',l:'Determinativo posesivo',d:'Indica a quién pertenece el sustantivo.'},
+    {k:'numeral',l:'Determinativo numeral',d:'Expresa una cantidad u orden exactos del sustantivo.'},
+    {k:'indefinido',l:'Determinativo indefinido',d:'Expresa una cantidad imprecisa del sustantivo.'}
+  ]
+};
+function morfoSubLabel(cat,subKey){const list=MORFO_SUBTYPES[cat];if(!list||!subKey)return '';const f=list.find(x=>x.k===subKey);return f?f.l:'';}
+function morfoTheoryText(k){
+  let t=MORFO_THEORY[k]||'';
+  const subs=MORFO_SUBTYPES[k];
+  if(subs&&subs.length)t+=' Tipos: '+subs.map(s=>`${s.l} — ${s.d}`).join(' · ')+'.';
+  return t;
+}
 function morfoPrompt(text,tokens){
   const list=tokens.map((w,i)=>`${i}: "${w.t}"`).join('\n');
-  return [{role:'system',content:`Eres un profesor de Lengua de primaria (Year 6, 10-11 años, colegio británico) que clasifica morfológicamente cada palabra de un texto en español. Para cada palabra de la lista, usando el contexto del texto completo, decide su categoría gramatical más apropiada para ese nivel (no distingas subtipos ni tiempos verbales: solo la categoría general). Usa EXCLUSIVAMENTE una de estas categorías (en minúsculas, tal cual, sin acentos): sustantivo, verbo, adjetivo, adverbio, articulo, pronombre, preposicion, conjuncion, otro (usa "otro" solo para números, interjecciones o palabras que de verdad no encajen en ninguna anterior). Devuelve SOLO un JSON válido: {"cats":["categoria0","categoria1",...]} con EXACTAMENTE ${tokens.length} elementos, en el mismo orden que la lista de palabras, uno por palabra — nunca añadas ni quites elementos.`},
+  return [{role:'system',content:`Eres un profesor de Lengua de primaria (Year 6, 10-11 años, colegio británico) que clasifica morfológicamente cada palabra de un texto en español. Para cada palabra de la lista, usando el contexto del texto completo, decide su categoría gramatical más apropiada para ese nivel. Usa EXCLUSIVAMENTE una de estas categorías (en minúsculas, tal cual, sin acentos): sustantivo, verbo, adjetivo, adverbio, articulo, pronombre, preposicion, conjuncion, otro (usa "otro" solo para números, interjecciones o palabras que de verdad no encajen en ninguna anterior). Además, SOLO cuando la categoría sea "pronombre", "adverbio" o "adjetivo", decide también un SUBTIPO (para las demás categorías el subtipo es siempre "" vacío):
+- Si es "pronombre", el subtipo es uno de: personal, posesivo, demostrativo, indefinido, numeral, relativo, interrogativo
+- Si es "adverbio", el subtipo es uno de: tiempo, lugar, modo, cantidad, afirmacion, negacion, duda
+- Si es "adjetivo", el subtipo es uno de: calificativo, demostrativo, posesivo, numeral, indefinido
+Devuelve SOLO un JSON válido: {"cats":["categoria0",...],"subs":["subtipo0",...]} con EXACTAMENTE ${tokens.length} elementos cada uno, en el mismo orden que la lista de palabras, uno por palabra — nunca añadas ni quites elementos.`},
    {role:'user',content:`TEXTO completo (para el contexto):\n"""\n${text}\n"""\n\nPALABRAS a clasificar, en este orden:\n${list}`}];
 }
 async function morfoAnalyze(text){
   const tokens=getWords(text).slice(0,220);
   if(!tokens.length)throw new Error('No hay palabras que analizar en este texto');
-  const raw=await aiText(morfoPrompt(text,tokens),Math.min(2200,200+tokens.length*12));
+  const raw=await aiText(morfoPrompt(text,tokens),Math.min(2600,250+tokens.length*16));
   const m=raw.match(/\{[\s\S]*\}/);if(!m)throw new Error('La IA no ha devuelto una clasificación válida');
   let j;try{j=JSON.parse(m[0]);}catch(e){throw new Error('La IA no ha devuelto una clasificación válida');}
   if(!Array.isArray(j.cats))throw new Error('La IA no ha devuelto una clasificación válida');
   const cats=tokens.map((_,i)=>MORFO_SET.has(j.cats[i])?j.cats[i]:'otro');
-  return {tokens,cats};
+  const subsRaw=Array.isArray(j.subs)?j.subs:[];
+  const subs=tokens.map((_,i)=>{
+    const cat=cats[i],allowed=MORFO_SUBTYPES[cat];if(!allowed)return '';
+    const s=String(subsRaw[i]||'').toLowerCase().trim();
+    return allowed.some(x=>x.k===s)?s:'';
+  });
+  return {tokens,cats,subs};
 }
-function morfoStart(text,title){
-  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,i:0,stage:'loading',results:[],ok:0,errMsg:''};
+function morfoStart(text,title,backScreen){
+  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',back:backScreen||'list',start:Date.now()};
   ui.screen='morfo';render();
   morfoAnalyze(text).then(r=>{
     const st=ui.morfo;if(!st||st.stage!=='loading')return;
-    st.tokens=r.tokens;st.cats=r.cats;st.stage='answer';render();
+    st.tokens=r.tokens;st.cats=r.cats;st.subcats=r.subs;st.stage='answer';render();
   }).catch(e=>{
     const st=ui.morfo;if(!st)return;st.stage='error';st.errMsg=e.message||'No se ha podido analizar el texto';render();
   });
 }
 function morfoFinish(){
   const st=ui.morfo;
-  const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now();
-  s.extra.push({id:uid(),kind:'morfo',title:'Análisis morfológico: '+st.title,start:Date.now(),end:Date.now(),secs:0,done:true,res:{n:st.tokens.length,ok:st.ok}});
+  const secs=Math.round((Date.now()-(st.start||Date.now()))/1000);
+  const res={n:st.tokens.length,ok:st.ok};
+  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='morfo'){const [s,r]=recItem(it);r.secs=(r.secs||0)+secs;r.end=Date.now();r.done=true;r.res=res;touchSes(s);return;}}
+  const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;
+  s.extra.push({id:uid(),kind:'morfo',title:'Análisis morfológico: '+st.title,start:Date.now()-secs*1000,end:Date.now(),secs,done:true,res});
   touchSes(s);
 }
 function morfoTextHTML(st){
@@ -3257,38 +3417,52 @@ function morfoBody(){
   if(st.stage==='done'){
     const bad=st.results.map((r,i)=>({r,w:st.tokens[i].t})).filter(x=>!x.r.ok);
     return `<div class="panel" style="border-color:var(--ok);background:var(--okbg)"><h2 style="margin:0">${st.ok===st.tokens.length?'🎉 ¡Perfecto!':'💪 ¡Bien hecho!'}</h2><div style="font-size:1.4rem;font-weight:800;margin-top:6px">${st.ok} de ${st.tokens.length} palabras bien clasificadas</div></div>
-    ${bad.length?`<h3>Repasa estas</h3><div class="list">${bad.map(x=>`<div class="panel" style="padding:10px 14px"><b>${esc(x.w)}</b>: pusiste <span class="wrong">${esc(MORFO_LABEL[x.r.pick]||x.r.pick)}</span>, era <span class="right">${esc(MORFO_LABEL[x.r.correct])}</span></div>`).join('')}</div>`:''}
-    <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="morfoBack">← Volver a dictados</button></div>`;
+    ${bad.length?`<h3>Repasa estas</h3><div class="list">${bad.map(x=>{const correctTxt=esc(MORFO_LABEL[x.r.correct])+(x.r.correctSub?` (${esc(morfoSubLabel(x.r.correct,x.r.correctSub))})`:'');return `<div class="panel" style="padding:10px 14px"><b>${esc(x.w)}</b>: pusiste <span class="wrong">${esc(MORFO_LABEL[x.r.pick]||x.r.pick)}</span>, era <span class="right">${correctTxt}</span></div>`;}).join('')}</div>`:''}
+    <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="morfoBack">← Volver</button></div>`;
   }
   const w=st.tokens[st.i];
+  const cat=st.cats[st.i],sub=(st.subcats&&st.subcats[st.i])||'',subTxt=sub?` (${esc(morfoSubLabel(cat,sub))})`:'';
   return `<p class="mute" style="margin:4px 0 10px">Palabra ${st.i+1} de ${st.tokens.length}</p>
   <div class="panel" style="line-height:2">${morfoTextHTML(st)}</div>
   <div class="panel" style="text-align:center"><div style="font-size:1.6rem;font-weight:800">${esc(w.t)}</div><p class="mute" style="margin:4px 0 0">¿Qué tipo de palabra es?</p></div>
-  ${st.stage==='answer'?`<div class="opts" style="grid-template-columns:repeat(2,1fr)">${MORFO_CATS.map(c=>`<button data-act="morfoPick" data-k="${c.k}">${c.l}</button>`).join('')}</div>`
-   :`<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?'✅ ¡Correcto!':`❌ Era: ${esc(MORFO_LABEL[st.cats[st.i]])}`}</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`}
+  ${st.stage==='answer'?`<div class="opts" style="grid-template-columns:repeat(2,1fr)">${MORFO_CATS.map(c=>st.level==='examen'
+    ?`<button data-act="morfoPick" data-k="${c.k}">${c.l}</button>`
+    :`<span class="wrule" style="display:block"><button class="wrule-btn" data-act="morfoPick" data-k="${c.k}">${c.l}</button><span class="wrule-tip" style="max-width:340px">${esc(morfoTheoryText(c.k))}</span></span>`
+  ).join('')}</div>`
+   :`<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?`✅ ¡Correcto!${subTxt?` Es ${esc(MORFO_LABEL[cat])}${subTxt}.`:''}`:`❌ Era: ${esc(MORFO_LABEL[cat])}${subTxt}`}</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`}
   <div class="row" style="margin-top:14px"><button class="link" data-act="morfoBack">← Salir</button></div>`;
 }
 function renderMorfo(){
   const st=ui.morfo;if(!st){ui.screen='list';return render();}
-  app.innerHTML=`<h2 style="margin:0">🔤 ${esc(st.title)}</h2>${morfoBody()}`;
+  const lvlRow=st.tokens.length?`<div class="row" style="margin:6px 0 10px;gap:8px">
+  <button class="btn ${st.level==='examen'?'':'primary'}" data-act="morfoLevel" data-lv="estudio">📖 Estudio</button>
+  <button class="btn ${st.level==='examen'?'primary':''}" data-act="morfoLevel" data-lv="examen">📝 Examen</button>
+  </div><p class="mute" style="margin:0 0 10px;font-size:.88rem">${st.level==='examen'?'Modo examen: sin ayuda, solo se ve el nombre de cada categoría.':'Modo estudio: pasa el ratón por una categoría para ver qué significa.'}</p>`:'';
+  app.innerHTML=`<h2 style="margin:0">🔤 Análisis Morfológico</h2><p class="mute" style="margin:2px 0 10px">${esc(st.title)}</p>${lvlRow}${morfoBody()}`;
 }
 const morfoActions={
   morfoFromDict(b){
     if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar el análisis morfológico');
     const d=state.dictados.find(x=>x.id===b.dataset.id);if(!d)return;
-    morfoStart(d.text,d.title);
+    morfoStart(d.text,d.title,'list');
   },
   morfoCustom(){
     if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar el análisis morfológico');
     const ta=$('#morfoTa'),t=(ta&&ta.value||'').trim();
     if(!t)return toast('Pega o escribe un texto primero');
     if(t.length>4000)return toast('Este texto es demasiado largo; prueba con un fragmento más corto');
-    morfoStart(t,'Texto propio');
+    morfoStart(t,'Texto propio','list');
+  },
+  morfoFromItem(b){
+    if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar el análisis morfológico');
+    const d=state.morfos.find(x=>x.id===b.dataset.id);if(!d)return;
+    morfoStart(d.text,d.title,'morfolist');
   },
   morfoPick(b){
     const st=ui.morfo;if(!st||st.stage!=='answer')return;
     const pick=b.dataset.k,correct=st.cats[st.i],ok=pick===correct;
-    st.results[st.i]={ok,pick,correct};if(ok)st.ok++;
+    const correctSub=(st.subcats&&st.subcats[st.i])||'';
+    st.results[st.i]={ok,pick,correct,correctSub};if(ok)st.ok++;
     st.stage=ok?'ok':'wrong';
     const y=scrollY;render();scrollTo(0,y);
   },
@@ -3298,7 +3472,12 @@ const morfoActions={
     if(st.i>=st.tokens.length){st.stage='done';morfoFinish();}else st.stage='answer';
     const y=scrollY;render();scrollTo(0,y);
   },
-  morfoBack(){ui.morfo=null;ui.screen='list';render();}
+  morfoBack(){const back=(ui.morfo&&ui.morfo.back)||'list';ui.morfo=null;ui.screen=back;render();},
+  morfoLevel(b){
+    const st=ui.morfo;if(!st)return;
+    st.level=b.dataset.lv==='examen'?'examen':'estudio';
+    render();
+  }
 };
 /* ================= diccionario guiado inglés → español (con IA) =================
    Julia escribe CUALQUIER palabra en inglés que quiera consultar. La IA nunca traduce
@@ -3414,6 +3593,7 @@ function spHomeView(t){
   const list=state.spelling.slice().sort((a,b)=>a.date<b.date?1:-1);
   const row=l=>`<div class="panel row" style="justify-content:space-between">
   <button class="link" style="text-align:left;flex:1" data-act="spOpen" data-id="${esc(l.id)}"><b>🔤 ${esc(l.title||'(sin título)')}</b> ${l.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicada</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'} · ${l.sentences.length} ${l.sentences.length===1?'frase':'frases'} generadas</small></button>
+  ${l.status==='ready'?`<button class="btn" data-act="taskAddOpen" data-type="spelling" data-id="${esc(l.id)}" data-title="${esc(l.title||'(sin título)')}">📅 Agregar a deberes</button>`:''}
   <button class="btn danger" data-act="spDel" data-id="${esc(l.id)}">🗑</button>
   </div>`;
   t.innerHTML=`<p class="mute" style="margin-top:0">Listas de palabras en inglés para practicar ortografía. Julia las dicta la IA palabra por palabra, y también practica completando frases con la palabra correcta. Nivel Year 6 de colegio británico.</p>
@@ -3572,7 +3752,9 @@ function sayWordEN(text,cb){
   }catch(e){fin();}
 }
 function renderSpellList(){
-  const list=state.spelling.filter(l=>l.status==='ready');
+  let filterId=null;
+  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling')filterId=it.spid;}
+  const list=state.spelling.filter(l=>l.status==='ready'&&(!filterId||l.id===filterId));
   const row=l=>{
     const nSent=l.sentences.length;
     return `<div class="panel"><b>🔤 ${esc(l.title)}</b><br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'}</small>
@@ -3581,7 +3763,7 @@ function renderSpellList(){
     <button class="btn" data-act="spSentStart" data-id="${esc(l.id)}" ${nSent?'':'disabled'}>📝 Frases para completar${nSent?'':' (sin frases todavía)'}</button>
     </div></div>`;
   };
-  app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>🔤 Spelling</h2>`+
+  app.innerHTML=`<button class="link" data-act="${filterId?'goToday':'goHome'}">← ${filterId?'Deberes de hoy':'Inicio'}</button><h2>🔤 Spelling</h2>`+
   (list.length?list.map(row).join(''):'<div class="panel">Todavía no hay listas de spelling. Tu tutor las añadirá aquí.</div>');
 }
 function renderSpellDict(){
@@ -3661,13 +3843,23 @@ async function readSpellingAnswerPhoto(file){
   const t=await aiText([{role:'system',content:SPELL_CHECK_SYS},{role:'user',content:[{type:'text',text:'Transcribe literalmente, palabra por palabra, lo que ha escrito.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}],500);
   return t.replace(/^```[a-z]*\n?|```$/g,'').trim();
 }
+/* ---- registrar resultados (igual que recordDictado/morfoFinish: si viene de los deberes del
+   día (ui.item) se apunta en esa tarea; si no, se apunta como actividad suelta). ---- */
+function spellFinish(l,r,kind){
+  const n=r.results.length,okN=r.results.filter(x=>x.ok).length;
+  const secs=Math.round((Date.now()-(ui.t0||Date.now()))/1000);
+  const res={n,ok:okN,kind,wrong:r.results.filter(x=>!x.ok).map(x=>({word:x.word,given:x.given}))};
+  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling'){const [s,rr]=recItem(it);rr.secs=(rr.secs||0)+secs;rr.end=Date.now();rr.done=true;rr.res=res;touchSes(s);return;}}
+  const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;
+  s.extra.push({id:uid(),kind:'spelling',title:'Spelling: '+(l?l.title:''),start:Date.now()-secs*1000,end:Date.now(),secs,res,done:true});touchSes(s);
+}
 const spellRunActions={
   goSpell(){ui.screen='spelllist';render();},
   spDictStart(b){
     const l=spGet(b.dataset.id);if(!l||l.status!=='ready')return toast('Esta lista no está disponible');
     if(!l.words.length)return toast('Esta lista no tiene palabras');
     ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:''};
-    ui.screen='spelldict';render();
+    ui.t0=Date.now();ui.screen='spelldict';render();
   },
   spDictModeTyping(){const r=ui.spRun;if(!r)return;r.stage='typing';r.i=0;r.given='';r.ok=null;r.results=[];render();},
   spDictModePhoto(){const r=ui.spRun;if(!r)return;r.stage='photowait';r.i=0;render();},
@@ -3687,7 +3879,7 @@ const spellRunActions={
   spDictNext(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
     const words=spWordObjs(l,r.order);
-    if(r.i+1>=words.length){r.stage='done';return render();}
+    if(r.i+1>=words.length){r.stage='done';spellFinish(l,r,'dict');return render();}
     r.i++;r.given='';r.ok=null;r.stage='typing';
     const y=scrollY;render();scrollTo(0,y);
   },
@@ -3707,7 +3899,7 @@ const spellRunActions={
       const txt=await readSpellingAnswerPhoto(file);
       const lines=txt.split('\n').map(x=>x.trim()).filter(Boolean);
       r.results=words.map((w,i)=>{const given=lines[i]||'';return {wordId:w.id,word:w.w,given,ok:spGrade(given,w.w)};});
-      r.stage='done';render();
+      r.stage='done';spellFinish(l,r,'dict');render();
     }catch(e){
       r.photoErr=e.message;
       const st2=$('#spDictPhotoSt');if(st2)st2.innerHTML=`⚠️ ${esc(e.message)}`;
@@ -3717,14 +3909,14 @@ const spellRunActions={
   spDictRepeat(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
     ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:''};
-    render();
+    ui.t0=Date.now();render();
   },
   spDictQuit(){ui.spRun=null;ui.screen='spelllist';render();},
   spSentStart(b){
     const l=spGet(b.dataset.id);if(!l||l.status!=='ready')return toast('Esta lista no está disponible');
     if(!l.sentences.length)return toast('Esta lista todavía no tiene frases');
     ui.spRun={listId:l.id,order:shuffleArr(l.sentences.map(s=>s.id)),i:0,given:'',stage:'answer',ok:null,results:[]};
-    ui.screen='spellsent';render();
+    ui.t0=Date.now();ui.screen='spellsent';render();
   },
   spSentCheck(){
     const r=ui.spRun;if(!r||r.stage!=='answer')return;const l=spGet(r.listId);if(!l)return;
@@ -3737,15 +3929,15 @@ const spellRunActions={
     const y=scrollY;render();scrollTo(0,y);
   },
   spSentNext(){
-    const r=ui.spRun;if(!r)return;
-    if(r.i+1>=r.order.length){r.stage='done';return render();}
+    const r=ui.spRun;if(!r)return;const l=spGet(r.listId);
+    if(r.i+1>=r.order.length){r.stage='done';spellFinish(l,r,'sent');return render();}
     r.i++;r.given='';r.ok=null;r.stage='answer';
     const y=scrollY;render();scrollTo(0,y);
   },
   spSentRepeat(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
     ui.spRun={listId:l.id,order:shuffleArr(l.sentences.map(s=>s.id)),i:0,given:'',stage:'answer',ok:null,results:[]};
-    render();
+    ui.t0=Date.now();render();
   },
   spSentQuit(){ui.spRun=null;ui.screen='spelllist';render();}
 };
@@ -3753,10 +3945,10 @@ const spellRunActions={
 function renderTutor(){
   if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
   if(!ui.unlocked){app.innerHTML=`<h2>🔐 Área de tutor</h2><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" data-enter="pin" placeholder="PIN"><br><br><button class="btn primary big" data-act="pinEnter">Entrar</button></div>`;return;}
-  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['examenes','📚 Teoría y exámenes'],['spelling','🔤 Spelling'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
+  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['examenes','📚 Teoría y exámenes'],['spelling','🔤 Spelling'],['morfologia','🔎 Morfología'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
   app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><button class="btn" data-act="lock">🔒 Bloquear</button></div>
-  <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>`;
-  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,spelling:tabSpelling,reglas:tabReglas,historial:tabHistorial,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
+  <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>${taskAddOverlay()}`;
+  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,spelling:tabSpelling,morfologia:tabMorfologia,reglas:tabReglas,historial:tabHistorial,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
 }
 function tabNotas(){
   const list=(state.notas||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
@@ -3779,8 +3971,22 @@ function tabDictados(){
     <label class="f">Texto a dictar<textarea id="dText" placeholder="Escribe o pega aquí el texto. Usa los signos de puntuación y las tildes tal como deben quedar." autocapitalize="off">${esc(d.text)}</textarea></label>
     <div class="row" style="margin-top:4px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Crear desde una foto<input type="file" accept="image/*" id="dictPhoto" multiple hidden></label></div><div id="dictPhotoSt" class="mute" style="margin-top:6px"></div>
     <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="saveDict">💾 Guardar</button><button class="btn" data-act="cancelEdit">Cancelar</button></div></div>`;return;}
-  t.innerHTML=`${modeCard}<div class="row" style="margin:6px 0"><button class="btn primary" data-act="newDict">＋ Nuevo dictado</button></div><div class="list">${state.dictados.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small>${Voz.ready()?`<br><small class="mute" data-vs="${esc(d.id)}">🎙 Comprobando voz…</small>`:''}</span><span class="row">${Voz.ready()?`<button class="btn" data-act="genVoice" data-id="${esc(d.id)}">🎙 Generar voz</button>`:''}<button class="btn" data-act="editDict" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delDict" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay dictados.</p>'}</div>`;
+  t.innerHTML=`${modeCard}<div class="row" style="margin:6px 0"><button class="btn primary" data-act="newDict">＋ Nuevo dictado</button></div><div class="list">${state.dictados.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small>${Voz.ready()?`<br><small class="mute" data-vs="${esc(d.id)}">🎙 Comprobando voz…</small>`:''}</span><span class="row">${Voz.ready()?`<button class="btn" data-act="genVoice" data-id="${esc(d.id)}">🎙 Generar voz</button>`:''}<button class="btn" data-act="taskAddOpen" data-type="dictado" data-id="${esc(d.id)}" data-title="${esc(d.title)}">📅 Agregar a deberes</button><button class="btn" data-act="editDict" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delDict" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay dictados.</p>'}</div>`;
   refreshVoiceStatus();
+}
+/* textos de análisis morfológico preparados por el tutor, independientes de los dictados (antes
+   Julia solo podía analizar un dictado existente o pegar su propio texto; ahora el tutor también
+   puede preparar textos pensados específicamente para esta actividad). */
+function tabMorfologia(){
+  const t=$('#tab');
+  if(ui.morfoEditId!==null){
+    const d=state.morfos.find(x=>x.id===ui.morfoEditId)||{title:'',text:''};
+    t.innerHTML=`<div class="panel"><h3>${d.id?'Editar texto':'Nuevo texto para analizar'}</h3><label class="f">Título<input type="text" id="mTitle" value="${esc(d.title)}" placeholder="Ej.: Análisis de la semana 5"></label><br>
+    <label class="f">Texto a analizar<textarea id="mText" placeholder="Escribe o pega aquí el texto que Julia clasificará palabra por palabra." autocapitalize="off">${esc(d.text)}</textarea></label>
+    <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="saveMorfo">💾 Guardar</button><button class="btn" data-act="cancelEditMorfo">Cancelar</button></div></div>`;return;}
+  t.innerHTML=`<p class="mute" style="margin-top:0">Prepara aquí textos para que Julia practique el análisis morfológico (clasificar cada palabra: sustantivo, verbo, adjetivo…), de forma independiente a los dictados.</p>
+  <div class="row" style="margin:6px 0"><button class="btn primary" data-act="newMorfo">＋ Nuevo texto</button></div>
+  <div class="list">${state.morfos.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small></span><span class="row"><button class="btn" data-act="taskAddOpen" data-type="morfo" data-id="${esc(d.id)}" data-title="${esc(d.title)}">📅 Agregar a deberes</button><button class="btn" data-act="editMorfo" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delMorfo" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay textos para analizar.</p>'}</div>`;
 }
 function tabReglas(){
   const rs=state.customRules;
@@ -3871,9 +4077,9 @@ async function genVoiceFor(id,explicit){
 const tutorActions={
   pinSet(){const a=$('#pin1').value,b=$('#pin2').value;if(!/^\d{4,8}$/.test(a))return toast('El PIN debe tener de 4 a 8 números');if(a!==b)return toast('Los PIN no coinciden');state.pin=a;save();ui.unlocked=true;render();},
   pinEnter(){if($('#pin1').value===state.pin){ui.unlocked=true;render();}else{toast('PIN incorrecto');$('#pin1').value='';}},
-  lock(){ui.unlocked=false;ui.editId=null;render();},
+  lock(){ui.unlocked=false;ui.editId=null;ui.morfoEditId=null;render();},
   tab(b){
-    ui.tab=b.dataset.t;ui.editId=null;
+    ui.tab=b.dataset.t;ui.editId=null;ui.morfoEditId=null;
     /* al pulsar "Teoría y exámenes" en el menú de arriba, siempre vuelve al inicio de esa sección
        (lista de asignaturas), aunque estuvieras en medio de editar una tarjeta/examen o dentro de
        una asignatura/tema -- antes se quedaba donde estuvieras, porque solo cambiar de pestaña no
@@ -3890,6 +4096,13 @@ const tutorActions={
     if(ui.editId){const d=state.dictados.find(x=>x.id===ui.editId);d.title=title;d.text=text;}else state.dictados.unshift({id:'d'+Date.now(),title,text});
     save();const nid=ui.editId||state.dictados[0].id;ui.editId=null;render();toast('Dictado guardado');if(Voz.ready())genVoiceFor(nid,false);},
   delDict(b){if(confirm('¿Borrar este dictado?')){state.dictados=state.dictados.filter(d=>d.id!==b.dataset.id);save();render();}},
+  newMorfo(){ui.morfoEditId='';render();},
+  editMorfo(b){ui.morfoEditId=b.dataset.id;render();},
+  cancelEditMorfo(){ui.morfoEditId=null;render();},
+  saveMorfo(){const title=$('#mTitle').value.trim(),text=$('#mText').value.trim();if(!title||!text)return toast('Pon un título y un texto');
+    if(ui.morfoEditId){const d=state.morfos.find(x=>x.id===ui.morfoEditId);d.title=title;d.text=text;}else state.morfos.unshift({id:'mz'+Date.now(),title,text});
+    save();ui.morfoEditId=null;render();toast('Texto guardado');},
+  delMorfo(b){if(confirm('¿Borrar este texto?')){state.morfos=state.morfos.filter(d=>d.id!==b.dataset.id);save();render();}},
   addRule(){state.customRules.push({word:'',rule:''});save();render();},
   delRule(b){state.customRules.splice(+b.dataset.i,1);save();render();},
   clearHist(){if(confirm('¿Borrar todo el historial en todos los dispositivos?')){state.history=[];state.sync.hclear=Date.now();save();render();}},
@@ -3929,6 +4142,7 @@ const studentActions={
   setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();},
   showVersion(){const l=state.sync.last?new Date(state.sync.last).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'nunca';toast(`Versión v${APP_VERSION} · última sincronización: ${l}`);},
   goNotesAlumna(){ui.screen='notasAlumna';render();},
+  goMorfoList(){ui.screen='morfolist';render();},
   noteAlumnaSave(){
     const ta=$('#noteAlumnaNewTa');const text=(ta&&ta.value||'').trim();if(!text)return toast('Escribe algo antes de guardar');
     state.notasAlumna=state.notasAlumna||[];state.notasAlumna.push({id:'n'+uid(),text,date:new Date().toISOString()});
@@ -3940,12 +4154,12 @@ const studentActions={
     save();render();
   }
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,examActions,studyActions,miniActions,morfoActions,engDictActions,spellActions,spellRunActions);
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,engDictActions,spellActions,spellRunActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
   if(t.id==='exans'&&ui.ex){ui.ex.ans[ui.ex.i]=t.value;return;}
-  if(exInput(t)||tfInput(t)||spInput(t))return;
+  if(exInput(t)||tfInput(t)||spInput(t)||taInput(t))return;
   if(t.dataset.set){const k=t.dataset.set;state.settings[k]=t.type==='checkbox'?t.checked:(t.type==='range'||k==='ppause')?+t.value:t.value;save();
     if(k==='repeat'){const gb=$('#gapBox');if(gb)gb.style.display=state.settings.repeat>1?'':'none';}
     const lab=$('#v_'+k);if(lab)lab.textContent=k==='rate'?rateLabel(state.settings.rate):k==='pause'||k==='gap'?state.settings[k]+' s':k==='repeat'?state.settings.repeat+(state.settings.repeat>1?' veces':' vez'):state.settings[k];}
@@ -3954,7 +4168,7 @@ document.addEventListener('input',e=>{const t=e.target;
   if(t.dataset.cr){state.customRules[+t.dataset.i][t.dataset.cr]=t.value;save();}
 });
 document.addEventListener('change',e=>{const t=e.target;
-  if(exInput(t)||tfInput(t)||spInput(t))return;
+  if(exInput(t)||tfInput(t)||spInput(t)||taInput(t))return;
   if(t.dataset.set==='voice'){state.settings.voice=t.value;save();}
   if(t.id==='photoIn'&&t.files[0]){const f=t.files[0];t.value='';handlePhoto(f);return;}
   if(t.id==='dictPhoto'&&t.files.length){readDictPhotos([...t.files]);t.value='';return;}
