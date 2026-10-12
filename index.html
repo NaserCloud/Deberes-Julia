@@ -830,7 +830,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.12-3';
+const APP_VERSION='2026.10.12-4';
 /* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
    la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
    esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
@@ -838,7 +838,10 @@ const APP_VERSION='2026.10.12-3';
    propio botón "📅 Agregar a deberes" con un pequeño calendario para elegir el día (o varios días
    seguidos), en vez de montarlos desde un asistente centralizado en la pestaña Deberes. Las listas
    de spelling y los textos de morfología ya se pueden poner como deberes y su resultado (tiempo,
-   aciertos) queda registrado igual que los dictados y exámenes. */
+   aciertos) queda registrado igual que los dictados y exámenes.
+   v2026.10.12-4: las tarjetas de teoría (no solo los exámenes) también tienen ya su botón "📅
+   Agregar a deberes", visible directamente en la lista de tarjetas de un tema y de exámenes, sin
+   tener que entrar a editarlas primero. */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -1545,10 +1548,22 @@ function getSes(date,create){
 function mathTitle(cfg){const l=(cfg.gens||[]).map(g=>MATH_LABELS[g]||g);return 'Mates: '+(l.length>3?l.slice(0,3).join(', ')+'…':l.join(', '))+' · '+MATH_LEVELS[cfg.level||1];}
 function itemTitle(it){
   if(it.type==='examen'){const e=exGet(it.eid);return 'Examen: '+(e?e.title:'(examen borrado)');}
+  if(it.type==='teoria'){const e=exGet(it.tid);return 'Tarjeta de teoría: '+(e?e.title:'(tarjeta borrada)');}
   if(it.type==='dictado'){const d=state.dictados.find(x=>x.id===it.did);return 'Dictado: '+(d?d.title:'(dictado borrado)');}
   if(it.type==='spelling'){const l=state.spelling.find(x=>x.id===it.spid);return 'Spelling: '+(l?l.title:'(lista borrada)');}
   if(it.type==='morfo'){const m=state.morfos.find(x=>x.id===it.mid);return 'Análisis morfológico: '+(m?m.title:'(texto borrado)');}
   return mathTitle(it.cfg);
+}
+/* resumen corto de una pieza de deberes ya hecha, para la lista de "Deberes de hoy" (cada tipo
+   guarda su resultado con una forma distinta: ver sessionReport/one() más abajo, que usa el mismo
+   criterio por tipo para el informe completo). */
+function itemSummary(it,x){
+  if(!x)return '';
+  if(it.type==='dictado')return `${x.total-x.wrong} de ${x.total} bien`;
+  if(it.type==='examen')return `${(Math.round(x.score*10)/10).toString().replace('.',',')} de ${x.n} puntos`;
+  if(it.type==='teoria')return `${x.ok} de ${x.n} a la primera`;
+  if(it.type==='spelling'||it.type==='morfo')return `${x.ok} de ${x.n} bien`;
+  return x.first!==undefined?`${x.first} de ${x.n} a la primera`:'';
 }
 function touchSes(s){s.upd=Date.now();save();}
 /* ---- registrar resultados ---- */
@@ -1635,7 +1650,7 @@ function renderToday(){
   const t=todayStr(),its=itemsOf(t),s=getSes(t,false);
   const st=i=>s&&s.items[i.id]&&s.items[i.id].done;
   app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>📅 Deberes de hoy</h2><p class="mute" style="margin-top:0">${esc(fmtDay(t))}</p>`+
-  (its.length?`<div class="list">${its.map(i=>{const r=s&&s.items[i.id];const x=r&&r.res;const sm=x?(i.type==='dictado'?`${x.total-x.wrong} de ${x.total} bien`:`${x.first} de ${x.n} a la primera`):'';
+  (its.length?`<div class="list">${its.map(i=>{const r=s&&s.items[i.id];const x=r&&r.res;const sm=itemSummary(i,x);
     return `<button class="item" data-act="openItem" data-id="${esc(i.id)}"><span>${st(i)?'✅':'⬜'} <b>${esc(itemTitle(i))}</b>${sm?`<br><small class="mute">${esc(sm)}</small>`:''}</span><span style="font-size:1.6rem">${st(i)?'🔁':'▶️'}</span></button>`;}).join('')}</div>
   ${s&&s.finished?`<div class="panel" style="border-color:var(--ok);background:var(--okbg)">🎉 Has finalizado los deberes a las ${fmtHM(s.finished)}.</div><div class="row"><button class="btn" data-act="finishDay">📋 Ver resumen</button></div>`
    :`<div class="row" style="margin-top:14px"><button class="btn success big" data-act="finishDay">🏁 Finalizar deberes</button></div>`}`
@@ -1707,6 +1722,11 @@ const taskActions={
     const [s]=recItem(it);touchSes(s);ui.item=it.id;
     if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.dictTheoryOpen=true;ui.dictRuleOpen=null;ui.screen='run';render();}
     else if(it.type==='examen')startExam(it.eid,it.id);
+    else if(it.type==='teoria'){
+      const e=exGet(it.tid);
+      if(!e||e.status!=='ready')return toast('Esa tarjeta de teoría ya no está disponible');
+      studyOpen(it.tid);
+    }
     else if(it.type==='spelling'){
       const l=state.spelling.find(x=>x.id===it.spid);
       if(!l||l.status!=='ready')return toast('Esa lista de spelling ya no está disponible');
@@ -1810,7 +1830,7 @@ function tfInput(t){
    calendario pequeño para elegir el día (o varios días seguidos) en que se le pone esa actividad
    como deberes a Julia, sin tener que ir al asistente de la pestaña Deberes. Reutiliza tfDates()
    para "varios días seguidos" igual que hace ese asistente. */
-const TASK_ADD_LABEL={dictado:'✏️ Dictado',examen:'📝 Examen',spelling:'🔤 Spelling',morfo:'🔎 Análisis morfológico'};
+const TASK_ADD_LABEL={dictado:'✏️ Dictado',examen:'📝 Examen',teoria:'📖 Tarjeta de teoría',spelling:'🔤 Spelling',morfo:'🔎 Análisis morfológico'};
 function taskAddOverlay(){
   const a=ui.taskAdd;if(!a)return '';
   const t=todayStr();
@@ -1847,7 +1867,7 @@ const taskAddActions={
   taskAddConfirm(){
     const a=ui.taskAdd;if(!a)return;
     const ds=tfDates(a);
-    const keyByType={dictado:'did',examen:'eid',spelling:'spid',morfo:'mid'};
+    const keyByType={dictado:'did',examen:'eid',teoria:'tid',spelling:'spid',morfo:'mid'};
     const k=keyByType[a.type];if(!k)return;
     ds.forEach(date=>{
       const items=[{id:'i'+uid(),type:a.type,[k]:a.ref}];
@@ -2296,7 +2316,7 @@ function exHomeView(t){
     const act=e.pool.filter(q=>!q.off).length,tag=e.scope==='repaso'?' · 🔁 repaso de asignatura':e.scope==='tema'?' · 📝 examen de un tema':'';
     return `<div class="panel row" style="justify-content:space-between">
     <span><b>${esc(e.title||'(sin título)')}</b> ${e.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicado</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · ${e.n} preguntas por examen · banco de ${act}${tag}</small></span>
-    <span class="row"><button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span>
+    <span class="row">${e.status==='ready'?`<button class="btn" data-act="taskAddOpen" data-type="examen" data-id="${esc(e.id)}" data-title="${esc(e.title||'(sin título)')}">📅 Agregar a deberes</button>`:''}<button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span>
     </div>`;
   };
   const asigRow=a=>{
@@ -2346,7 +2366,7 @@ function exTemaView(t,tm){
     const act=e.pool.filter(q=>!q.off).length,nph=(state.examFotos[e.id]||[]).length;
     return `<div class="panel row" style="justify-content:space-between">
     <span><b>Tarjeta de teoría: ${esc(e.title||'(sin título)')}</b> ${e.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicado</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${EX_MODES[e.mode]} · banco de ${act}${nph?` · ${nph} ${nph===1?'foto':'fotos'}`:''}</small></span>
-    <span class="row"><button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span>
+    <span class="row">${e.status==='ready'?`<button class="btn" data-act="taskAddOpen" data-type="teoria" data-id="${esc(e.id)}" data-title="${esc(e.title||'(sin título)')}">📅 Agregar a deberes</button>`:''}<button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span>
     </div>`;
   };
   t.innerHTML=`<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
@@ -2379,7 +2399,7 @@ function exCompactView(t,e){
   <div><h3 style="margin:0 0 4px">✅ ${e.isExam?'':'Tarjeta de teoría: '}${esc(e.title||'(sin título)')}</h3>
   <small class="mute">${esc(exShortDate(e.date))} (${exDaysTxt(e.date)}) · ${EX_MODES[e.mode]} · ${e.n} preguntas por examen · banco de ${act}${nph?` · ${nph} ${nph===1?'foto':'fotos'}`:''}</small></div>
   <span class="row" style="gap:6px;flex-wrap:wrap">
-  ${e.isExam?`<button class="btn" data-act="taskAddOpen" data-type="examen" data-id="${esc(e.id)}" data-title="${esc(e.title||'(sin título)')}">📅 Agregar a deberes</button>`:''}
+  <button class="btn" data-act="taskAddOpen" data-type="${e.isExam?'examen':'teoria'}" data-id="${esc(e.id)}" data-title="${esc(e.title||'(sin título)')}">📅 Agregar a deberes</button>
   <button class="btn" data-act="exExpand" data-id="${esc(e.id)}">✏️ Ver / editar</button>
   <button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button>
   </span></div>
@@ -2910,8 +2930,10 @@ function studyAnswerHTML(st,q){
 }
 function recordStudyOnce(st,e){
   if(st.recorded)return;st.recorded=true;
+  const res={n:st.n,ok:st.firstOk,level:st.level};
+  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='teoria'){const [s,r]=recItem(it);r.end=Date.now();r.done=true;r.res=res;touchSes(s);studyClearProgress(st.temaId);return;}}
   const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now();
-  s.extra.push({id:uid(),kind:'teoria',title:'Teoría: '+(e?e.title:''),start:Date.now(),end:Date.now(),secs:0,done:true,res:{n:st.n,ok:st.firstOk,level:st.level}});
+  s.extra.push({id:uid(),kind:'teoria',title:'Teoría: '+(e?e.title:''),start:Date.now(),end:Date.now(),secs:0,done:true,res});
   touchSes(s);
   studyClearProgress(st.temaId);
 }
@@ -3007,9 +3029,9 @@ const studyActions={
   studyPhotoClose(){ui.studyPhotoView=null;render();},
   studyQuit(){ui.studyQuitAsk=true;const y=scrollY;render();scrollTo(0,y);},
   studyQuitCancel(){ui.studyQuitAsk=false;const y=scrollY;render();scrollTo(0,y);},
-  studyQuitResume(){ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.screen='exlist';render();},
-  studyQuitDiscard(){const st=ui.study;if(st)studyClearProgress(st.temaId);ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.screen='exlist';render();},
-  studyQuitOk(){ui.study=null;ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='exlist';render();}
+  studyQuitResume(){ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.screen=ui.item?'today':'exlist';render();},
+  studyQuitDiscard(){const st=ui.study;if(st)studyClearProgress(st.temaId);ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.screen=ui.item?'today':'exlist';render();},
+  studyQuitOk(){ui.study=null;ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen=ui.item?'today':'exlist';render();}
 };
 /* ================= minijuegos: cada 15 preguntas, un descanso interactivo =================
    Se insertan al azar dentro de las tandas largas de ejercicios (mates, exámenes, estudio de
