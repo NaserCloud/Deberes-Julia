@@ -845,7 +845,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.12-18';
+const APP_VERSION='2026.10.12-21';
 /* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
    la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
    esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
@@ -941,7 +941,26 @@ const APP_VERSION='2026.10.12-18';
    v2026.10.12-18: en Análisis Morfológico, al fallar una palabra, ahora hay que escribir la
    respuesta correcta COMPLETA: la categoría (y el subtipo en Nivel 2) Y el porqué de la
    explicación, no solo la categoría a secas. Al comprobarlo no se tienen en cuenta los signos de
-   puntuación (paréntesis, comas, puntos...), solo que las palabras en sí estén bien escritas. */
+   puntuación (paréntesis, comas, puntos...), solo que las palabras en sí estén bien escritas.
+   v2026.10.12-19: en Análisis Morfológico, Modo Estudio, al pasar el ratón por una opción de
+   respuesta la teoría ya no sale en un texto plano: ahora se ve igual que en la ficha "📘 Ver la
+   teoría", con la misma tarjeta de colores (icono, título, explicación y ejemplos en negrita).
+   v2026.10.12-20: en Análisis Morfológico, el "🧩 Análisis extra" (variable/invariable, raíz y
+   tipo de morfema, cada 5 palabras) ya no es solo información: ahora es un ejercicio que Julia
+   tiene que hacer ella misma (en Modo Estudio puede ver la teoría de ayuda al lado; en Modo
+   Examen no), y hasta que no lo termina no se habilita "Siguiente". Al fallar una palabra, el
+   mensaje ya no dice "Era:", ahora dice "La respuesta correcta es:". Cuando tiene que escribir
+   ella la respuesta completa con el porqué, ya no se tolera ninguna falta de ortografía: si
+   alguna palabra está mal escrita o falta, se le dice cuál en concreto para que la corrija. Y
+   el formato "Categoría (Subtipo)" ha pasado a "Categoría subtipo", sin paréntesis. Además, en
+   el juego de Simón, al pulsar un botón ahora también se destaca igual que cuando Simón muestra
+   la secuencia, y la partida sube hasta 15 rondas.
+   v2026.10.12-21: en Análisis Morfológico, Nivel 1 y Nivel 2 siguen existiendo igual que antes,
+   pero ahora al pasar el ratón por encima de "Nivel 1" o "Nivel 2" aparece una explicación de qué
+   significa cada uno. Y el Modo Examen ya no corrige nada al momento (ni el acierto/fallo de cada
+   palabra, ni el color del texto, ni pide escribir la respuesta correcta tras fallar): ahora,
+   igual que el resto de Exámenes de la app, todo se corrige junto al terminar todo el ejercicio.
+   El Modo Estudio sigue funcionando igual que hasta ahora (con ayuda y corrección al momento). */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -3369,7 +3388,7 @@ const SIMON_COLORS=['red','green','blue','yellow'];
 const SIMON_EMOJI={red:'🔴',green:'🟢',blue:'🔵',yellow:'🟡'};
 const SIMON_HEX={red:'#e11d48',green:'#16a34a',blue:'#2563eb',yellow:'#f59e0b'};
 const SIMON_LIGHT={red:'#ffd7de',green:'#c9f2d8',blue:'#cfe0ff',yellow:'#ffe6a8'};
-function makeSimonState(){return {seq:[],pos:0,round:0,maxRound:8,active:null,input:false,ready:true,done:false};}
+function makeSimonState(){return {seq:[],pos:0,round:0,maxRound:15,active:null,input:false,ready:true,done:false};}
 function simonNextRound(g){
   g.seq.push(SIMON_COLORS[Math.floor(Math.random()*4)]);
   g.round++;g.pos=0;g.input=false;g.active=null;g.ready=true;render();
@@ -3438,16 +3457,25 @@ const miniActions={
     else if(g.moves>=g.maxMoves){g.done='timeout';miniClearTimer(g);}
     render();
   },
+  /* al pulsar un color, se destaca igual que cuando Simón "enseña" la secuencia (mismo g.active,
+     con su brillo y su color fuerte en simonHTML) -- un pequeño flash antes de comprobar si
+     acertó, para que Julia vea que su pulsación se ha registrado. Se bloquea la entrada mientras
+     dura el flash para evitar pulsaciones dobles. */
   miniSimon(b){
     const g=ui.mgame;if(!g||g.kind!=='simon'||!g.input||g.done)return;
     const c=b.dataset.c;
-    if(c!==g.seq[g.pos]){g.done='lost';render();return;}
-    g.pos++;
-    if(g.pos>=g.seq.length){
-      if(g.round>=g.maxRound){g.done='won';render();return;}
-      g.input=false;render();
-      setTimeout(()=>{const g2=ui.mgame;if(!g2||g2.kind!=='simon')return;simonNextRound(g2);},700);
-    }else render();
+    g.active=c;g.input=false;render();
+    setTimeout(()=>{
+      const g2=ui.mgame;if(!g2||g2.kind!=='simon')return;
+      g2.active=null;
+      if(c!==g2.seq[g2.pos]){g2.done='lost';render();return;}
+      g2.pos++;
+      if(g2.pos>=g2.seq.length){
+        if(g2.round>=g2.maxRound){g2.done='won';render();return;}
+        render();
+        setTimeout(()=>{const g3=ui.mgame;if(!g3||g3.kind!=='simon')return;simonNextRound(g3);},500);
+      }else{g2.input=true;render();}
+    },220);
   },
   miniDone(){endMiniGame();},
   miniPreview(b){
@@ -3551,6 +3579,22 @@ function morfoExpectedLabel(cat,subKey){
   const sub=subKey?morfoSubLabel(cat,subKey):'';
   return sub?`${MORFO_LABEL[cat]} ${sub.toLowerCase()}`:MORFO_LABEL[cat];
 }
+/* corrección de "escríbelo tú" en Análisis Morfológico: a diferencia de textCloseEnough (p5a.js,
+   que tolera alguna errata suelta, usada en Estudio de temas), aquí NO se tolera ninguna falta de
+   ortografía -- cada palabra de la respuesta correcta tiene que estar bien escrita en lo que ha
+   puesto Julia (mayúsculas y tildes no cuentan, pero el resto de letras sí). Si falta alguna o
+   está mal escrita, se devuelve para poder decirle cuál en concreto. */
+function morfoWriteGrade(given,expectedText){
+  const origWords=expectedText.split(/\s+/).filter(Boolean);
+  const gset=new Set(exNorm(given).split(' ').filter(Boolean));
+  const missing=[];
+  origWords.forEach(w=>{
+    const nw=exNorm(w);
+    if(!nw)return;
+    if(!gset.has(nw))missing.push(w.replace(/^[^\p{L}]+|[^\p{L}]+$/gu,''));
+  });
+  return {ok:missing.length===0,missing:[...new Set(missing.filter(Boolean))]};
+}
 /* la explicación de "por qué" es esa categoría/subtipo: la del subtipo si lo hay (más concreta,
    p.ej. adjetivo calificativo -> "Expresa una cualidad del sustantivo."), si no la de la
    categoría general. Se usa tanto en la respuesta del ejercicio ("Es adjetivo calificativo,
@@ -3648,7 +3692,7 @@ async function morfoGenText(){
    no cada vez que Julia (o el tutor) lo abre. Si el tutor edita el texto, saveDict/saveMorfo
    borran esta caché para que se vuelva a analizar como la primera vez. */
 function morfoStart(text,title,backScreen,rec){
-  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,morf:{},i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',nivel:1,writeGiven:'',writeOk:false,back:backScreen||'list',start:Date.now()};
+  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,morf:{},i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',nivel:1,writeGiven:'',writeOk:false,extra:null,back:backScreen||'list',start:Date.now()};
   ui.screen='morfo';render();
   const tokens=getWords(text).slice(0,220);
   if(rec&&Array.isArray(rec.morfoCats)&&rec.morfoCats.length===tokens.length){
@@ -3674,31 +3718,75 @@ function morfoFinish(){
   touchSes(s);
 }
 function morfoTextHTML(st){
+  /* en Modo Examen no se revela nada hasta el final (como el resto de Exámenes de la app): las
+     palabras ya respondidas no se colorean en verde/rojo según si se acertó o no (ni se ve su
+     categoría al pasar el ratón) hasta llegar a stage 'done'. En Modo Estudio se sigue revelando
+     al momento, como hasta ahora. */
+  const reveal=st.level!=='examen'||st.stage==='done';
   let out='',pos=0;
   st.tokens.forEach((w,k)=>{
     out+=esc(st.text.slice(pos,w.i));
     const r=st.results[k];
     if(k===st.i&&st.stage==='answer')out+=`<span style="background:#ece9fb;color:var(--pri2);font-weight:800;border-radius:6px;padding:0 4px">${esc(w.t)}</span>`;
-    else if(r)out+=`<span class="${r.ok?'fixed':'miss'}" title="${esc(MORFO_LABEL[r.correct])}">${esc(w.t)}</span>`;
+    else if(r&&reveal)out+=`<span class="${r.ok?'fixed':'miss'}" title="${esc(MORFO_LABEL[r.correct])}">${esc(w.t)}</span>`;
+    else if(r)out+=`<span style="opacity:.55">${esc(w.t)}</span>`;
     else out+=esc(w.t);
     pos=w.e;
   });
   return out+esc(st.text.slice(pos));
 }
-/* panel "extra" que aparece 1 de cada MORFO_EXTRA_EVERY palabras (junto al resultado de esa
-   palabra, antes de "Siguiente"): si es variable/invariable (se saca directo de la categoría,
-   sin IA) y, cuando la IA ha podido darla, la raíz y los morfemas (flexivos/derivativos) de esa
-   palabra en concreto -- con su teoría correspondiente siempre visible debajo. */
+/* panel "extra" que aparece 1 de cada MORFO_EXTRA_EVERY palabras, DESPUÉS de responder esa
+   palabra: ya no es información que se le cuenta a Julia sin más -- es un ejercicio que tiene que
+   hacer ella: (1) decir si la palabra es variable o invariable, y, cuando la IA pudo darla,
+   (2) escribir la raíz y (3) decir de qué tipo es cada morfema (flexivo/derivativo). En Modo
+   Estudio se le puede mostrar la teoría de ayuda junto a cada paso; en Modo Examen no. Hasta que
+   no se completen todos los pasos que apliquen a esa palabra no se habilita "Siguiente" (ver
+   morfoWriteGateHTML, que comprueba st.extra.stage==='done'). */
+function morfoExtraNeeded(st){return (st.i+1)%MORFO_EXTRA_EVERY===0;}
+function morfoMakeExtra(){return {stage:'varinv',varPick:null,varOk:null,raizGiven:'',raizChecked:false,raizOk:null,morfIdx:0,morfPicks:[]};}
+function morfoVarInvCardHTML(key){
+  const c=key==='variable'?{ico:'🔄',bg:'#eafbea',bd:'#a9e3ad',l:'Variable'}:{ico:'⛔',bg:'#fde8e8',bd:'#f0b4b4',l:'Invariable'};
+  return `<div class="mcard" style="background:${c.bg};border-color:${c.bd}"><div class="mtop"><span class="ico">${c.ico}</span><h3>${c.l}</h3></div><p>${esc(MORFO_VAR_THEORY[key])}</p></div>`;
+}
 function morfoExtraHTML(st){
-  if((st.i+1)%MORFO_EXTRA_EVERY!==0)return '';
+  const ex=st.extra;if(!ex)return '';
   const cat=st.cats[st.i],variable=MORFO_VARIABLE[cat];
   const morf=st.morf&&st.morf[st.i];
-  const segHTML=morf?`<p style="margin:6px 0"><b>Raíz y morfemas de «${esc(st.tokens[st.i].t)}»:</b> ${esc(morf.raiz)} <i class="mute">(raíz)</i>${morf.morfemas.length?' + '+morf.morfemas.map(m=>`${esc(m.t)} <i class="mute">(${m.tipo})</i>`).join(' + '):' — sin morfemas, es invariable'}</p>`:'';
+  const word=st.tokens[st.i].t;
+  const estudio=st.level==='estudio';
+  let body='';
+  if(ex.stage==='varinv'){
+    body=`<p style="margin:6px 0 10px">¿Esta palabra es <b>variable</b> o <b>invariable</b>?</p>
+    ${estudio&&!ex.varPick?`<div class="mgrid" style="margin-bottom:10px">${morfoVarInvCardHTML('variable')}${morfoVarInvCardHTML('invariable')}</div>`:''}
+    <div class="row" style="gap:8px">
+    <button class="btn ${ex.varPick?(ex.varPick==='variable'?(ex.varOk?'success':'danger'):''):''}" data-act="morfoExtraVar" data-v="variable" ${ex.varPick?'disabled':''}>🔄 Variable</button>
+    <button class="btn ${ex.varPick?(ex.varPick==='invariable'?(ex.varOk?'success':'danger'):''):''}" data-act="morfoExtraVar" data-v="invariable" ${ex.varPick?'disabled':''}>⛔ Invariable</button>
+    </div>
+    ${ex.varPick?`<div class="msg ${ex.varOk?'right':'wrong'}" style="margin-top:8px">${ex.varOk?'✅ ¡Correcto!':`La respuesta correcta es: ${variable?'VARIABLE':'INVARIABLE'}.`} ${esc(variable?MORFO_VAR_THEORY.variable:MORFO_VAR_THEORY.invariable)}</div>
+    <div class="row" style="margin-top:8px"><button class="btn primary" data-act="morfoExtraContinue">Continuar ➜</button></div>`:''}`;
+  }else if(ex.stage==='raiz'){
+    body=`<p style="margin:6px 0 10px">Escribe la <b>raíz</b> de «${esc(word)}»:</p>
+    ${estudio?`<p class="mute" style="font-size:.85rem;margin:0 0 8px">${esc(MORFO_MORF_THEORY.raiz)}</p>`:''}
+    <input type="text" id="morfoExtraRaiz" data-enter="morfoExtraRaiz" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" value="${esc(ex.raizGiven||'')}" style="font-size:1.05rem;text-align:center;width:100%" ${ex.raizChecked?'disabled':''}>
+    ${!ex.raizChecked?`<div class="row" style="margin-top:8px"><button class="btn primary" data-act="morfoExtraRaizCheck">✔ Comprobar</button></div>`
+    :`<div class="msg ${ex.raizOk?'right':'wrong'}" style="margin-top:8px">${ex.raizOk?'✅ ¡Correcto!':`La raíz correcta es: <b>${esc(morf.raiz)}</b>`}</div>
+    <div class="row" style="margin-top:8px"><button class="btn primary" data-act="morfoExtraContinue">Continuar ➜</button></div>`}`;
+  }else if(ex.stage==='morf'){
+    const m=morf.morfemas[ex.morfIdx],pick=ex.morfPicks[ex.morfIdx];
+    body=`<p style="margin:6px 0 10px">El trocito «${esc(m.t)}» de «${esc(word)}» (morfema ${ex.morfIdx+1} de ${morf.morfemas.length}), ¿es <b>flexivo</b> o <b>derivativo</b>?</p>
+    ${estudio?`<p class="mute" style="font-size:.85rem;margin:0 0 8px">${esc(MORFO_MORF_THEORY.flexivo)} ${esc(MORFO_MORF_THEORY.derivativo)}</p>`:''}
+    <div class="row" style="gap:8px">
+    <button class="btn ${pick?(pick.pick==='flexivo'?(pick.ok?'success':'danger'):''):''}" data-act="morfoExtraMorf" data-v="flexivo" ${pick?'disabled':''}>Flexivo</button>
+    <button class="btn ${pick?(pick.pick==='derivativo'?(pick.ok?'success':'danger'):''):''}" data-act="morfoExtraMorf" data-v="derivativo" ${pick?'disabled':''}>Derivativo</button>
+    </div>
+    ${pick?`<div class="msg ${pick.ok?'right':'wrong'}" style="margin-top:8px">${pick.ok?'✅ ¡Correcto!':`La respuesta correcta es: ${m.tipo}.`}</div>
+    <div class="row" style="margin-top:8px"><button class="btn primary" data-act="morfoExtraContinue">${ex.morfIdx+1<morf.morfemas.length?'Siguiente morfema ➜':'Continuar ➜'}</button></div>`:''}`;
+  }else{
+    body=`<div class="msg right">✅ ¡Análisis extra completado!</div>`;
+  }
   return `<div class="panel" style="border-color:var(--pri);background:#f1e9ff;margin-top:10px">
   <b>🧩 Análisis extra (1 de cada ${MORFO_EXTRA_EVERY} palabras)</b>
-  <p style="margin:6px 0">Es una palabra <b>${variable?'VARIABLE':'INVARIABLE'}</b>: ${esc(variable?MORFO_VAR_THEORY.variable:MORFO_VAR_THEORY.invariable)}</p>
-  ${segHTML}
-  <p class="mute" style="font-size:.82rem;margin:6px 0 0">${esc(MORFO_MORF_THEORY.raiz)} ${esc(MORFO_MORF_THEORY.flexivo)} ${esc(MORFO_MORF_THEORY.derivativo)}</p>
+  ${body}
   </div>`;
 }
 /* cuando falla una palabra, antes de poder pasar a la siguiente Julia tiene que escribir ella
@@ -3709,12 +3797,39 @@ function morfoExtraHTML(st){
    la primera (stage 'ok') no hace falta nada de esto: el botón "Siguiente" aparece directamente,
    como hasta ahora. */
 function morfoWriteGateHTML(st,cat,sub){
-  if(st.stage!=='wrong')return `<div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`;
-  if(st.writeOk)return `<div class="msg right" style="margin-top:10px">✅ ¡Muy bien escrito!</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`;
-  return `<div class="panel" style="border-color:var(--pri);background:#f1e9ff;margin-top:10px">
-  <b>✍️ Para continuar, escribe tú la respuesta correcta completa, con el porqué:</b>
-  <textarea id="morfoWriteAns" data-enter="morfoWriteAns" placeholder="Escribe aquí la categoría y, con «porque…», la explicación…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:60px;margin-top:8px">${esc(st.writeGiven||'')}</textarea>
-  <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="morfoWriteCheck">✔ Comprobar</button></div>
+  /* en Modo Examen no se corrige nada hasta el final (como el resto de Exámenes de la app), así
+     que aquí no se le pide a Julia que escriba la respuesta correcta tras fallar -- eso revelaría
+     al momento si ha acertado o no. Solo se aplica en Modo Estudio. */
+  if(st.level!=='examen'&&st.stage==='wrong'&&!st.writeOk){
+    return `<div class="panel" style="border-color:var(--pri);background:#f1e9ff;margin-top:10px">
+    <b>✍️ Para continuar, escribe tú la respuesta correcta completa, con el porqué:</b>
+    <textarea id="morfoWriteAns" data-enter="morfoWriteAns" placeholder="Escribe aquí la categoría y, con «porque…», la explicación…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:60px;margin-top:8px">${esc(st.writeGiven||'')}</textarea>
+    <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="morfoWriteCheck">✔ Comprobar</button></div>
+    </div>`;
+  }
+  let html=(st.level!=='examen'&&st.stage==='wrong')?`<div class="msg right" style="margin-top:10px">✅ ¡Muy bien escrito!</div>`:'';
+  /* el "análisis extra" (cada 5 palabras) también hay que terminarlo antes de poder seguir --
+     mientras no esté en stage 'done', morfoExtraHTML ya está mostrando su propio paso pendiente
+     justo encima, así que aquí todavía no se añade el botón "Siguiente". */
+  if(st.extra&&st.extra.stage!=='done')return html;
+  return html+`<div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`;
+}
+/* en Modo Estudio, al pasar el ratón por una opción de respuesta, en vez de un texto plano con la
+   teoría, se ve la misma tarjeta de colores (icono + título + explicación + ejemplos) que en la
+   ficha "📘 Ver la teoría" (morfoTheoryBodyHTML) -- mismo estilo .mcard, más visual y fácil para
+   una niña de primaria. Si la opción es un subtipo concreto (nivel 2), se usan su propia
+   explicación y ejemplos (no los genéricos de toda la categoría). */
+function morfoOptionCardHTML(o){
+  const c=MORFO_CATS.find(x=>x.k===o.cat);
+  let desc=MORFO_THEORY[o.cat],ej=c.ej;
+  if(o.sub){
+    const s=(MORFO_SUBTYPES[o.cat]||[]).find(x=>x.k===o.sub);
+    if(s){desc=s.d;ej=s.ej;}
+  }
+  return `<div class="mcard" style="background:${c.bg};border-color:${c.bd}">
+  <div class="mtop"><span class="ico">${c.ico}</span><h3>${esc(o.l)}</h3></div>
+  <p>${esc(desc)}</p>
+  <div class="mex">Ejemplos: <b>${esc(ej)}</b></div>
   </div>`;
 }
 function morfoBody(){
@@ -3724,22 +3839,23 @@ function morfoBody(){
   if(st.stage==='done'){
     const bad=st.results.map((r,i)=>({r,w:st.tokens[i].t})).filter(x=>!x.r.ok);
     return `<div class="panel" style="border-color:var(--ok);background:var(--okbg)"><h2 style="margin:0">${st.ok===st.tokens.length?'🎉 ¡Perfecto!':'💪 ¡Bien hecho!'}</h2><div style="font-size:1.4rem;font-weight:800;margin-top:6px">${st.ok} de ${st.tokens.length} palabras bien clasificadas</div></div>
-    ${bad.length?`<h3>Repasa estas</h3><div class="list">${bad.map(x=>{const correctTxt=esc(MORFO_LABEL[x.r.correct])+(x.r.correctSub?` (${esc(morfoSubLabel(x.r.correct,x.r.correctSub))})`:'');const pickTxt=esc(MORFO_LABEL[x.r.pick]||x.r.pick)+(x.r.pickSub?` (${esc(morfoSubLabel(x.r.pick,x.r.pickSub))})`:'');const why=morfoWhy(x.r.correct,x.r.correctSub);const whyTxt=why?`, porque ${esc(lcFirst(stripDot(why)))}`:'';return `<div class="panel" style="padding:10px 14px"><b>${esc(x.w)}</b>: pusiste <span class="wrong">${pickTxt}</span>, era <span class="right">${correctTxt}</span>${whyTxt}</div>`;}).join('')}</div>`:''}
+    ${bad.length?`<h3>Repasa estas</h3><div class="list">${bad.map(x=>{const correctTxt=esc(MORFO_LABEL[x.r.correct])+(x.r.correctSub?` ${esc(morfoSubLabel(x.r.correct,x.r.correctSub).toLowerCase())}`:'');const pickTxt=esc(MORFO_LABEL[x.r.pick]||x.r.pick)+(x.r.pickSub?` ${esc(morfoSubLabel(x.r.pick,x.r.pickSub).toLowerCase())}`:'');const why=morfoWhy(x.r.correct,x.r.correctSub);const whyTxt=why?`, porque ${esc(lcFirst(stripDot(why)))}`:'';return `<div class="panel" style="padding:10px 14px"><b>${esc(x.w)}</b>: pusiste <span class="wrong">${pickTxt}</span>, la respuesta correcta es: <span class="right">${correctTxt}</span>${whyTxt}</div>`;}).join('')}</div>`:''}
     <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="morfoBack">← Volver</button></div>`;
   }
   const w=st.tokens[st.i];
-  const cat=st.cats[st.i],sub=(st.subcats&&st.subcats[st.i])||'',subTxt=sub?` (${esc(morfoSubLabel(cat,sub))})`:'';
+  const cat=st.cats[st.i],sub=(st.subcats&&st.subcats[st.i])||'',subTxt=sub?` ${esc(morfoSubLabel(cat,sub).toLowerCase())}`:'';
   const whyTxt=(()=>{const why=morfoWhy(cat,sub);return why?`, porque ${esc(lcFirst(stripDot(why)))}`:'';})();
   return `<p class="mute" style="margin:4px 0 10px">Palabra ${st.i+1} de ${st.tokens.length}</p>
   <div class="panel" style="line-height:2">${morfoTextHTML(st)}</div>
   <div class="panel" style="text-align:center"><div style="font-size:1.6rem;font-weight:800">${esc(w.t)}</div><p class="mute" style="margin:4px 0 0">¿Qué tipo de palabra es?</p></div>
   ${st.stage==='answer'?`<div class="opts" style="grid-template-columns:repeat(${st.nivel===2?1:2},1fr)">${morfoOptions(st.nivel).map(o=>{
-    const tip=o.sub?morfoWhy(o.cat,o.sub):morfoTheoryText(o.cat);
     return st.level==='examen'
       ?`<button data-act="morfoPick" data-k="${o.cat}" data-sub="${esc(o.sub)}">${esc(o.l)}</button>`
-      :`<span class="wrule" style="display:block"><button class="wrule-btn" data-act="morfoPick" data-k="${o.cat}" data-sub="${esc(o.sub)}">${esc(o.l)}</button><span class="wrule-tip" style="max-width:340px">${esc(tip)}</span></span>`;
+      :`<span class="wrule" style="display:block"><button class="wrule-btn" data-act="morfoPick" data-k="${o.cat}" data-sub="${esc(o.sub)}">${esc(o.l)}</button><span class="wrule-tip" style="max-width:300px;width:280px;background:none;border:none;box-shadow:none;padding:0">${morfoOptionCardHTML(o)}</span></span>`;
   }).join('')}</div>`
-   :`<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?`✅ ¡Correcto! Es ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`:`❌ Era: ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`}</div>${morfoExtraHTML(st)}${morfoWriteGateHTML(st,cat,sub)}`}
+   :(st.level==='examen'
+      ? `${morfoExtraHTML(st)}${morfoWriteGateHTML(st,cat,sub)}`
+      : `<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?`✅ ¡Correcto! Es ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`:`❌ La respuesta correcta es: ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`}</div>${morfoExtraHTML(st)}${morfoWriteGateHTML(st,cat,sub)}`)}
   <div class="row" style="margin-top:14px;justify-content:space-between">${st.i>0?`<button class="link" data-act="morfoPrev">← Anterior</button>`:'<span></span>'}<button class="link" data-act="morfoBack">← Salir</button></div>`;
 }
 function renderMorfo(){
@@ -3749,15 +3865,15 @@ function renderMorfo(){
      que no se acabe". */
   const locked=st.level==='examen'&&st.stage!=='done';
   const lvlRow=st.tokens.length?`<div class="row" style="margin:6px 0;gap:8px;flex-wrap:wrap">
-  <button class="btn ${st.nivel===2?'':'primary'}" data-act="morfoNivel" data-nv="1" ${locked?'disabled':''}>Nivel 1</button>
-  <button class="btn ${st.nivel===2?'primary':''}" data-act="morfoNivel" data-nv="2" ${locked?'disabled':''}>Nivel 2</button>
+  <button class="btn ${st.nivel===2?'':'primary'}" data-act="morfoNivel" data-nv="1" ${locked?'disabled':''} title="Nivel 1: solo hay que decir la categoría general de la palabra (sustantivo, verbo, adjetivo, adverbio, artículo, pronombre, preposición o conjunción).">Nivel 1</button>
+  <button class="btn ${st.nivel===2?'primary':''}" data-act="morfoNivel" data-nv="2" ${locked?'disabled':''} title="Nivel 2: además de la categoría, cuando la palabra es pronombre, adverbio o adjetivo hay que decir también el tipo exacto (por ejemplo, no solo «adverbio», sino «adverbio de tiempo»).">Nivel 2</button>
   </div>
   <div class="row" style="margin:0 0 10px;gap:8px;flex-wrap:wrap">
   <button class="btn ${st.level==='examen'?'':'primary'}" data-act="morfoLevel" data-lv="estudio" ${locked?'disabled':''}>📖 Estudio</button>
   <button class="btn ${st.level==='examen'?'primary':''}" data-act="morfoLevel" data-lv="examen" ${locked?'disabled':''}>📝 Examen</button>
-  </div><p class="mute" style="margin:0 0 10px;font-size:.88rem">${st.nivel===2?'Nivel 2: hay que acertar también el subtipo exacto (p. ej. «Adverbio de tiempo»).':'Nivel 1: solo la categoría general.'} ${st.level==='examen'?'Modo examen: sin ayuda, solo se ve el nombre de cada opción' + (locked?', y no se puede cambiar de nivel ni de modo hasta terminar':'') + '.':'Modo estudio: pasa el ratón por una opción para ver qué significa.'}</p>`:'';
+  </div><p class="mute" style="margin:0 0 10px;font-size:.88rem">${st.nivel===2?'Nivel 2: hay que acertar también el subtipo exacto (p. ej. «Adverbio de tiempo»).':'Nivel 1: solo la categoría general.'} ${st.level==='examen'?'Modo examen: sin ayuda, y no se corrige nada hasta terminar todo el ejercicio' + (locked?', tampoco se puede cambiar de nivel ni de modo hasta entonces':'') + '.':'Modo estudio: pasa el ratón por una opción para ver qué significa.'}</p>`:'';
   app.innerHTML=`<div class="row" style="justify-content:space-between;align-items:flex-start"><h2 style="margin:0">🔤 Análisis Morfológico</h2><button class="link" data-act="goMorfoTheory">📘 Ver la teoría</button></div><p class="mute" style="margin:2px 0 10px">${esc(st.title)}</p>${lvlRow}${morfoBody()}`;
-  const ta=$('#morfoWriteAns');if(ta)ta.focus();
+  const ta=$('#morfoWriteAns')||$('#morfoExtraRaiz');if(ta)ta.focus();
 }
 /* ================= ficha de teoría =================
    El mismo contenido que se le dio a David como PDF para imprimir, ahora también dentro de la
@@ -3825,32 +3941,82 @@ const morfoActions={
     const ok=st.nivel===2?(pick===correct&&pickSub===correctSub):(pick===correct);
     st.results[st.i]={ok,pick,pickSub,correct,correctSub};if(ok)st.ok++;
     st.stage=ok?'ok':'wrong';st.writeGiven='';st.writeOk=false;
+    st.extra=morfoExtraNeeded(st)?morfoMakeExtra():null;
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  /* los 3 pasos del "análisis extra" (cada 5 palabras): variable/invariable, raíz y tipo de cada
+     morfema. Un solo intento por paso (como el resto de preguntas de elegir), se revela la
+     respuesta correcta si falla y se puede seguir -- a diferencia de "escríbelo tú", aquí no hace
+     falta acertar para avanzar de paso, solo haberlo intentado. */
+  morfoExtraVar(b){
+    const st=ui.morfo;if(!st||!st.extra||st.extra.stage!=='varinv'||st.extra.varPick)return;
+    const cat=st.cats[st.i],variable=MORFO_VARIABLE[cat],v=b.dataset.v;
+    st.extra.varPick=v;st.extra.varOk=(v==='variable')===variable;
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  morfoExtraRaizCheck(){
+    const st=ui.morfo;if(!st||!st.extra||st.extra.stage!=='raiz'||st.extra.raizChecked)return;
+    const morf=st.morf&&st.morf[st.i];if(!morf)return;
+    const v=($('#morfoExtraRaiz')&&$('#morfoExtraRaiz').value||'').trim();
+    if(!v)return toast('Escribe la raíz primero');
+    st.extra.raizGiven=v;st.extra.raizChecked=true;st.extra.raizOk=exNorm(v)===exNorm(morf.raiz);
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  morfoExtraMorf(b){
+    const st=ui.morfo;if(!st||!st.extra||st.extra.stage!=='morf')return;
+    const morf=st.morf&&st.morf[st.i];if(!morf)return;
+    const ex=st.extra;if(ex.morfPicks[ex.morfIdx])return;
+    const m=morf.morfemas[ex.morfIdx],v=b.dataset.v;
+    ex.morfPicks[ex.morfIdx]={pick:v,ok:v===m.tipo};
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  /* avanza al siguiente paso del análisis extra que aplique a esta palabra (se salta raíz/morfemas
+     si la IA no los dio para esta palabra en concreto, o si la palabra no tiene morfemas por ser
+     invariable), hasta llegar a 'done' (con lo que ya se habilita "Siguiente", ver
+     morfoWriteGateHTML). */
+  morfoExtraContinue(){
+    const st=ui.morfo;if(!st||!st.extra)return;
+    const ex=st.extra,morf=st.morf&&st.morf[st.i];
+    if(ex.stage==='varinv'){
+      ex.stage=(morf&&morf.raiz)?'raiz':(morf&&morf.morfemas&&morf.morfemas.length?'morf':'done');
+      if(ex.stage==='morf'){ex.morfIdx=0;ex.morfPicks=morf.morfemas.map(()=>null);}
+    }else if(ex.stage==='raiz'){
+      if(morf&&morf.morfemas&&morf.morfemas.length){ex.stage='morf';ex.morfIdx=0;ex.morfPicks=morf.morfemas.map(()=>null);}
+      else ex.stage='done';
+    }else if(ex.stage==='morf'){
+      if(ex.morfIdx+1<morf.morfemas.length)ex.morfIdx++;
+      else ex.stage='done';
+    }
     const y=scrollY;render();scrollTo(0,y);
   },
   /* "escríbelo tú": comprueba lo que ha escrito contra la categoría (y subtipo, en nivel 2)
-     correcta de la palabra fallada; hasta que no la escriba razonablemente bien no se habilita
-     "Siguiente" (ver morfoWriteGateHTML). */
+     correcta de la palabra fallada, Y el porqué de la explicación completa -- no se tolera
+     ninguna falta de ortografía (ver morfoWriteGrade); si hay alguna palabra mal escrita o que
+     falta, se le dice cuál en concreto para que la corrija. Hasta que no esté toda bien no se
+     habilita "Siguiente" (ver morfoWriteGateHTML). */
   morfoWriteCheck(){
     const st=ui.morfo;if(!st||st.stage!=='wrong')return;
     const r=st.results[st.i];if(!r)return;
     const v=($('#morfoWriteAns')&&$('#morfoWriteAns').value||'').trim();st.writeGiven=v;
     if(!v)return toast('Escribe la respuesta correcta primero');
     /* la respuesta completa: categoría (+subtipo en nivel 2) Y el porqué de la explicación --
-       igual que se le muestra arriba ("Era: Adjetivo (Calificativo), porque..."), pero sin exigir
-       los signos de puntuación (eso ya lo ignora textCloseEnough/exNorm). */
+       igual que se le muestra arriba ("La respuesta correcta es: Adjetivo calificativo,
+       porque..."), pero sin exigir los signos de puntuación (eso ya lo ignora exNorm). */
     const why=morfoWhy(r.correct,r.correctSub);
     const label=morfoExpectedLabel(r.correct,st.nivel===2?r.correctSub:'');
     const expected=label+(why?', porque '+lcFirst(stripDot(why)):'');
-    if(textCloseEnough(v,expected))st.writeOk=true;
-    else toast('Todavía no es correcto del todo (recuerda incluir también el porqué), mira la respuesta de arriba e inténtalo otra vez');
+    const g=morfoWriteGrade(v,expected);
+    if(g.ok)st.writeOk=true;
+    else toast(g.missing.length===1?`Esta palabra no está bien escrita: «${g.missing[0]}». Revísala e inténtalo otra vez.`:`Estas palabras no están bien escritas: ${g.missing.map(w=>'«'+w+'»').join(', ')}. Revísalas e inténtalo otra vez.`);
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoNext(){
     const st=ui.morfo;if(!st)return;
-    if(st.stage==='wrong'&&!st.writeOk)return toast('Escribe primero la respuesta correcta');
+    if(st.level!=='examen'&&st.stage==='wrong'&&!st.writeOk)return toast('Escribe primero la respuesta correcta');
+    if(st.extra&&st.extra.stage!=='done')return toast('Termina primero el análisis extra');
     st.i++;
     if(st.i>=st.tokens.length){st.stage='done';morfoFinish();const y=scrollY;render();scrollTo(0,y);return;}
-    st.stage='answer';st.writeGiven='';st.writeOk=false;
+    st.stage='answer';st.writeGiven='';st.writeOk=false;st.extra=null;
     /* igual que en mates/exámenes/estudio: cada X palabras (la frecuencia de Ajustes) aparece un
        minijuego de descanso. Se comprueba YA con la siguiente palabra lista (stage 'answer'),
        para que al volver del minijuego se pueda seguir directamente. */
@@ -3866,7 +4032,7 @@ const morfoActions={
     st.i--;
     const prev=st.results[st.i];
     if(prev){if(prev.ok)st.ok=Math.max(0,st.ok-1);st.results[st.i]=null;}
-    st.stage='answer';st.writeGiven='';st.writeOk=false;
+    st.stage='answer';st.writeGiven='';st.writeOk=false;st.extra=null;
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoBack(){const back=(ui.morfo&&ui.morfo.back)||'list';ui.morfo=null;ui.screen=back;render();},
@@ -4884,7 +5050,8 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
   if(t.dataset.enter==='spSentAns'){const r=ui.spRun;if(r&&r.stage==='checked')spellRunActions.spSentNext();else spellRunActions.spSentCheck();}
   if(t.dataset.enter==='spDictRetype')spellRunActions.spDictRetypeCheck();
   if(t.dataset.enter==='studyWriteAns')studyActions.studyWriteCheck();
-  if(t.dataset.enter==='morfoWriteAns')morfoActions.morfoWriteCheck();});
+  if(t.dataset.enter==='morfoWriteAns')morfoActions.morfoWriteCheck();
+  if(t.dataset.enter==='morfoExtraRaiz')morfoActions.morfoExtraRaizCheck();});
 render();
 async function readDictPhotos(files){
   const st=$('#dictPhotoSt');if(!state.ai.photoOn){if(st)st.textContent='';return toast('Activa la IA de fotos en Ajustes para leer fotos');}
