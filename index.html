@@ -845,7 +845,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.12-17';
+const APP_VERSION='2026.10.12-18';
 /* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
    la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
    esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
@@ -937,7 +937,11 @@ const APP_VERSION='2026.10.12-17';
    categoría, y el subtipo en Nivel 2) y en el dictado de Spelling escrito en el ordenador (vuelve
    a escribir la palabra bien). No hace falta una copia exacta letra a letra: se admiten mayúsculas,
    tildes y alguna errata suelta, pero sí que esté razonablemente bien escrita. No se aplica en
-   Exámenes (se corrigen al final) ni en Matemáticas. */
+   Exámenes (se corrigen al final) ni en Matemáticas.
+   v2026.10.12-18: en Análisis Morfológico, al fallar una palabra, ahora hay que escribir la
+   respuesta correcta COMPLETA: la categoría (y el subtipo en Nivel 2) Y el porqué de la
+   explicación, no solo la categoría a secas. Al comprobarlo no se tienen en cuenta los signos de
+   puntuación (paréntesis, comas, puntos...), solo que las palabras en sí estén bien escritas. */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -3698,15 +3702,18 @@ function morfoExtraHTML(st){
   </div>`;
 }
 /* cuando falla una palabra, antes de poder pasar a la siguiente Julia tiene que escribir ella
-   misma la categoría (y el subtipo, en nivel 2) correcta -- ver morfoWriteCheck y
-   textCloseEnough (p5a.js). Si acertó a la primera (stage 'ok') no hace falta nada de esto: el
-   botón "Siguiente" aparece directamente, como hasta ahora. */
+   misma la respuesta correcta COMPLETA: la categoría (y el subtipo, en nivel 2) Y el porqué de la
+   explicación -- no solo la categoría a secas -- ver morfoWriteCheck y textCloseEnough (p5a.js).
+   Al comprobarlo no se tienen en cuenta signos de puntuación (paréntesis, comas, puntos...),
+   mayúsculas ni tildes -- solo que las palabras en sí estén bien (ver exNorm, p5a.js). Si acertó a
+   la primera (stage 'ok') no hace falta nada de esto: el botón "Siguiente" aparece directamente,
+   como hasta ahora. */
 function morfoWriteGateHTML(st,cat,sub){
   if(st.stage!=='wrong')return `<div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`;
   if(st.writeOk)return `<div class="msg right" style="margin-top:10px">✅ ¡Muy bien escrito!</div><div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`;
   return `<div class="panel" style="border-color:var(--pri);background:#f1e9ff;margin-top:10px">
-  <b>✍️ Para continuar, escribe tú la respuesta correcta:</b>
-  <textarea id="morfoWriteAns" data-enter="morfoWriteAns" placeholder="Escribe aquí la categoría correcta…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:50px;margin-top:8px">${esc(st.writeGiven||'')}</textarea>
+  <b>✍️ Para continuar, escribe tú la respuesta correcta completa, con el porqué:</b>
+  <textarea id="morfoWriteAns" data-enter="morfoWriteAns" placeholder="Escribe aquí la categoría y, con «porque…», la explicación…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:60px;margin-top:8px">${esc(st.writeGiven||'')}</textarea>
   <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="morfoWriteCheck">✔ Comprobar</button></div>
   </div>`;
 }
@@ -3828,9 +3835,14 @@ const morfoActions={
     const r=st.results[st.i];if(!r)return;
     const v=($('#morfoWriteAns')&&$('#morfoWriteAns').value||'').trim();st.writeGiven=v;
     if(!v)return toast('Escribe la respuesta correcta primero');
-    const expected=morfoExpectedLabel(r.correct,st.nivel===2?r.correctSub:'');
+    /* la respuesta completa: categoría (+subtipo en nivel 2) Y el porqué de la explicación --
+       igual que se le muestra arriba ("Era: Adjetivo (Calificativo), porque..."), pero sin exigir
+       los signos de puntuación (eso ya lo ignora textCloseEnough/exNorm). */
+    const why=morfoWhy(r.correct,r.correctSub);
+    const label=morfoExpectedLabel(r.correct,st.nivel===2?r.correctSub:'');
+    const expected=label+(why?', porque '+lcFirst(stripDot(why)):'');
     if(textCloseEnough(v,expected))st.writeOk=true;
-    else toast('Todavía no es correcto del todo, mira la respuesta de arriba e inténtalo otra vez');
+    else toast('Todavía no es correcto del todo (recuerda incluir también el porqué), mira la respuesta de arriba e inténtalo otra vez');
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoNext(){
