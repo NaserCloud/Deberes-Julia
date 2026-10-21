@@ -37,6 +37,11 @@ h1{font-size:2rem;margin:.2em 0}h2{font-size:1.5rem;margin:.3em 0 .6em}h3{margin
 .btn.big{font-size:1.2rem;min-height:60px;padding:14px 26px}
 .link{background:none;border:0;color:var(--pri2);font:inherit;font-weight:700;cursor:pointer;padding:8px 0;min-height:44px}
 .panel{background:var(--card);border:2px solid var(--line);border-radius:var(--r);padding:16px;margin:14px 0}
+/* "cuadro" que acepta arrastrar y soltar fotos encima (en vez de tener que pulsar el botón de
+   subir): mientras se arrastra algo por encima, un borde discontinuo del color de la app avisa de
+   que ahí se puede soltar. Ver data-dropzone en el JS. */
+[data-dropzone]{position:relative}
+[data-dropzone].dropzone-on{outline:3px dashed var(--pri);outline-offset:-3px;background:#efecfd;border-radius:var(--r)}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px;margin-top:18px}
 .tile{display:flex;flex-direction:column;gap:4px;align-items:flex-start;text-align:left;font:inherit;background:var(--card);border:2px solid var(--line);border-radius:22px;padding:22px;cursor:pointer;color:var(--ink)}
 .tile .ico{font-size:2.6rem}.tile b{font-size:1.4rem}.tile small{color:var(--mute)}
@@ -860,7 +865,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.18-26';
+const APP_VERSION='2026.10.21-2';
 /* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
    la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
    esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
@@ -1010,7 +1015,15 @@ const APP_VERSION='2026.10.18-26';
    palabras duplicadas (p.ej. 20 palabras aparecían como 40): los campos de subir foto disparan
    tanto el evento "input" como el "change" al elegir un archivo, y ambos llamaban a leer la foto.
    De paso, al subir una foto de una lista de Spelling, ahora se avisa de cuántas palabras se han
-   leído en ella. */
+   leído en ella.
+   v2026.10.21-1: ahora se pueden arrastrar y soltar las fotos de los apuntes directamente sobre
+   el cuadro de una tarjeta de teoría (encima del título o de donde aparecen las fotos ya
+   subidas), con el mismo efecto que pulsar "📷 Subir fotos de los apuntes".
+   v2026.10.21-2: en Dictados, cada dictado tiene ahora un campo "Tema" además del título. Nuevo
+   botón "🔎 A morfología" en cada dictado: lo convierte en un texto de Análisis Morfológico (pide
+   confirmación), moviéndolo a esa pestaña y dejando de aparecer en Dictados; si ya se había
+   analizado antes (con el botón 🔤 que usa Julia), se mantiene esa clasificación en vez de volver
+   a gastar IA en analizarlo de nuevo. */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -2710,7 +2723,7 @@ function exEditView(t,e){
   ${e.isExam?`<div class="panel"><h3 style="margin-top:0">📝 Datos del examen</h3>
   <div class="grid2"><label class="f">Fecha del examen<input type="date" data-exf="date" value="${esc(e.date)}"></label>
   <label class="f">Preguntas por examen<input type="number" data-exf="n" min="3" max="40" value="${e.n}"></label></div></div>`:''}
-  <div class="panel"><h3 style="margin-top:0">📷 Teoría a estudiar</h3>
+  <div class="panel" data-dropzone="exPhotos"><h3 style="margin-top:0">📷 Teoría a estudiar</h3>
   <div class="grid2"><label class="f">Título<input type="text" data-exf="title" value="${esc(e.title)}" placeholder="Ej.: Los romanos — Year 6"></label>
   <label class="f">Idioma<select data-exf="lang"><option value="auto" ${e.lang==='auto'?'selected':''}>El de los apuntes</option><option value="es" ${e.lang==='es'?'selected':''}>Español</option><option value="en" ${e.lang==='en'?'selected':''}>English</option></select></label></div>
   ${(!e.isExam&&e.pool.length&&!e.notes.trim()&&!(state.examFotos[e.id]||[]).length)?'<p class="msg wrong" style="margin-top:0">⚠️ Este tema ya tiene preguntas generadas pero no le queda ninguna foto ni texto de apuntes guardado (puede que se borrara una foto y se borrase también su texto). Julia no verá nada que estudiar antes de las preguntas hasta que vuelvas a subir la foto, el PDF o la presentación, o pegues el texto aquí abajo.</p>':''}
@@ -2718,7 +2731,7 @@ function exEditView(t,e){
   <label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label>
   <label class="btn" style="display:inline-flex;align-items:center;gap:6px">📄 Subir un PDF<input type="file" accept="application/pdf,.pdf" id="exPdf" multiple hidden></label>
   <label class="btn" style="display:inline-flex;align-items:center;gap:6px">📊 Subir una presentación<input type="file" accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation" id="exPptx" multiple hidden></label>
-  <small class="mute">Hasta ${EX_MAXPH} fotos por tanda (puedes subir varias tandas); del PDF se leen hasta ${EX_MAXPDFPAGES} páginas y de la presentación hasta ${EX_MAXPPTSLIDES} diapositivas.</small>
+  <small class="mute">Hasta ${EX_MAXPH} fotos por tanda (puedes subir varias tandas); del PDF se leen hasta ${EX_MAXPDFPAGES} páginas y de la presentación hasta ${EX_MAXPPTSLIDES} diapositivas. También puedes arrastrar y soltar las fotos aquí mismo (encima del título o de donde aparecen).</small>
   </div>
   <div id="exSt" class="mute" style="margin:6px 0"></div>
   ${examPhotosHTML(e.id)}
@@ -5258,12 +5271,13 @@ function tabDictados(){
   const t=$('#tab');
   const modeCard=`<div class="panel"><b>Reglas gramaticales al corregir</b><p class="mute" style="margin:.2em 0 .6em">Cómo responde Julia a la regla de cada palabra mal escrita:</p><div class="seg"><button class="btn ${state.rulesMode==='test'?'on':''}" data-act="mode" data-m="test">🔘 Test (3 opciones)</button><button class="btn ${state.rulesMode==='manual'?'on':''}" data-act="mode" data-m="manual">⌨️ Escribir la respuesta</button></div></div>`;
   if(ui.editId!==null){
-    const d=state.dictados.find(x=>x.id===ui.editId)||{title:'',text:''};
+    const d=state.dictados.find(x=>x.id===ui.editId)||{title:'',text:'',tema:''};
     t.innerHTML=`${modeCard}<div class="panel"><h3>${d.id?'Editar dictado':'Nuevo dictado'}</h3><label class="f">Título<input type="text" id="dTitle" value="${esc(d.title)}" placeholder="Ej.: Dictado de la semana 5"></label><br>
+    <label class="f">Tema<input type="text" id="dTema" value="${esc(d.tema||'')}" placeholder="Ej.: Animales, Los Romanos…"></label><br>
     <label class="f">Texto a dictar<textarea id="dText" placeholder="Escribe o pega aquí el texto. Usa los signos de puntuación y las tildes tal como deben quedar." autocapitalize="off">${esc(d.text)}</textarea></label>
     <div class="row" style="margin-top:4px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Crear desde una foto<input type="file" accept="image/*" id="dictPhoto" multiple hidden></label></div><div id="dictPhotoSt" class="mute" style="margin-top:6px"></div>
     <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="saveDict">💾 Guardar</button><button class="btn" data-act="cancelEdit">Cancelar</button></div></div>`;return;}
-  t.innerHTML=`${modeCard}<div class="row" style="margin:6px 0"><button class="btn primary" data-act="newDict">＋ Nuevo dictado</button></div><div class="list">${state.dictados.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small>${Voz.ready()?`<br><small class="mute" data-vs="${esc(d.id)}">🎙 Comprobando voz…</small>`:''}</span><span class="row">${Voz.ready()?`<button class="btn" data-act="genVoice" data-id="${esc(d.id)}">🎙 Generar voz</button>`:''}<button class="btn" data-act="taskAddOpen" data-type="dictado" data-id="${esc(d.id)}" data-title="${esc(d.title)}">📅 Agregar a deberes</button><button class="btn" data-act="editDict" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delDict" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay dictados.</p>'}</div>`;
+  t.innerHTML=`${modeCard}<div class="row" style="margin:6px 0"><button class="btn primary" data-act="newDict">＋ Nuevo dictado</button></div><div class="list">${state.dictados.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b>${d.tema?` <small class="mute">· ${esc(d.tema)}</small>`:''}<br><small class="mute">${nWords(d.text)} palabras</small>${Voz.ready()?`<br><small class="mute" data-vs="${esc(d.id)}">🎙 Comprobando voz…</small>`:''}</span><span class="row">${Voz.ready()?`<button class="btn" data-act="genVoice" data-id="${esc(d.id)}">🎙 Generar voz</button>`:''}<button class="btn" data-act="taskAddOpen" data-type="dictado" data-id="${esc(d.id)}" data-title="${esc(d.title)}">📅 Agregar a deberes</button><button class="btn" data-act="dictToMorfo" data-id="${esc(d.id)}" title="Lo mueve a la sección Análisis Morfológico">🔎 A morfología</button><button class="btn" data-act="editDict" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delDict" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay dictados.</p>'}</div>`;
   refreshVoiceStatus();
 }
 /* textos de análisis morfológico preparados por el tutor, independientes de los dictados (antes
@@ -5403,14 +5417,28 @@ const tutorActions={
   newDict(){ui.editId='';render();},
   editDict(b){ui.editId=b.dataset.id;render();},
   cancelEdit(){ui.editId=null;render();},
-  saveDict(){const title=$('#dTitle').value.trim(),text=$('#dText').value.trim();if(!title||!text)return toast('Pon un título y un texto');
+  saveDict(){const title=$('#dTitle').value.trim(),text=$('#dText').value.trim(),tema=($('#dTema')&&$('#dTema').value||'').trim();if(!title||!text)return toast('Pon un título y un texto');
     /* si el texto cambia, se borra la clasificación morfológica que tuviera guardada (si se
        analizó alguna vez con "🔤 Analizar este texto"), para que la próxima vez se vuelva a
        analizar con la IA en vez de reutilizar una clasificación que ya no corresponde al texto
        nuevo. Si solo cambia el título, se mantiene (no hace falta gastar tokens de más). */
-    if(ui.editId){const d=state.dictados.find(x=>x.id===ui.editId);if(d.text!==text){d.morfoCats=null;d.morfoSubs=null;d.morfoMorf=null;}d.title=title;d.text=text;}else state.dictados.unshift({id:'d'+Date.now(),title,text});
+    if(ui.editId){const d=state.dictados.find(x=>x.id===ui.editId);if(d.text!==text){d.morfoCats=null;d.morfoSubs=null;d.morfoMorf=null;}d.title=title;d.text=text;d.tema=tema;}else state.dictados.unshift({id:'d'+Date.now(),title,text,tema});
     save();const nid=ui.editId||state.dictados[0].id;ui.editId=null;render();toast('Dictado guardado');if(Voz.ready())genVoiceFor(nid,false);},
   delDict(b){if(confirm('¿Borrar este dictado?')){state.dictados=state.dictados.filter(d=>d.id!==b.dataset.id);save();render();}},
+  /* convierte un dictado en un texto de Análisis Morfológico: crea una entrada nueva en
+     state.morfos con el mismo título y texto (si el dictado ya tenía una clasificación guardada
+     -de haberlo analizado antes con "🔤"-, se reutiliza en la entrada nueva en vez de perderla,
+     ya que el texto no cambia) y quita el dictado de la lista de Dictados, porque "convertir" es
+     pasarlo de un apartado al otro, no tener el mismo texto duplicado en los dos sitios. Después
+     se salta directamente a la pestaña de Morfología para que el tutor vea el resultado. */
+  dictToMorfo(b){
+    const d=state.dictados.find(x=>x.id===b.dataset.id);if(!d)return;
+    if(!confirm(`¿Convertir «${d.title}» en un texto de Análisis Morfológico? Pasará a esa sección y dejará de estar en Dictados.`))return;
+    state.morfos.unshift({id:'mz'+Date.now(),title:d.title,text:d.text,morfoCats:d.morfoCats||null,morfoSubs:d.morfoSubs||null,morfoMorf:d.morfoMorf||null});
+    state.dictados=state.dictados.filter(x=>x.id!==d.id);
+    save();ui.tab='morfologia';ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;render();
+    toast('Convertido: ahora está en Análisis Morfológico ✔');
+  },
   newMorfo(){ui.morfoEditId='';ui.morfoDraft=null;render();},
   editMorfo(b){ui.morfoEditId=b.dataset.id;ui.morfoDraft=null;render();},
   cancelEditMorfo(){ui.morfoEditId=null;ui.morfoDraft=null;render();},
@@ -5503,6 +5531,36 @@ document.addEventListener('change',e=>{const t=e.target;
   if(t.id==='photoIn'&&t.files[0]){const f=t.files[0];t.value='';handlePhoto(f);return;}
   if(t.id==='dictPhoto'&&t.files.length){readDictPhotos([...t.files]);t.value='';return;}
   if(t.id==='imp'&&t.files[0]){const fr=new FileReader();fr.onload=()=>{try{const s=JSON.parse(fr.result);if(!Array.isArray(s.dictados))throw 0;if(confirm('Esto reemplazará los datos actuales. ¿Continuar?')){const oldKey=state.ai.key;localStorage.setItem(KEY,JSON.stringify(s));state=loadState();if(!state.ai.key)state.ai.key=oldKey;state.sync={t:{},j:{},init:true,last:0,dirty:true,hclear:0,hj:''};save();ui.tab='dictados';render();toast('Copia restaurada');}}catch(x){toast('Archivo no válido');}};fr.readAsText(t.files[0]);}
+});
+/* ---- arrastrar y soltar fotos directamente encima de un "cuadro" (en vez de tener que pulsar el
+   botón de subir): cualquier elemento marcado con data-dropzone="<tipo>" acepta soltar imágenes
+   encima, con el mismo efecto que elegirlas con el botón correspondiente. Por ahora solo hay un
+   tipo ("exPhotos": fotos de los apuntes de una tarjeta de teoría/examen), pero el mecanismo es
+   genérico por si se añaden más "cuadros" de subir foto más adelante.
+   Dos cosas a las que hay que tener cuidado (encontradas por la revisión adversarial):
+   1) si se suelta un archivo FUERA de cualquier cuadro (o encima pero sin ser una imagen real -se
+      comprueba con dataTransfer.types, que ya lo dice durante el arrastre, antes de soltar-), hay
+      que evitar igualmente que el navegador lo abra él mismo y se salga de la app entera.
+   2) si lo que se arrastra no es un archivo (p.ej. texto seleccionado hacia el cuadro de notas,
+      que ya sabe aceptar texto por sí mismo), no hay que tocar nada: se deja el comportamiento
+      nativo tal cual, sin mostrar ningún aviso de "eso no son fotos". */
+const DROPZONE_HANDLERS={exPhotos:files=>readNotesPhotos(files)};
+function dzEl(e){return e.target&&e.target.closest&&e.target.closest('[data-dropzone]');}
+function dzHasFiles(e){const dt=e.dataTransfer;return !!(dt&&dt.types&&Array.from(dt.types).includes('Files'));}
+document.addEventListener('dragover',e=>{if(dzHasFiles(e))e.preventDefault();});
+document.addEventListener('dragenter',e=>{const z=dzEl(e);if(!z||!dzHasFiles(e))return;e.preventDefault();z.classList.add('dropzone-on');});
+document.addEventListener('dragleave',e=>{const z=dzEl(e);if(!z)return;if(z.contains(e.relatedTarget))return;z.classList.remove('dropzone-on');});
+document.addEventListener('drop',e=>{
+  if(!dzHasFiles(e))return; // no es un archivo (p.ej. arrastran texto): se deja el comportamiento nativo del elemento
+  e.preventDefault(); // evita que el navegador abra el archivo él mismo, caiga donde caiga
+  const z=dzEl(e);if(!z)return;
+  z.classList.remove('dropzone-on');
+  const handler=DROPZONE_HANDLERS[z.dataset.dropzone];if(!handler)return;
+  const all=[...(e.dataTransfer&&e.dataTransfer.files||[])];
+  const files=all.filter(f=>f.type&&f.type.startsWith('image/'));
+  if(!files.length)return toast('Eso no son fotos: arrastra una imagen (jpg, png…)');
+  if(files.length<all.length){const nOther=all.length-files.length;toast(`📷 Subiendo ${files.length} ${files.length===1?'foto':'fotos'}; se ${nOther===1?'ha ignorado 1 archivo':'han ignorado '+nOther+' archivos'} que no ${nOther===1?'era una foto':'eran fotos'} (usa los botones de PDF/presentación para esos).`);}
+  handler(files);
 });
 document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.target;
   if(t.dataset.enter==='word')fixActions.word({dataset:{i:t.dataset.i}});
