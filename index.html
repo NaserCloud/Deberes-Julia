@@ -865,7 +865,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.21-2';
+const APP_VERSION='2026.10.21-4';
 /* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
    la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
    esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
@@ -1020,10 +1020,26 @@ const APP_VERSION='2026.10.21-2';
    el cuadro de una tarjeta de teoría (encima del título o de donde aparecen las fotos ya
    subidas), con el mismo efecto que pulsar "📷 Subir fotos de los apuntes".
    v2026.10.21-2: en Dictados, cada dictado tiene ahora un campo "Tema" además del título. Nuevo
-   botón "🔎 A morfología" en cada dictado: lo convierte en un texto de Análisis Morfológico (pide
-   confirmación), moviéndolo a esa pestaña y dejando de aparecer en Dictados; si ya se había
-   analizado antes (con el botón 🔤 que usa Julia), se mantiene esa clasificación en vez de volver
-   a gastar IA en analizarlo de nuevo. */
+   botón "🔎 Copiar a morfología" en cada dictado: crea una COPIA de ese texto en Análisis
+   Morfológico (el dictado original se queda igual en Dictados, para poder usar el mismo texto en
+   las dos actividades); si ya se había analizado antes (con el botón 🔤 que usa Julia), se
+   reutiliza esa clasificación en la copia en vez de volver a gastar IA en analizarlo de nuevo.
+   v2026.10.21-3: nuevo botón "↩️ Deshacer" en el área de tutor: recupera el último dictado,
+   texto de morfología, regla, examen, asignatura/tema, lista de spelling, deber o nota que se
+   haya borrado (o la última copia a morfología), y también se puede deshacer vaciar el
+   historial. Se puede pulsar varias veces seguidas para deshacer varias acciones, de la más
+   reciente a la más antigua. No deshace crear una nota/lista de spelling/examen nuevos, ni nada
+   relacionado con las fotos de apuntes (para no ralentizar la app guardando copias de las fotos
+   en cada acción); y es solo de esta sesión en este dispositivo (no sobrevive a cerrar la app).
+   v2026.10.21-4: nuevo botón "📝 Copiar a dictados" en cada texto de Análisis Morfológico (la
+   acción contraria a "🔎 Copiar a morfología" de Dictados): crea un dictado nuevo con el mismo
+   título, texto y clasificación morfológica ya calculada (si la había), sin tocar el texto de
+   morfología. Sirve para recuperar en Dictados un texto que se hubiera movido por error con la
+   versión anterior de "convertir" (antes de la v2026.10.21-2, que movía el dictado en vez de
+   copiarlo). De paso, los ids nuevos de dictados y textos de morfología (al guardar, copiar en
+   cualquiera de los dos sentidos) ya no se basan solo en la hora exacta (que podía coincidir si
+   se pulsaba un botón dos veces muy seguidas, por ejemplo al recuperar varios textos uno detrás
+   de otro), sino también en un sufijo aleatorio, para que nunca puedan coincidir dos ids. */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -1057,6 +1073,28 @@ function loadState(){
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
 const save=()=>{persist();try{Cloud.mark();}catch(e){}};
+/* ---- deshacer (undo) ----
+   Guarda una copia completa de "state" justo ANTES de las acciones de gestión del tutor que
+   pueden ser "un error" (borrar, convertir, vaciar...), para poder recuperarla con el botón
+   "↩️ Deshacer" del área de tutor. A propósito NO se engancha a TODOS los clics de la app (p.ej.
+   subir/rotar/pasar fotos de apuntes), porque esas fotos se guardan como imágenes completas
+   dentro de "state" y copiarlo entero en cada clic ralentizaría la app sin necesidad; por eso
+   solo las funciones que llaman a snapUndo() explícitamente (al principio, antes de tocar nada)
+   quedan cubiertas. Es un historial solo de esta sesión en este dispositivo: no sobrevive a
+   cerrar y volver a abrir la app, ni deshace lo que ya se haya sincronizado y fusionado con otro
+   dispositivo (eso sigue las reglas normales de sincronización, no las de deshacer). */
+const UNDO_MAX=15;
+const undoStack=[];
+function snapUndo(){try{undoStack.push(JSON.stringify(state));if(undoStack.length>UNDO_MAX)undoStack.shift();}catch(e){}}
+function undoLast(){
+  if(!undoStack.length)return toast('No hay nada que deshacer');
+  let snap;try{snap=JSON.parse(undoStack.pop());}catch(e){return toast('No se ha podido deshacer');}
+  Object.keys(state).forEach(k=>delete state[k]); // se vacía y se rellena el MISMO objeto (en vez de
+  Object.assign(state,snap);                      // reemplazarlo), para que nada que lo tuviera
+  persist();try{Cloud.mark();}catch(e){}           // "agarrado" por otro lado se quede desincronizado
+  ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;
+  render();toast('↩️ Última acción deshecha');
+}
 const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,spCheckedText:null,spOrigWords:null,morfoEditId:null,morfoDraft:null,morfoGenBusy:false,taskAdd:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2195,7 +2233,7 @@ const deberesActions={
     });
     save();ui.tf=tfDef();render();toast(`Deberes creados para ${ds.length} ${ds.length===1?'día':'días'} ✅`);
   },
-  delTask(b){if(confirm('¿Borrar estos deberes?')){state.tareas=state.tareas.filter(x=>x.id!==b.dataset.id);save();tfRefresh();}}
+  delTask(b){if(confirm('¿Borrar estos deberes?')){snapUndo();state.tareas=state.tareas.filter(x=>x.id!==b.dataset.id);save();tfRefresh();}}
 };
 /* ================= exámenes: motor puro (sin IA) ================= */
 const EX_STOP=new Set('el la los las un una unos unas de del al y o u en a que se es son por para con sin sobre como su sus lo le les mas muy este esta estos estas cual cuales cuando donde quien cuanto cuantos cuantas the a an of to in on at and or is are was were be by for with from as that this these those which what who whom when where how many much its it their his her'.split(' '));
@@ -2849,15 +2887,16 @@ const examActions={
     state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;ui.exCombineOn=false;ui.exCombineSel=[];render();
   },
   exOpen(b){ui.exId=b.dataset.id;ui.exExpand=null;render();},
-  asigNew(){const name=(prompt('Nombre de la nueva asignatura:')||'').trim();if(!name)return;state.asignaturas.push({id:'asig-'+uid(),name});save();render();},
+  asigNew(){const name=(prompt('Nombre de la nueva asignatura:')||'').trim();if(!name)return;snapUndo();state.asignaturas.push({id:'asig-'+uid(),name});save();render();},
   asigOpen(b){ui.exAsigId=b.dataset.id;ui.exTemaId=null;render();},
   asigBack(){ui.exAsigId=null;render();},
-  asigRename(b){const a=state.asignaturas.find(x=>x.id===b.dataset.id);if(!a)return;const name=(prompt('Nuevo nombre de la asignatura:',a.name)||'').trim();if(!name)return;a.name=name;save();render();},
+  asigRename(b){const a=state.asignaturas.find(x=>x.id===b.dataset.id);if(!a)return;const name=(prompt('Nuevo nombre de la asignatura:',a.name)||'').trim();if(!name)return;snapUndo();a.name=name;save();render();},
   asigDel(b){
     const a=state.asignaturas.find(x=>x.id===b.dataset.id);if(!a)return;
     const temaIds=state.temas.filter(x=>x.asigId===a.id).map(x=>x.id);
     const cardIds=state.examenes.filter(e=>!e.isExam&&temaIds.includes(e.temaId)).map(e=>e.id);
     if(!confirm(`¿Borrar la asignatura «${a.name}»? Se borrarán sus ${temaIds.length} ${temaIds.length===1?'tema':'temas'} y las ${cardIds.length} tarjetas de teoría que contienen, con sus fotos y preguntas. Los exámenes que ya hayas creado a partir de ellas NO se borran (quedan como exámenes sueltos).`))return;
+    snapUndo();
     cardIds.forEach(id=>delete state.examFotos[id]);
     state.examenes=state.examenes.filter(e=>e.isExam||!cardIds.includes(e.id));
     state.examenes.forEach(e=>{if(e.isExam&&e.asigId===a.id){e.asigId=null;e.temaId=null;e.scope=null;}});
@@ -2869,15 +2908,17 @@ const examActions={
   temaNew(){
     const a=state.asignaturas.find(x=>x.id===ui.exAsigId);if(!a)return;
     const name=(prompt('Nombre del nuevo tema:')||'').trim();if(!name)return;
+    snapUndo();
     state.temas.push({id:'tema-'+uid(),asigId:a.id,name});save();render();
   },
   temaOpen(b){ui.exTemaId=b.dataset.id;render();},
   temaBack(){ui.exTemaId=null;render();},
-  temaRename(b){const tm=state.temas.find(x=>x.id===b.dataset.id);if(!tm)return;const name=(prompt('Nuevo nombre del tema:',tm.name)||'').trim();if(!name)return;tm.name=name;save();render();},
+  temaRename(b){const tm=state.temas.find(x=>x.id===b.dataset.id);if(!tm)return;const name=(prompt('Nuevo nombre del tema:',tm.name)||'').trim();if(!name)return;snapUndo();tm.name=name;save();render();},
   temaDel(b){
     const tm=state.temas.find(x=>x.id===b.dataset.id);if(!tm)return;
     const cardIds=state.examenes.filter(e=>!e.isExam&&e.temaId===tm.id).map(e=>e.id);
     if(!confirm(`¿Borrar el tema «${tm.name}»? Se borrarán sus ${cardIds.length} tarjetas de teoría, con sus fotos y preguntas. Los exámenes que ya hayas creado a partir de ellas NO se borran (quedan como exámenes sueltos).`))return;
+    snapUndo();
     cardIds.forEach(id=>delete state.examFotos[id]);
     state.examenes=state.examenes.filter(e=>e.isExam||!cardIds.includes(e.id));
     state.examenes.forEach(e=>{if(e.isExam&&e.temaId===tm.id){e.temaId=null;e.scope=null;}});
@@ -2943,7 +2984,7 @@ const examActions={
     ui.exExpand=null;save();render();
     toast(`Creados ${total} exámenes de ${n} preguntas cada uno. Revísalos y publícalos.`);
   },
-  exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){delete state.examFotos[b.dataset.id];state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
+  exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){snapUndo();delete state.examFotos[b.dataset.id];state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
   exCombineStart(){ui.exCombineOn=true;ui.exCombineSel=[];render();},
   exCombineCancel(){ui.exCombineOn=false;ui.exCombineSel=[];render();},
   exCombineTog(b){ui.exCombineSel=ui.exCombineSel||[];const id=b.dataset.id;
@@ -2990,8 +3031,8 @@ const examActions={
     render();
     toast('Foto eliminada');
   },
-  exQDel(b){const e=exGet(ui.exId);e.pool.splice(+b.dataset.i,1);save();const y=scrollY;render();scrollTo(0,y);},
-  exDelAll(){const e=exGet(ui.exId);if(!e||!e.pool.length)return;if(!confirm(`¿Seguro que quieres borrar las ${e.pool.length} preguntas de «${e.title||'esta tarjeta'}»? No se puede deshacer.`))return;e.pool=[];e.dropped=[];save();render();},
+  exQDel(b){const e=exGet(ui.exId);snapUndo();e.pool.splice(+b.dataset.i,1);save();const y=scrollY;render();scrollTo(0,y);},
+  exDelAll(){const e=exGet(ui.exId);if(!e||!e.pool.length)return;if(!confirm(`¿Seguro que quieres borrar las ${e.pool.length} preguntas de «${e.title||'esta tarjeta'}»?`))return;snapUndo();e.pool=[];e.dropped=[];save();render();},
   exPub(b){const e=exGet(ui.exId);
     if(e.status!=='ready'){if(!e.title.trim())return toast('Ponle un título al examen');if(e.pool.filter(q=>!q.off).length<Math.min(e.n,3))return toast('Faltan preguntas: genera o activa más');
       const act=e.pool.filter(q=>!q.off).length;if(act<e.n&&!confirm(`Solo hay ${act} preguntas activas y cada examen lleva ${e.n}. Julia hará exámenes de ${act}. ¿Publicar?`))return;e.status='ready';}
@@ -4739,6 +4780,7 @@ const spellActions={
   spBack(){ui.spId=null;ui.spCheckedText=null;ui.spOrigWords=null;render();},
   spDel(b){
     if(!confirm('¿Borrar esta lista de spelling? Se perderán sus palabras y frases.'))return;
+    snapUndo();
     state.spelling=state.spelling.filter(l=>l.id!==b.dataset.id);
     if(ui.spId===b.dataset.id)ui.spId=null;
     save();render();
@@ -5251,7 +5293,7 @@ function renderTutor(){
      primero (el día a día) y, debajo, la sección de estadísticas de Dictado que antes era
      Historial (ver tabActividad). */
   const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad e Historial'],['examenes','📚 Teoría y exámenes'],['spelling','🔤 Spelling'],['morfologia','🔎 Morfología'],['reglas','📘 Reglas propias'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
-  app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><button class="btn" data-act="lock">🔒 Bloquear</button></div>
+  app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><span class="row" style="gap:6px"><button class="btn" data-act="deshacer" ${undoStack.length?'':'disabled'} title="Deshace la última acción: guardar/borrar/copiar un dictado o un texto de morfología, reglas propias, asignaturas/temas, borrar un examen o sus preguntas, borrar una lista de spelling, borrar un deber, borrar una nota, o vaciar el historial. NO deshace crear una nota, una lista de spelling o un examen nuevos, ni nada de fotos de apuntes (subir/rotar/borrar).">↩️ Deshacer</button><button class="btn" data-act="lock">🔒 Bloquear</button></span></div>
   <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>${taskAddOverlay()}`;
   ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,spelling:tabSpelling,morfologia:tabMorfologia,reglas:tabReglas,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
 }
@@ -5277,7 +5319,7 @@ function tabDictados(){
     <label class="f">Texto a dictar<textarea id="dText" placeholder="Escribe o pega aquí el texto. Usa los signos de puntuación y las tildes tal como deben quedar." autocapitalize="off">${esc(d.text)}</textarea></label>
     <div class="row" style="margin-top:4px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Crear desde una foto<input type="file" accept="image/*" id="dictPhoto" multiple hidden></label></div><div id="dictPhotoSt" class="mute" style="margin-top:6px"></div>
     <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="saveDict">💾 Guardar</button><button class="btn" data-act="cancelEdit">Cancelar</button></div></div>`;return;}
-  t.innerHTML=`${modeCard}<div class="row" style="margin:6px 0"><button class="btn primary" data-act="newDict">＋ Nuevo dictado</button></div><div class="list">${state.dictados.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b>${d.tema?` <small class="mute">· ${esc(d.tema)}</small>`:''}<br><small class="mute">${nWords(d.text)} palabras</small>${Voz.ready()?`<br><small class="mute" data-vs="${esc(d.id)}">🎙 Comprobando voz…</small>`:''}</span><span class="row">${Voz.ready()?`<button class="btn" data-act="genVoice" data-id="${esc(d.id)}">🎙 Generar voz</button>`:''}<button class="btn" data-act="taskAddOpen" data-type="dictado" data-id="${esc(d.id)}" data-title="${esc(d.title)}">📅 Agregar a deberes</button><button class="btn" data-act="dictToMorfo" data-id="${esc(d.id)}" title="Lo mueve a la sección Análisis Morfológico">🔎 A morfología</button><button class="btn" data-act="editDict" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delDict" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay dictados.</p>'}</div>`;
+  t.innerHTML=`${modeCard}<div class="row" style="margin:6px 0"><button class="btn primary" data-act="newDict">＋ Nuevo dictado</button></div><div class="list">${state.dictados.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b>${d.tema?` <small class="mute">· ${esc(d.tema)}</small>`:''}<br><small class="mute">${nWords(d.text)} palabras</small>${Voz.ready()?`<br><small class="mute" data-vs="${esc(d.id)}">🎙 Comprobando voz…</small>`:''}</span><span class="row">${Voz.ready()?`<button class="btn" data-act="genVoice" data-id="${esc(d.id)}">🎙 Generar voz</button>`:''}<button class="btn" data-act="taskAddOpen" data-type="dictado" data-id="${esc(d.id)}" data-title="${esc(d.title)}">📅 Agregar a deberes</button><button class="btn" data-act="dictToMorfo" data-id="${esc(d.id)}" title="Crea una copia de este texto en Análisis Morfológico (el dictado se queda igual)">🔎 Copiar a morfología</button><button class="btn" data-act="editDict" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delDict" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay dictados.</p>'}</div>`;
   refreshVoiceStatus();
 }
 /* textos de análisis morfológico preparados por el tutor, independientes de los dictados (antes
@@ -5304,7 +5346,7 @@ function tabMorfologia(){
     <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="saveMorfo">💾 Guardar</button><button class="btn" data-act="cancelEditMorfo">Cancelar</button></div></div>`;return;}
   t.innerHTML=`<p class="mute" style="margin-top:0">Prepara aquí textos para que Julia practique el análisis morfológico (clasificar cada palabra: sustantivo, verbo, adjetivo…), de forma independiente a los dictados.</p>
   <div class="row" style="margin:6px 0;gap:8px"><button class="btn primary" data-act="newMorfo">＋ Nuevo texto</button><button class="btn" data-act="tutorToggleMorfoTheory">📘 Ver la ficha de teoría</button></div>
-  <div class="list">${state.morfos.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small></span><span class="row"><button class="btn" data-act="taskAddOpen" data-type="morfo" data-id="${esc(d.id)}" data-title="${esc(d.title)}">📅 Agregar a deberes</button><button class="btn" data-act="editMorfo" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delMorfo" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay textos para analizar.</p>'}</div>`;
+  <div class="list">${state.morfos.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small></span><span class="row"><button class="btn" data-act="taskAddOpen" data-type="morfo" data-id="${esc(d.id)}" data-title="${esc(d.title)}">📅 Agregar a deberes</button><button class="btn" data-act="morfoToDict" data-id="${esc(d.id)}" title="Crea una copia de este texto en Dictados (este texto de morfología se queda igual)">📝 Copiar a dictados</button><button class="btn" data-act="editMorfo" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delMorfo" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay textos para analizar.</p>'}</div>`;
 }
 function tabReglas(){
   const rs=state.customRules;
@@ -5418,26 +5460,41 @@ const tutorActions={
   editDict(b){ui.editId=b.dataset.id;render();},
   cancelEdit(){ui.editId=null;render();},
   saveDict(){const title=$('#dTitle').value.trim(),text=$('#dText').value.trim(),tema=($('#dTema')&&$('#dTema').value||'').trim();if(!title||!text)return toast('Pon un título y un texto');
+    snapUndo();
     /* si el texto cambia, se borra la clasificación morfológica que tuviera guardada (si se
        analizó alguna vez con "🔤 Analizar este texto"), para que la próxima vez se vuelva a
        analizar con la IA en vez de reutilizar una clasificación que ya no corresponde al texto
        nuevo. Si solo cambia el título, se mantiene (no hace falta gastar tokens de más). */
-    if(ui.editId){const d=state.dictados.find(x=>x.id===ui.editId);if(d.text!==text){d.morfoCats=null;d.morfoSubs=null;d.morfoMorf=null;}d.title=title;d.text=text;d.tema=tema;}else state.dictados.unshift({id:'d'+Date.now(),title,text,tema});
+    if(ui.editId){const d=state.dictados.find(x=>x.id===ui.editId);if(d.text!==text){d.morfoCats=null;d.morfoSubs=null;d.morfoMorf=null;}d.title=title;d.text=text;d.tema=tema;}else state.dictados.unshift({id:'d'+uid(),title,text,tema});
     save();const nid=ui.editId||state.dictados[0].id;ui.editId=null;render();toast('Dictado guardado');if(Voz.ready())genVoiceFor(nid,false);},
-  delDict(b){if(confirm('¿Borrar este dictado?')){state.dictados=state.dictados.filter(d=>d.id!==b.dataset.id);save();render();}},
-  /* convierte un dictado en un texto de Análisis Morfológico: crea una entrada nueva en
-     state.morfos con el mismo título y texto (si el dictado ya tenía una clasificación guardada
-     -de haberlo analizado antes con "🔤"-, se reutiliza en la entrada nueva en vez de perderla,
-     ya que el texto no cambia) y quita el dictado de la lista de Dictados, porque "convertir" es
-     pasarlo de un apartado al otro, no tener el mismo texto duplicado en los dos sitios. Después
-     se salta directamente a la pestaña de Morfología para que el tutor vea el resultado. */
+  delDict(b){if(confirm('¿Borrar este dictado?')){snapUndo();state.dictados=state.dictados.filter(d=>d.id!==b.dataset.id);save();render();}},
+  /* copia un dictado a Análisis Morfológico: crea una entrada NUEVA en state.morfos con el mismo
+     título y texto, sin tocar el dictado original -- David quiere poder usar el mismo texto en
+     las dos actividades (no "mover" el dictado de un sitio a otro), para que Julia lo repase dos
+     veces de forma distinta y se le quede mejor. Si el dictado ya tenía una clasificación
+     morfológica guardada (de haberlo analizado antes con "🔤" desde la lista de Julia), se
+     reutiliza en la copia nueva en vez de volver a gastar IA, ya que el texto es idéntico.
+     Después se salta directamente a la pestaña de Morfología para que el tutor vea el resultado. */
   dictToMorfo(b){
     const d=state.dictados.find(x=>x.id===b.dataset.id);if(!d)return;
-    if(!confirm(`¿Convertir «${d.title}» en un texto de Análisis Morfológico? Pasará a esa sección y dejará de estar en Dictados.`))return;
-    state.morfos.unshift({id:'mz'+Date.now(),title:d.title,text:d.text,morfoCats:d.morfoCats||null,morfoSubs:d.morfoSubs||null,morfoMorf:d.morfoMorf||null});
-    state.dictados=state.dictados.filter(x=>x.id!==d.id);
+    snapUndo();
+    state.morfos.unshift({id:'mz'+uid(),title:d.title,text:d.text,morfoCats:d.morfoCats||null,morfoSubs:d.morfoSubs||null,morfoMorf:d.morfoMorf||null});
     save();ui.tab='morfologia';ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;render();
-    toast('Convertido: ahora está en Análisis Morfológico ✔');
+    toast('Copiado a Análisis Morfológico ✔');
+  },
+  /* la acción contraria a dictToMorfo: copia un texto de Análisis Morfológico a Dictados, creando
+     un dictado NUEVO e independiente (sin tema, porque Morfología no tiene ese campo) con el
+     mismo título y texto, sin tocar el texto de morfología original. Igual que dictToMorfo
+     reutiliza la clasificación morfológica ya calculada en vez de volver a gastar IA (el dictado
+     nuevo también puede usarse para análisis morfológico como deber, ver morfoStart). Sirve,
+     entre otras cosas, para recuperar en Dictados un dictado que se hubiera "movido" por error
+     con una versión anterior de dictToMorfo (antes de que se cambiara a copiar en vez de mover). */
+  morfoToDict(b){
+    const d=state.morfos.find(x=>x.id===b.dataset.id);if(!d)return;
+    snapUndo();
+    state.dictados.unshift({id:'d'+uid(),title:d.title,text:d.text,tema:'',morfoCats:d.morfoCats||null,morfoSubs:d.morfoSubs||null,morfoMorf:d.morfoMorf||null});
+    save();ui.tab='dictados';ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;render();
+    toast('Copiado a Dictados ✔');
   },
   newMorfo(){ui.morfoEditId='';ui.morfoDraft=null;render();},
   editMorfo(b){ui.morfoEditId=b.dataset.id;ui.morfoDraft=null;render();},
@@ -5454,14 +5511,16 @@ const tutorActions={
     ui.morfoGenBusy=false;render();
   },
   saveMorfo(){const title=$('#mTitle').value.trim(),text=$('#mText').value.trim();if(!title||!text)return toast('Pon un título y un texto');
+    snapUndo();
     /* mismo motivo que en saveDict: si el texto cambia, se borra la clasificación guardada para
        que se vuelva a analizar la próxima vez (si no cambia el texto, se conserva la caché). */
-    if(ui.morfoEditId){const d=state.morfos.find(x=>x.id===ui.morfoEditId);if(d.text!==text){d.morfoCats=null;d.morfoSubs=null;d.morfoMorf=null;}d.title=title;d.text=text;}else state.morfos.unshift({id:'mz'+Date.now(),title,text});
+    if(ui.morfoEditId){const d=state.morfos.find(x=>x.id===ui.morfoEditId);if(d.text!==text){d.morfoCats=null;d.morfoSubs=null;d.morfoMorf=null;}d.title=title;d.text=text;}else state.morfos.unshift({id:'mz'+uid(),title,text});
     save();ui.morfoEditId=null;ui.morfoDraft=null;render();toast('Texto guardado');},
-  delMorfo(b){if(confirm('¿Borrar este texto?')){state.morfos=state.morfos.filter(d=>d.id!==b.dataset.id);save();render();}},
-  addRule(){state.customRules.push({word:'',rule:''});save();render();},
-  delRule(b){state.customRules.splice(+b.dataset.i,1);save();render();},
-  clearHist(){if(confirm('¿Borrar todo el historial en todos los dispositivos?')){state.history=[];state.sync.hclear=Date.now();save();render();}},
+  delMorfo(b){if(confirm('¿Borrar este texto?')){snapUndo();state.morfos=state.morfos.filter(d=>d.id!==b.dataset.id);save();render();}},
+  addRule(){snapUndo();state.customRules.push({word:'',rule:''});save();render();},
+  delRule(b){snapUndo();state.customRules.splice(+b.dataset.i,1);save();render();},
+  clearHist(){if(confirm('¿Borrar todo el historial en todos los dispositivos?')){snapUndo();state.history=[];state.sync.hclear=Date.now();save();render();}},
+  deshacer(){undoLast();},
   syncNow(){Cloud.sync(true);},
   changePin(){const p=prompt('Nuevo PIN (4 a 8 números):');if(p===null)return;if(!/^\d{4,8}$/.test(p))return toast('PIN no válido');state.pin=p;save();toast('PIN cambiado');},
   testVoice(){Dict.test(state.settings);},
@@ -5480,6 +5539,7 @@ const tutorActions={
   },
   noteDel(b){
     if(!confirm('¿Borrar esta nota?'))return;
+    snapUndo();
     state.notas=(state.notas||[]).filter(n=>n.id!==b.dataset.id);
     save();render();
   }
@@ -5507,6 +5567,7 @@ const studentActions={
   },
   noteAlumnaDel(b){
     if(!confirm('¿Borrar esta nota?'))return;
+    snapUndo();
     state.notasAlumna=(state.notasAlumna||[]).filter(n=>n.id!==b.dataset.id);
     save();render();
   }
