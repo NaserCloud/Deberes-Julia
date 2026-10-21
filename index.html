@@ -21,7 +21,13 @@ body{margin:0;background:var(--bg);color:var(--ink);font:18px/1.5 ui-rounded,"SF
 .role{display:flex;background:rgba(255,255,255,.2);border-radius:999px;padding:3px}
 .role button{border:0;background:none;color:#fff;font:inherit;font-weight:700;padding:8px 16px;border-radius:999px;cursor:pointer;min-height:44px}
 .role button.on{background:#fff;color:var(--pri)}
-main{max-width:920px;margin:0 auto;padding:18px 16px 60px}
+/* padding inferior generoso (antes 60px): en pantallas largas (p.ej. la ficha de teoría de
+   Análisis Morfológico, con sus tarjetas y tablas) hacía falta más espacio en blanco debajo del
+   todo -- sin él, al llegar casi al final del todo, el navegador del móvil (la barra de
+   direcciones que se esconde/aparece al hacer scroll) podía "pelearse" con el alto de la página y
+   dar saltos raros justo en el último tramo. Con más margen de sobra abajo, nunca se llega a ese
+   límite y el scroll queda suave. */
+main{max-width:920px;margin:0 auto;padding:18px 16px 160px}
 h1{font-size:2rem;margin:.2em 0}h2{font-size:1.5rem;margin:.3em 0 .6em}h3{margin:.2em 0 .5em}
 .mute{color:var(--mute)}
 .btn{font:inherit;font-weight:800;border:0;border-radius:14px;padding:12px 20px;min-height:52px;cursor:pointer;background:#ece9fb;color:var(--pri2)}
@@ -114,6 +120,15 @@ sup{color:var(--bad);font-weight:800}
 .wrule-btn:hover,.wrule-btn:focus{background:#ece9fb;outline:none}
 .wrule-tip{display:none;position:absolute;top:100%;left:0;z-index:6;background:#eef6ff;border-left:6px solid #3b82f6;border-radius:10px;padding:8px 12px;margin-top:6px;font-size:.85rem;font-weight:400;line-height:1.35;white-space:normal;width:max-content;max-width:260px;box-shadow:0 4px 10px rgba(45,42,69,.15)}
 .wrule-btn:hover+.wrule-tip,.wrule-btn:focus+.wrule-tip{display:block}
+/* palabras pulsables de la frase en el ejercicio de Preposiciones (ver prepSentHTML, p6a.js):
+   cada palabra es un botón suelto dentro del texto -- antes de responder, estilo neutro con
+   hover; tras pulsar una, la preposición correcta se marca en verde y, si se pulsó otra
+   distinta, esa se marca en rojo con subrayado ondulado (igual que el resto de la app). */
+.prepw{all:unset;display:inline;cursor:pointer;border-radius:6px;padding:0 3px;margin:0 1px}
+.prepw:hover,.prepw:focus{background:#ece9fb;outline:none}
+.prepw:disabled{cursor:default}
+.prepw.ok{color:var(--ok);font-weight:800;background:var(--okbg)}
+.prepw.bad{color:var(--bad);font-weight:800;background:var(--badbg);text-decoration:underline wavy}
 .mini-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px;max-width:420px}
 .mini-card{aspect-ratio:1;border:2px solid var(--line);border-radius:14px;background:#ece9fb;font-size:1.8rem;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
 .mini-card.flip{background:#fff;border-color:var(--pri)}
@@ -845,7 +860,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.12-21';
+const APP_VERSION='2026.10.18-26';
 /* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
    la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
    esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
@@ -960,7 +975,42 @@ const APP_VERSION='2026.10.12-21';
    significa cada uno. Y el Modo Examen ya no corrige nada al momento (ni el acierto/fallo de cada
    palabra, ni el color del texto, ni pide escribir la respuesta correcta tras fallar): ahora,
    igual que el resto de Exámenes de la app, todo se corrige junto al terminar todo el ejercicio.
-   El Modo Estudio sigue funcionando igual que hasta ahora (con ayuda y corrección al momento). */
+   El Modo Estudio sigue funcionando igual que hasta ahora (con ayuda y corrección al momento).
+   v2026.10.12-22: en Análisis Morfológico, cuando Julia tiene que escribir ella misma la
+   respuesta correcta (tras fallar una palabra), si hay alguna falta de ortografía ya no solo se
+   avisa en un mensaje: ahora se le muestra justo debajo lo que ha escrito con la palabra o
+   palabras mal escritas subrayadas en rojo ondulado, igual que el subrayado de ortografía de
+   Word, para que vea de un vistazo cuál tiene que corregir. Si directamente no llegó a escribir
+   alguna palabra, se le dice aparte cuál le falta.
+   v2026.10.12-23: dentro de Análisis Morfológico hay un apartado nuevo, "🔗 Preposiciones",
+   para practicar solo las preposiciones. En Modo Estudio, la IA genera una ronda de frases
+   cortas nuevas cada vez (una por cada preposición), y hay que pulsar en la frase la palabra
+   que es la preposición (con la lista de las 21 como ayuda y corrección al momento). En Modo
+   Examen no hay frases: en su lugar hay que escribir de memoria la lista completa de las 21
+   preposiciones, corrigiéndose todo junto al comprobar, como el resto de Exámenes de la app.
+   v2026.10.18-24: en Spelling (dictado y frases para completar) los minijuegos ya salen con la
+   misma frecuencia configurable que en el resto de actividades (cada X palabras/frases, Ajustes),
+   en vez de salir siempre uno garantizado al terminar la ronda. En el diccionario guiado de
+   inglés, debajo de las pistas en inglés hay un nuevo botón "ESPAÑOL" que da una pista extra en
+   español (sin dar la traducción exacta), antes de pulsar "Ver traducción". Arreglado además un
+   fallo de sincronización entre dispositivos por el que, si se usaba la app desde el ordenador y
+   la tablet sin sincronizar entre medias, el dispositivo que sincronizaba en último lugar podía
+   "ganar" y borrar sin querer alguna actividad ya hecha por Julia ese mismo día en el otro
+   dispositivo (p.ej. un Spelling que aparecía como no hecho aunque sí lo había terminado).
+   v2026.10.18-25: al poner una tarjeta de teoría o una lista de Spelling como deber ("Agregar a
+   deberes"), ahora el tutor elige directamente ahí cuántas preguntas tendrá ese deber de teoría
+   (o "todas") y si es en modo estudio (con foto) o examen (sin foto); y cuántas rondas de
+   escuchar/frases tendrá ese deber de Spelling. Si una tarjeta de teoría tiene más preguntas que
+   las elegidas, la próxima vez que se le ponga le tocan preguntas distintas a las anteriores,
+   hasta agotar el banco completo (momento en el que se vuelve a barajar desde cero). Las
+   pestañas "Actividad" e "Historial" se han unido en una sola ("Actividad e Historial"), con las
+   estadísticas de Dictado como una sección dentro de ella.
+   v2026.10.18-26: arreglado un fallo por el que, al subir una foto (de una lista de Spelling o de
+   una hoja de dictado de Spelling), a veces se leía dos veces la misma foto y se añadían las
+   palabras duplicadas (p.ej. 20 palabras aparecían como 40): los campos de subir foto disparan
+   tanto el evento "input" como el "change" al elegir un archivo, y ambos llamaban a leer la foto.
+   De paso, al subir una foto de una lista de Spelling, ahora se avisa de cuántas palabras se han
+   leído en ella. */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
@@ -968,7 +1018,7 @@ const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:tru
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
-  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},studyProgress:{},tutorNotes:'',notas:[],notasAlumna:[],asignaturas:[],temas:[],spelling:[],morfos:[],miniGameEvery:15};
+  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},studyProgress:{},studyHist:{},tutorNotes:'',notas:[],notasAlumna:[],asignaturas:[],temas:[],spelling:[],morfos:[],miniGameEvery:15};
   s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-6.1-sol'},s.ai||{});
   if(s.ai.visionModel==='gpt-4o'||s.ai.visionModel==='gpt-5-chat-latest')s.ai.visionModel='gpt-6.1-sol'; // migración automática: OpenAI retiró gpt-5-chat-latest, pasamos a todo el mundo a gpt-6.1-sol sin tener que tocar nada
   s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
@@ -1171,7 +1221,7 @@ const Voz=(()=>{
 /* ================= sincronización con Supabase ================= */
 const SB_URL='https://rzzaizkzszgiirwmilyq.supabase.co',SB_KEY='sb_publishable_xdaxsZhA3FDyGWsMeT2pLA_4TSyUvpl';
 const Cloud=(()=>{
-  const K=['dictados','customRules','rulesMode','pin','settings','ai','studyProgress','miniGameEvery'];
+  const K=['dictados','customRules','rulesMode','pin','settings','ai','studyProgress','studyHist','miniGameEvery'];
   /* "examenes" y "tareas" son listas de elementos con id propio (temas, exámenes, deberes) que se
      crean/editan/borran desde varios dispositivos. Antes se sincronizaban como el resto de claves
      (K): se comparaba un único "reloj" para TODA la lista y, si un dispositivo tenía un reloj más
@@ -1193,8 +1243,41 @@ const Cloud=(()=>{
   const canon=v=>Array.isArray(v)?'['+v.map(canon).join(',')+']':(v&&typeof v==='object')?'{'+Object.keys(v).sort().map(k=>JSON.stringify(k)+':'+canon(v[k])).join(',')+'}':JSON.stringify(v);
   const canonNoUpd=it=>canon(Object.assign({},it,{upd:0}));
   const byIdAsc=(a,b)=>a.id<b.id?-1:1;
+  /* fusiona los items de UNA sesión (sesiones[].items, por id de deber) entre local y remoto:
+     cada item lleva su propio "upd" (ver recItem, p4a.js) y nos quedamos con el más reciente de
+     cada uno por separado -- igual idea que IK/mergeItems, pero un nivel más adentro, para no
+     perder un "hecho" de un dispositivo solo porque la sesión entera del otro sea "más nueva" en
+     conjunto (ver el porqué completo en mergeSessions, más abajo).
+     OJO: "upd" se toca en CADA toque del item, incluido con solo ABRIRLO sin terminarlo (recItem
+     se llama nada más pulsar la tarea, ver openItem en p4a.js) -- así que comparar solo por "upd"
+     tiene un fallo sutil pero real: si un dispositivo termina un deber y sincroniza, y luego OTRO
+     dispositivo (que todavía no se ha enterado de eso) simplemente ABRE esa misma tarea para
+     mirarla, su "upd" de apertura queda más nuevo que el "upd" de cuando se terminó en el otro, y
+     al sincronizar ese "abierto pero no hecho" ganaría por reloj y "desharía" el hecho ya
+     registrado -- justo el mismo síntoma que este arreglo pretende evitar, solo que por otra vía.
+     Como en esta app un deber nunca se "deshace" una vez hecho (no existe ninguna acción para
+     volver a marcar un item como no hecho), la regla segura es: si uno de los dos está "done" y el
+     otro no, gana siempre el que está "done", sea cual sea su "upd"; "upd" solo desempata cuando
+     los dos coinciden en si están hechos o no. */
+  const mergeSesItems=(localItems,remoteItems)=>{
+    const out=Object.assign({},localItems||{});
+    Object.keys(remoteItems||{}).forEach(id=>{
+      const r=remoteItems[id],l=out[id];
+      if(!l){out[id]=r;return;}
+      if(!!r.done!==!!l.done){out[id]=r.done?r:l;return;}
+      if((r.upd||0)>(l.upd||0))out[id]=r;
+    });
+    return out;
+  };
+  /* "extra" (actividades sueltas del día, no ligadas a un deber del calendario) son inmutables una
+     vez creadas y ya llevan id propio (uid()): basta con la unión por id. */
+  const mergeSesExtra=(localExtra,remoteExtra)=>{
+    const byId={};
+    (localExtra||[]).concat(remoteExtra||[]).forEach(x=>{if(x&&x.id&&!byId[x.id])byId[x.id]=x;});
+    return Object.values(byId).sort((a,b)=>(a.start||0)-(b.start||0));
+  };
   const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
-    if(k==='studyProgress')return !v||!Object.keys(v).length;if(k==='miniGameEvery')return !v||v===15;
+    if(k==='studyProgress'||k==='studyHist')return !v||!Object.keys(v).length;if(k==='miniGameEvery')return !v||v===15;
     if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;delete o.spVoice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;delete d.spVoice;return canon(o)===canon(d);}return false;};
   let timer=null,busy=false,again=false,started=false;
   const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
@@ -1254,6 +1337,43 @@ const Cloud=(()=>{
       out.iarr[key]=winners;out.itomb[key]=mergedTomb;
       return changed;
     },
+    /* state.sesiones (el día a día de deberes de Julia: qué items se han hecho, resultados,
+       actividades sueltas) tenía el MISMO problema que examenes/tareas tenían antes de IK: se
+       fusionaba comparando un único "upd" para TODA la sesión del día y quedándose con la sesión
+       entera del dispositivo "más nuevo", descartando la del otro por completo -- incluido
+       cualquier "hecho" que ese otro dispositivo hubiera registrado (p.ej. un Spelling que Julia
+       acababa de terminar), si su sesión tenía la mala suerte de llevar un "upd" de sesión más
+       antiguo que algún cambio concurrente en el otro dispositivo. Aquí se fusiona cada sesión
+       campo a campo (como con examenes/tareas, pero una sesión entera en vez de un elemento
+       suelto): "items" elemento a elemento (mergeSesItems), "extra" por unión de id
+       (mergeSesExtra), y "started"/"finished" quedándose con el más antiguo que no sea cero (para
+       no perder un "ya empezado"/"ya terminado" solo porque el otro dispositivo todavía no lo
+       tenga marcado). Si una sesión solo existe en un dispositivo, se adopta tal cual. */
+    mergeSessions(rv,out){
+      const localArr=state.sesiones||[];
+      const remoteArr=(rv&&rv.ses)||[];
+      const byId={};
+      localArr.forEach(s=>{if(s&&s.id)byId[s.id]=Object.assign({},s);});
+      remoteArr.forEach(rs=>{
+        if(!rs||!rs.id)return;
+        const ls=byId[rs.id];
+        if(!ls){byId[rs.id]=Object.assign({},rs);return;}
+        const earliestNZ=(a,b)=>(a&&b)?Math.min(a,b):(a||b||0);
+        byId[rs.id]={
+          id:ls.id,date:ls.date||rs.date,
+          started:earliestNZ(ls.started,rs.started),
+          finished:earliestNZ(ls.finished,rs.finished),
+          items:mergeSesItems(ls.items,rs.items),
+          extra:mergeSesExtra(ls.extra,rs.extra),
+          upd:Math.max(ls.upd||0,rs.upd||0)
+        };
+      });
+      const SS=Object.values(byId).sort(byIdAsc);
+      const changed=canon(SS)!==canon(localArr.slice().sort(byIdAsc));
+      if(changed)state.sesiones=SS;
+      out.ses=SS;
+      return changed;
+    },
     merge(rv){
       const s=state.sync,first=!s.init,out={v:1,t:{},d:{},history:[],hclear:0,ses:[],iarr:{},itomb:{}};let changed=false;
       const localD=state.dictados.slice();let adoptedD=false;
@@ -1274,10 +1394,8 @@ const Cloud=(()=>{
       (rv&&rv.history||[]).concat(state.history).forEach(h=>{if(h.id>hc)map[h.id]=h;});
       const H=Object.values(map).sort((a,b)=>b.id-a.id).slice(0,500);
       if(H.map(h=>h.id).join()!==state.history.map(h=>h.id).join()){state.history=H;changed=true;}
-      const sm={};(rv&&rv.ses||[]).concat(state.sesiones).forEach(x=>{if(!sm[x.id]||(x.upd||0)>(sm[x.id].upd||0))sm[x.id]=x;});
-      const SS=Object.values(sm).sort((a,b)=>a.id<b.id?-1:1);
-      if(canon(SS)!==canon(state.sesiones.slice().sort((a,b)=>a.id<b.id?-1:1))){state.sesiones=SS;changed=true;}
-      s.sj=state.sesiones.map(x=>x.id+':'+x.upd).join(',');out.ses=SS;
+      if(C.mergeSessions(rv,out))changed=true;
+      s.sj=state.sesiones.map(x=>x.id+':'+x.upd).join(',');
       s.hclear=hc;s.hj=H.map(h=>h.id).join(',');out.history=H;out.hclear=hc;
       IK.forEach(key=>{if(C.mergeItems(key,rv,out))changed=true;});
       const allP=K.every(k=>pristine(k,part(k)))&&!state.history.length&&!state.sesiones.length&&IK.every(k=>!state[k].length);
@@ -1328,7 +1446,7 @@ function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
-  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo,morfolist:renderMorfoList,morfoTheory:renderMorfoTheory,engdict:renderEngDict,notasAlumna:renderNotasAlumna,spelllist:renderSpellList,spelldict:renderSpellDict,spellsent:renderSpellSent}[ui.screen]||renderHome)();
+  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo,morfolist:renderMorfoList,morfoTheory:renderMorfoTheory,morfoprep:renderPrep,engdict:renderEngDict,notasAlumna:renderNotasAlumna,spelllist:renderSpellList,spelldict:renderSpellDict,spellsent:renderSpellSent}[ui.screen]||renderHome)();
 }
 function renderList(){
   const L=state.dictados;
@@ -1685,11 +1803,17 @@ function itemSummary(it,x){
   return x.first!==undefined?`${x.first} de ${x.n} a la primera`:'';
 }
 function touchSes(s){s.upd=Date.now();save();}
-/* ---- registrar resultados ---- */
+/* ---- registrar resultados ----
+   Cada item de una sesión lleva su propio "upd" (igual que examenes/tareas/etc., ver IK en
+   p3s.js), para poder fusionarlo elemento a elemento al sincronizar en vez de quedarnos con la
+   sesión entera de un solo dispositivo (ver Cloud.mergeSessions, p3s.js): así, si Julia termina un
+   deber en un dispositivo mientras otro toca algo distinto de ese mismo día sin haber sincronizado
+   entre medias, no se pierde su "hecho" al sincronizar después. */
 function recItem(it){
   const s=getSes(todayStr(),true),now=Date.now();
   if(!s.started)s.started=now;
   const r=s.items[it.id]||(s.items[it.id]={title:itemTitle(it),kind:it.type,start:now,secs:0,done:false});
+  r.upd=Date.now();
   return [s,r];
 }
 function recordDictado(){
@@ -1713,6 +1837,7 @@ function sessionReport(s){
     else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (sin foto)'}`;}
     else if(r.kind==='minijuego'&&r.res){o.line=r.res.line;}
     else if(r.kind==='morfo'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien clasificadas`;}
+    else if(r.kind==='prep'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} preposiciones bien`;}
     else if(r.kind==='spelling'&&r.res){const x=r.res;
       /* los deberes de Spelling del día son 2 rondas de escuchar + 1 de frases (x.kind==='hw',
          ver spHwFinishAll en p7b.js); la práctica suelta sigue siendo una sola ronda. */
@@ -1754,7 +1879,7 @@ function renderHome(){
 function renderMorfoList(){
   app.innerHTML=`<button class="link" data-act="goHome">← Inicio</button><h2>🔎 Análisis Morfológico</h2>
   <p class="mute" style="margin-top:0">Elige un texto para clasificar sus palabras (sustantivo, verbo, adjetivo…).</p>
-  <div class="row" style="margin:0 0 10px"><button class="btn" data-act="goMorfoTheory">📘 Ver la teoría</button></div>
+  <div class="row" style="margin:0 0 10px;gap:8px;flex-wrap:wrap"><button class="btn" data-act="goMorfoTheory">📘 Ver la teoría</button><button class="btn" data-act="goPrep">🔗 Preposiciones</button></div>
   <div class="list">${state.morfos.map(d=>`<button class="item" data-act="morfoFromItem" data-id="${esc(d.id)}"><span><b>${esc(d.title)}</b><br><small class="mute">${nWords(d.text)} palabras</small></span><span style="font-size:1.6rem">▶️</span></button>`).join('')||'<p class="mute">Tu tutor todavía no ha preparado ningún texto.</p>'}</div>`;
 }
 /* ================= notas de Julia (alumna) =================
@@ -1849,7 +1974,7 @@ const taskActions={
     else if(it.type==='teoria'){
       const e=exGet(it.tid);
       if(!e||e.status!=='ready')return toast('Esa tarjeta de teoría ya no está disponible');
-      studyOpen(it.tid);
+      studyOpenHomework(it.tid,it.n,it.mode);
     }
     else if(it.type==='spelling'){
       const l=state.spelling.find(x=>x.id===it.spid);
@@ -1970,6 +2095,14 @@ function taskAddOverlay(){
   <div class="lbl">¿Cuántos días seguidos?</div>
   <div class="chips">${[1,3,5,10,15].map(n=>chip(a.days===n,'taskAddDays',`data-v="${n}"`,n===1?'Solo ese día':n+' días')).join('')}</div>
   ${a.days>1?`<div class="chips" style="margin-top:8px">${chip(a.skip,'taskAddSkip','',a.skip?'✓ Sin sábados ni domingos':'Sin sábados ni domingos')}</div>`:''}
+  ${a.type==='teoria'?`<div class="lbl" style="margin-top:14px">¿Cuántas preguntas?</div>
+  <div class="chips">${chip(!a.nQuestions,'taskAddN','data-v="0"',`Todas (${a.poolLen})`)}${[10,15,20,30].filter(n=>n<a.poolLen).map(n=>chip(a.nQuestions===n,'taskAddN',`data-v="${n}"`,n)).join('')}</div>
+  <div class="lbl">¿Estudio o examen?</div>
+  <div class="chips">${chip(a.mode==='estudio','taskAddMode','data-v="estudio"','📖 Estudio (con foto)')}${chip(a.mode==='examen','taskAddMode','data-v="examen"','📝 Examen (sin foto)')}</div>`:''}
+  ${a.type==='spelling'?`<div class="lbl" style="margin-top:14px">¿Cuántas rondas escuchando las palabras?</div>
+  <div class="chips">${[1,2,3].map(n=>chip(a.dictRounds===n,'taskAddDictRounds',`data-v="${n}"`,n+(n===1?' ronda':' rondas'))).join('')}</div>
+  <div class="lbl">¿Cuántas rondas de frases para completar?</div>
+  ${a.nSent?`<div class="chips">${[0,1,2,3].map(n=>chip(a.sentRounds===n,'taskAddSentRounds',`data-v="${n}"`,n===0?'Ninguna':n+(n===1?' ronda':' rondas'))).join('')}</div>`:'<p class="mute" style="margin:4px 0;font-size:.85rem">Esta lista todavía no tiene frases preparadas, así que hoy solo escuchar.</p>'}`:''}
   <p class="mute" style="margin:10px 0">${esc(when)}</p>
   <div class="row" style="margin-top:4px"><button class="btn primary big" data-act="taskAddConfirm">💾 Agregar a deberes</button><button class="btn" data-act="taskAddClose">Cancelar</button></div>
   </div></div>`;
@@ -1983,26 +2116,48 @@ function taInput(t){
   return true;
 }
 const taskAddActions={
-  taskAddOpen(b){ui.taskAdd={type:b.dataset.type,ref:b.dataset.id,title:b.dataset.title,date:todayStr(),days:1,skip:true};render();},
+  taskAddOpen(b){
+    const a={type:b.dataset.type,ref:b.dataset.id,title:b.dataset.title,date:todayStr(),days:1,skip:true};
+    if(a.type==='teoria'){
+      const e=exGet(a.ref);a.poolLen=e?e.pool.filter(q=>!q.off).length:0;a.nQuestions=null;a.mode='estudio';
+    }else if(a.type==='spelling'){
+      const l=spGet(a.ref);a.nSent=l?l.sentences.length:0;a.dictRounds=2;a.sentRounds=a.nSent?1:0;
+    }
+    ui.taskAdd=a;render();
+  },
   taskAddClose(){ui.taskAdd=null;render();},
   taskAddDate(b){ui.taskAdd.date=b.dataset.v;render();},
   taskAddDays(b){ui.taskAdd.days=+b.dataset.v;render();},
   taskAddSkip(){ui.taskAdd.skip=!ui.taskAdd.skip;render();},
+  taskAddN(b){ui.taskAdd.nQuestions=(+b.dataset.v)||null;render();},
+  taskAddMode(b){ui.taskAdd.mode=b.dataset.v;render();},
+  taskAddDictRounds(b){ui.taskAdd.dictRounds=+b.dataset.v;render();},
+  taskAddSentRounds(b){ui.taskAdd.sentRounds=+b.dataset.v;render();},
   taskAddConfirm(){
     const a=ui.taskAdd;if(!a)return;
     const ds=tfDates(a);
     const keyByType={dictado:'did',examen:'eid',teoria:'tid',spelling:'spid',morfo:'mid'};
     const k=keyByType[a.type];if(!k)return;
     ds.forEach(date=>{
-      const items=[{id:'i'+uid(),type:a.type,[k]:a.ref}];
-      state.tareas.push({id:'t'+uid(),date,items});
+      const it={id:'i'+uid(),type:a.type,[k]:a.ref};
+      if(a.type==='teoria'){it.n=a.nQuestions||null;it.mode=a.mode||'estudio';}
+      if(a.type==='spelling'){it.dictRounds=a.dictRounds||2;it.sentRounds=a.sentRounds!==undefined?a.sentRounds:1;}
+      state.tareas.push({id:'t'+uid(),date,items:[it]});
     });
     save();ui.taskAdd=null;render();toast(`Agregado a deberes de ${ds.length} ${ds.length===1?'día':'días'} ✅`);
   }
 };
+/* "Actividad e Historial": antes eran dos pestañas distintas (ver el comentario en renderTutor,
+   p3d.js). Primero el día a día de TODA la actividad (como antes "Actividad"), y debajo, como
+   sección propia, las estadísticas específicas de Dictado (como antes "Historial": palabras
+   falladas, reglas, tendencia, por dictado, cada intento). */
 function tabActividad(){
   const S=state.sesiones.slice().sort((a,b)=>a.id<b.id?1:-1);
-  $('#tab').innerHTML=S.length?`<p class="mute" style="margin-top:0">Lo que Julia ha hecho cada día: hora, tiempo, aciertos y fallos.</p>${S.map(s=>reportHTML(s,true)).join('')}`:'<p class="mute">Todavía no hay actividad. Cuando Julia haga sus deberes de hoy, aparecerá aquí.</p>';
+  const actividadBody=S.length?`<p class="mute" style="margin-top:0">Lo que Julia ha hecho cada día: hora, tiempo, aciertos y fallos.</p>${S.map(s=>reportHTML(s,true)).join('')}`:'<p class="mute">Todavía no hay actividad. Cuando Julia haga sus deberes de hoy, aparecerá aquí.</p>';
+  $('#tab').innerHTML=`${actividadBody}
+  <h2 style="margin-top:28px">📊 Historial de Dictado</h2>
+  <p class="mute" style="margin-top:0">Estadísticas específicas de Dictado: palabras que más falla, reglas que más se le atragantan y cómo evoluciona.</p>
+  ${historialBodyHTML()}`;
 }
 const tog=(arr,v)=>arr.includes(v)?arr.filter(x=>x!==v):arr.concat(v);
 const deberesActions={
@@ -2989,7 +3144,12 @@ function makeExamOptions(pool,q){
 function studySave(){
   const st=ui.study;if(!st)return;
   state.studyProgress=state.studyProgress||{};
-  state.studyProgress[st.temaId]={i:st.i,firstOk:st.firstOk,level:st.level,showPhoto:st.showPhoto,order:st.qs.map(q=>q.id)};
+  /* hwN/hwMode: con qué nº de preguntas y modo se armó esta ronda (null/'estudio' si es de
+     práctica libre, ver studyOpen). studyOpenHomework los compara con lo que pide el deber antes
+     de retomar una ronda a medias: si el tutor cambió el nº de preguntas o el modo para un nuevo
+     deber sobre la misma tarjeta, no tiene sentido seguir retomando la ronda vieja con la
+     configuración vieja. */
+  state.studyProgress[st.temaId]={i:st.i,firstOk:st.firstOk,level:st.level,showPhoto:st.showPhoto,order:st.qs.map(q=>q.id),hwN:st.hwN!==undefined?st.hwN:null,hwMode:st.hwMode||null};
   save();
 }
 function studyClearProgress(temaId){
@@ -3009,6 +3169,63 @@ function studyOpen(id){
   }
   if(!qs)qs=shuffleArr(pool);
   ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk,n:qs.length,recorded:false,theoryOpen:true};
+  ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
+}
+/* ---- nº de preguntas y rotación cuando la teoría se pone como DEBER del día ----
+   El propio tutor elige, al poner la tarjeta como deber (en "Agregar a deberes", ver
+   taskAddOverlay en p4t.js), cuántas preguntas le tocan a Julia ese día (it.n: puede ser "todas"
+   -null/0/undefined- o un número concreto). No hay ningún tope automático. Cuando el tutor pide
+   MENOS preguntas de las que tiene el banco, para que repartido en varios días/deberes acabe
+   pasando por el máximo número posible de preguntas distintas (en vez de que le toquen siempre
+   las mismas al azar), se recuerda qué preguntas ya le han tocado como deber en este tema
+   (state.studyHist, que NO se borra al terminar una ronda a diferencia de studyProgress) y cada
+   vez se eligen preferentemente las que todavía no le han tocado. Cuando ya se han usado todas, se
+   considera agotado el banco y se vuelve a barajar desde cero (un ciclo nuevo). Si el tutor pide
+   "todas" (o pide tantas o más de las que hay), no hace falta rotación: le tocan todas, como
+   siempre. */
+function studyPickHomeworkSet(id,pool,n){
+  if(!n||n>=pool.length)return shuffleArr(pool);
+  state.studyHist=state.studyHist||{};
+  const prev=state.studyHist[id];
+  let usedSet=new Set((prev&&Array.isArray(prev.used)?prev.used:[]).filter(qid=>pool.some(q=>q.id===qid)));
+  let unused=pool.filter(q=>!usedSet.has(q.id));
+  if(!unused.length){usedSet=new Set();unused=pool.slice();} // banco agotado: ciclo nuevo
+  const picked=shuffleArr(unused).slice(0,n);
+  picked.forEach(q=>usedSet.add(q.id));
+  if(usedSet.size>=pool.length)usedSet=new Set(); // con este deber se completa el ciclo: la próxima vez, a barajar de nuevo
+  state.studyHist[id]={used:Array.from(usedSet)};
+  save();
+  return shuffleArr(picked);
+}
+/* mode: 'estudio' (nivel 1, con foto -por defecto-) o 'examen' (nivel 2, sin foto), elegido por el
+   tutor al poner la tarjeta como deber (it.mode). */
+function studyOpenHomework(id,n,mode){
+  const e=exGet(id);if(!e||e.status!=='ready')return toast('Este tema todavía no está disponible');
+  const pool=e.pool.filter(q=>!q.off);if(!pool.length)return toast('Este tema no tiene preguntas todavía');
+  const nReq=n||null,modeReq=mode==='examen'?'examen':'estudio';
+  const saved=state.studyProgress&&state.studyProgress[id];
+  /* solo se retoma una ronda a medias si es EXACTAMENTE el mismo deber (mismo nº de preguntas y
+     mismo modo) que se dejó a medias: si el tutor puso un deber nuevo sobre esta misma tarjeta
+     con otro nº de preguntas u otro modo, se descarta lo que hubiera a medias y se sortea un set
+     nuevo con la configuración de ESTE deber (ver studySave: hwN/hwMode). */
+  const sameHw=saved&&(saved.hwN||null)===nReq&&(saved.hwMode||null)===modeReq;
+  if(sameHw&&Array.isArray(saved.order)&&saved.i<saved.order.length){
+    const byId={};pool.forEach(q=>byId[q.id]=q);
+    const ordered=saved.order.map(qid=>byId[qid]).filter(Boolean);
+    // si alguna de las preguntas originales ya no está activa, se rellena con otras del banco que
+    // todavía no se hubieran usado en esta ronda, igual que hace studyOpen, sin pasarse del nº de
+    // preguntas que pidió este deber (nReq) cuando lo pidió.
+    const extra=pool.filter(q=>!saved.order.includes(q.id));
+    let rebuilt=ordered.concat(extra);
+    if(nReq&&rebuilt.length>nReq)rebuilt=rebuilt.slice(0,nReq);
+    if(rebuilt.length){
+      ui.study={temaId:id,level:saved.level||1,showPhoto:saved.showPhoto!==undefined?saved.showPhoto:true,qs:rebuilt,i:Math.min(saved.i,rebuilt.length-1),stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk:saved.firstOk||0,n:rebuilt.length,recorded:false,theoryOpen:true,hwN:nReq,hwMode:modeReq};
+      ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();return;
+    }
+  }
+  const qs=studyPickHomeworkSet(id,pool,n);
+  const level=modeReq==='examen'?2:1,showPhoto=level===1;
+  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:true,hwN:nReq,hwMode:modeReq};
   ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 function studyRound(temaId,level,showPhoto){
@@ -3201,11 +3418,11 @@ const studyActions={
 };
 /* ================= minijuegos: cada 15 preguntas, un descanso interactivo =================
    Se insertan al azar dentro de las tandas largas de ejercicios (mates, exámenes, estudio de
-   temas, análisis morfológico) para que no se haga tan pesado, cada X preguntas/palabras según la
-   frecuencia de Ajustes (miniGameEvery). Además, siempre (no según esa frecuencia): al terminar
-   de corregir un dictado, y al terminar cada ronda de Spelling (dictado o frases para completar),
-   sea una ronda suelta o una de las rondas encadenadas de los deberes. Seis juegos posibles,
-   elegidos al azar cada vez. */
+   temas, análisis morfológico y Spelling -dictado o frases para completar, suelto o dentro de los
+   deberes encadenados-) para que no se haga tan pesado, cada X preguntas/palabras según la
+   frecuencia de Ajustes (miniGameEvery); nunca se garantiza uno justo al terminar la ronda, solo
+   según esa frecuencia (ver miniGameDue). Aparte, siempre (no según esa frecuencia): al terminar
+   de corregir un dictado normal. Seis juegos posibles, elegidos al azar cada vez. */
 const MINI_WORDS=['jirafa','pelicano','bicicleta','manzana','estrella','planeta','cocodrilo','biblioteca','elefante','mariposa','castillo','tortuga','oceano','montana','cuaderno','ventana','sombrero','jardin','musica','pintura','camion','paraguas','delfin','tijeras','calendario','lampara','escalera','desierto','volcan','cometa'];
 const MINI_EMOJIS=['🐶','🐱','🐵','🦁','🐸','🐧','🦋','🐢','🐬','🦖','🍎','🍉','⚽','🎈','🚗','🌈','⭐','🎵','🌙','☀️'];
 const MINI_FACES=['🙂','😕','😟','😧','😨','😱'];
@@ -3582,18 +3799,35 @@ function morfoExpectedLabel(cat,subKey){
 /* corrección de "escríbelo tú" en Análisis Morfológico: a diferencia de textCloseEnough (p5a.js,
    que tolera alguna errata suelta, usada en Estudio de temas), aquí NO se tolera ninguna falta de
    ortografía -- cada palabra de la respuesta correcta tiene que estar bien escrita en lo que ha
-   puesto Julia (mayúsculas y tildes no cuentan, pero el resto de letras sí). Si falta alguna o
-   está mal escrita, se devuelve para poder decirle cuál en concreto. */
-function morfoWriteGrade(given,expectedText){
-  const origWords=expectedText.split(/\s+/).filter(Boolean);
-  const gset=new Set(exNorm(given).split(' ').filter(Boolean));
-  const missing=[];
-  origWords.forEach(w=>{
-    const nw=exNorm(w);
-    if(!nw)return;
-    if(!gset.has(nw))missing.push(w.replace(/^[^\p{L}]+|[^\p{L}]+$/gu,''));
+   puesto Julia (mayúsculas y tildes no cuentan, pero el resto de letras sí). A diferencia de la
+   versión anterior (morfoWriteGrade, que solo decía qué palabras faltaban), esta compara palabra
+   por palabra lo que ha escrito Julia contra la respuesta esperada, para poder MARCAR en rojo
+   (estilo Word) justo la palabra suya que está mal, no solo nombrarla en un aviso: cada palabra
+   que escribe se empareja con la palabra esperada más parecida que quede libre (exacta primero,
+   luego una errata cercana con la misma tolerancia que textCloseEnough); si no encaja con ninguna,
+   se marca mal escrita tal cual. Las palabras esperadas que ninguna palabra suya intenta siquiera
+   quedan aparte, como "te falta escribir" (no hay nada que subrayar, porque no las escribió). */
+function morfoWordsClose(a,b){
+  if(a===b)return true;
+  const L=Math.max(a.length,b.length);
+  if(L>=7)return lev(a,b)<=2;
+  if(L>=4)return lev(a,b)<=1;
+  return false;
+}
+function morfoWriteDiff(given,expectedText){
+  const expPool=expectedText.split(/\s+/).filter(Boolean).map(w=>({orig:w,n:exNorm(w),used:false})).filter(e=>e.n);
+  const givenWords=given.split(/\s+/).filter(Boolean);
+  const results=givenWords.map(w=>{
+    const n=exNorm(w);
+    if(!n)return {w,bad:false};
+    let m=expPool.find(e=>!e.used&&e.n===n);
+    if(m){m.used=true;return {w,bad:false};}
+    m=expPool.find(e=>!e.used&&morfoWordsClose(e.n,n));
+    if(m){m.used=true;return {w,bad:true};}
+    return {w,bad:true};
   });
-  return {ok:missing.length===0,missing:[...new Set(missing.filter(Boolean))]};
+  const missing=[...new Set(expPool.filter(e=>!e.used).map(e=>e.orig.replace(/^[^\p{L}]+|[^\p{L}]+$/gu,'')).filter(Boolean))];
+  return {ok:missing.length===0&&results.every(r=>!r.bad),results,missing};
 }
 /* la explicación de "por qué" es esa categoría/subtipo: la del subtipo si lo hay (más concreta,
    p.ej. adjetivo calificativo -> "Expresa una cualidad del sustantivo."), si no la de la
@@ -3692,7 +3926,7 @@ async function morfoGenText(){
    no cada vez que Julia (o el tutor) lo abre. Si el tutor edita el texto, saveDict/saveMorfo
    borran esta caché para que se vuelva a analizar como la primera vez. */
 function morfoStart(text,title,backScreen,rec){
-  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,morf:{},i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',nivel:1,writeGiven:'',writeOk:false,extra:null,back:backScreen||'list',start:Date.now()};
+  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,morf:{},i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',nivel:1,writeGiven:'',writeOk:false,writeDiff:null,extra:null,back:backScreen||'list',start:Date.now()};
   ui.screen='morfo';render();
   const tokens=getWords(text).slice(0,220);
   if(rec&&Array.isArray(rec.morfoCats)&&rec.morfoCats.length===tokens.length){
@@ -3796,6 +4030,17 @@ function morfoExtraHTML(st){
    mayúsculas ni tildes -- solo que las palabras en sí estén bien (ver exNorm, p5a.js). Si acertó a
    la primera (stage 'ok') no hace falta nada de esto: el botón "Siguiente" aparece directamente,
    como hasta ahora. */
+/* pintado de lo que ha escrito Julia tras un intento fallido de "escríbelo tú": las palabras mal
+   escritas se subrayan en rojo ondulado, igual que el subrayado de ortografía de Word, en vez de
+   solo nombrarlas en un aviso -- así se ve de un vistazo justo cuál palabra suya hay que corregir.
+   Las palabras que no escribió siquiera (no hay nada que subrayar) se listan aparte. */
+function morfoWriteDiffHTML(diff){
+  return `<div class="panel" style="margin-top:10px;background:#fff;border-color:#f0b4b4">
+  <p class="mute" style="margin:0 0 6px;font-size:.85rem">Esto es lo que has escrito; las palabras en rojo no están bien escritas:</p>
+  <p style="margin:0;line-height:2;font-size:1.02rem">${diff.results.map(r=>r.bad?`<span style="text-decoration:underline wavy #e11d48;text-decoration-thickness:2px;text-underline-offset:3px;color:#b91c1c;font-weight:700">${esc(r.w)}</span>`:esc(r.w)).join(' ')}</p>
+  ${diff.missing.length?`<p class="mute" style="margin:8px 0 0;font-size:.85rem">Y además te falta escribir: ${diff.missing.map(w=>`<b>${esc(w)}</b>`).join(', ')}</p>`:''}
+  </div>`;
+}
 function morfoWriteGateHTML(st,cat,sub){
   /* en Modo Examen no se corrige nada hasta el final (como el resto de Exámenes de la app), así
      que aquí no se le pide a Julia que escriba la respuesta correcta tras fallar -- eso revelaría
@@ -3805,6 +4050,7 @@ function morfoWriteGateHTML(st,cat,sub){
     <b>✍️ Para continuar, escribe tú la respuesta correcta completa, con el porqué:</b>
     <textarea id="morfoWriteAns" data-enter="morfoWriteAns" placeholder="Escribe aquí la categoría y, con «porque…», la explicación…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:60px;margin-top:8px">${esc(st.writeGiven||'')}</textarea>
     <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="morfoWriteCheck">✔ Comprobar</button></div>
+    ${st.writeDiff?morfoWriteDiffHTML(st.writeDiff):''}
     </div>`;
   }
   let html=(st.level!=='examen'&&st.stage==='wrong')?`<div class="msg right" style="margin-top:10px">✅ ¡Muy bien escrito!</div>`:'';
@@ -3940,7 +4186,7 @@ const morfoActions={
     /* en nivel 2 hay que acertar también el subtipo exacto, no solo la categoría. */
     const ok=st.nivel===2?(pick===correct&&pickSub===correctSub):(pick===correct);
     st.results[st.i]={ok,pick,pickSub,correct,correctSub};if(ok)st.ok++;
-    st.stage=ok?'ok':'wrong';st.writeGiven='';st.writeOk=false;
+    st.stage=ok?'ok':'wrong';st.writeGiven='';st.writeOk=false;st.writeDiff=null;
     st.extra=morfoExtraNeeded(st)?morfoMakeExtra():null;
     const y=scrollY;render();scrollTo(0,y);
   },
@@ -3991,9 +4237,10 @@ const morfoActions={
   },
   /* "escríbelo tú": comprueba lo que ha escrito contra la categoría (y subtipo, en nivel 2)
      correcta de la palabra fallada, Y el porqué de la explicación completa -- no se tolera
-     ninguna falta de ortografía (ver morfoWriteGrade); si hay alguna palabra mal escrita o que
-     falta, se le dice cuál en concreto para que la corrija. Hasta que no esté toda bien no se
-     habilita "Siguiente" (ver morfoWriteGateHTML). */
+     ninguna falta de ortografía (ver morfoWriteDiff); si hay alguna palabra mal escrita o que
+     falta, se marca en rojo (estilo Word) justo la palabra suya que está mal, ver
+     morfoWriteDiffHTML. Hasta que no esté toda bien no se habilita "Siguiente" (ver
+     morfoWriteGateHTML). */
   morfoWriteCheck(){
     const st=ui.morfo;if(!st||st.stage!=='wrong')return;
     const r=st.results[st.i];if(!r)return;
@@ -4005,9 +4252,12 @@ const morfoActions={
     const why=morfoWhy(r.correct,r.correctSub);
     const label=morfoExpectedLabel(r.correct,st.nivel===2?r.correctSub:'');
     const expected=label+(why?', porque '+lcFirst(stripDot(why)):'');
-    const g=morfoWriteGrade(v,expected);
-    if(g.ok)st.writeOk=true;
-    else toast(g.missing.length===1?`Esta palabra no está bien escrita: «${g.missing[0]}». Revísala e inténtalo otra vez.`:`Estas palabras no están bien escritas: ${g.missing.map(w=>'«'+w+'»').join(', ')}. Revísalas e inténtalo otra vez.`);
+    const d=morfoWriteDiff(v,expected);
+    if(d.ok){st.writeOk=true;st.writeDiff=null;}
+    else{
+      st.writeDiff=d;
+      toast('Hay alguna palabra que no está bien escrita: revísala marcada en rojo más abajo.');
+    }
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoNext(){
@@ -4016,7 +4266,7 @@ const morfoActions={
     if(st.extra&&st.extra.stage!=='done')return toast('Termina primero el análisis extra');
     st.i++;
     if(st.i>=st.tokens.length){st.stage='done';morfoFinish();const y=scrollY;render();scrollTo(0,y);return;}
-    st.stage='answer';st.writeGiven='';st.writeOk=false;st.extra=null;
+    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.extra=null;
     /* igual que en mates/exámenes/estudio: cada X palabras (la frecuencia de Ajustes) aparece un
        minijuego de descanso. Se comprueba YA con la siguiente palabra lista (stage 'answer'),
        para que al volver del minijuego se pueda seguir directamente. */
@@ -4032,7 +4282,7 @@ const morfoActions={
     st.i--;
     const prev=st.results[st.i];
     if(prev){if(prev.ok)st.ok=Math.max(0,st.ok-1);st.results[st.i]=null;}
-    st.stage='answer';st.writeGiven='';st.writeOk=false;st.extra=null;
+    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.extra=null;
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoBack(){const back=(ui.morfo&&ui.morfo.back)||'list';ui.morfo=null;ui.screen=back;render();},
@@ -4054,6 +4304,186 @@ const morfoActions={
   goMorfoTheory(){ui.morfoTheoryBack=ui.screen;ui.screen='morfoTheory';render();},
   morfoTheoryBack(){ui.screen=ui.morfoTheoryBack||'morfolist';ui.morfoTheoryBack=null;render();}
 };
+/* ================= Preposiciones (dentro de Análisis Morfológico) =================
+   Apartado especial, aparte del ejercicio de clasificar palabra por palabra, para practicar
+   solo las preposiciones. En Modo Estudio: la IA genera una ronda nueva de frases cortas (una
+   por cada preposición, al estilo del cómic "Un día de playa con Ana" que dio pie a esto), y
+   Julia tiene que PULSAR en la frase la palabra que es la preposición (no escribirla), con
+   ayuda (la lista de las 21) y corrección al momento. En Modo Examen no hay frases: sustituye
+   por completo a ese ejercicio escribir de memoria la lista completa de las 21 preposiciones,
+   corrigiéndose solo al terminar, como el resto de Exámenes de la app. */
+const PREP_LIST=['a','ante','bajo','con','contra','de','desde','durante','en','entre','hacia','hasta','mediante','para','por','según','sin','sobre','tras','versus','vía'];
+const PREP_SET=new Set(PREP_LIST.map(exNorm));
+function prepGenPrompt(subset){
+  const list=subset.join(', ');
+  return [{role:'system',content:`Eres un profesor de Lengua de primaria (Year 6, 10-11 años, colegio británico) que prepara frases cortas en español para practicar las preposiciones, al estilo de un cómic sencillo (una escena breve de la vida diaria). Para cada una de estas preposiciones, en este orden, escribe UNA frase corta y natural (entre 5 y 10 palabras) que la use exactamente UNA vez, escrita tal cual, sin cambiarla de forma: ${list}. Las frases deben ser sencillas y variadas, parecidas a estos ejemplos: "Ana se para ante un castillo.", "El agua le llega hasta las rodillas.", "Toby corre tras la gaviota." Devuelve SOLO un JSON válido, sin explicaciones: {"frases":[{"prep":"<la preposición tal cual de la lista>","texto":"<la frase>"}]} con EXACTAMENTE ${subset.length} elementos, en el mismo orden que la lista de preposiciones.`},
+   {role:'user',content:'Genera las frases.'}];
+}
+/* valida cada frase generada: para poder comprobar lo que Julia pulsa, la frase tiene que
+   contener, como una de sus palabras (tokenizada igual que el resto de la app, ver getWords),
+   exactamente la preposición que se le pidió -- si la IA se equivoca y no la incluye tal cual,
+   esa frase se descarta en vez de dejar un ejercicio sin ninguna palabra correcta que pulsar.
+   También se descarta si esa misma palabra aparece MÁS DE UNA VEZ en la frase (p.ej. "de" dos
+   veces): aunque se le pidió a la IA que la usara una sola vez, si se equivoca y la repite, no
+   hay forma de saber cuál de las dos pulsaría Julia como correcta -- mejor descartar esa frase
+   que dejar un ejercicio ambiguo donde pulsar la "otra" preposición cuenta como fallo. */
+function prepValidate(raw){
+  if(!Array.isArray(raw))return [];
+  const out=[];
+  raw.forEach(f=>{
+    if(!f||typeof f.texto!=='string'||typeof f.prep!=='string')return;
+    const texto=f.texto.trim();if(!texto)return;
+    const prepN=exNorm(f.prep);if(!PREP_SET.has(prepN))return;
+    const tokens=getWords(texto);
+    const matches=tokens.map((w,i)=>exNorm(w.t)===prepN?i:-1).filter(i=>i>=0);
+    if(matches.length!==1)return;
+    out.push({texto,tokens,idx:matches[0]});
+  });
+  return out;
+}
+async function prepGenRound(){
+  const subset=PREP_LIST.slice().sort(()=>Math.random()-0.5);
+  const raw=await aiText(prepGenPrompt(subset),1400);
+  const m=raw.match(/\{[\s\S]*\}/);if(!m)throw new Error('La IA no ha devuelto frases válidas');
+  let j;try{j=JSON.parse(m[0]);}catch(e){throw new Error('La IA no ha devuelto frases válidas');}
+  const sentences=prepValidate(j.frases);
+  if(!sentences.length)throw new Error('La IA no ha devuelto ninguna frase válida; inténtalo de nuevo');
+  return sentences;
+}
+function prepStart(backScreen){
+  ui.prep={level:'estudio',stage:'loading',sentences:[],i:0,picked:null,results:[],ok:0,errMsg:'',examGiven:'',examChecked:false,examResult:null,back:backScreen||'morfolist',start:Date.now()};
+  ui.screen='morfoprep';render();
+  prepGenRound().then(sentences=>{
+    const st=ui.prep;if(!st||st.stage!=='loading')return;
+    st.sentences=sentences;st.stage='answer';render();
+  }).catch(e=>{
+    const st=ui.prep;if(!st)return;st.stage='error';st.errMsg=e.message||'No se han podido generar las frases';render();
+  });
+}
+/* registra el resultado en el informe del día (sessionReport, ver p4a.js, kind 'prep'): tanto si
+   viene de terminar una ronda de frases en Modo Estudio (prepFinish) como de comprobar la lista
+   escrita de memoria en Modo Examen (prepExamFinish) -- antes solo se registraba el Modo Estudio,
+   dejando el Modo Examen sin aparecer en el resumen del día. */
+function prepRecordResult(n,ok){
+  const st=ui.prep;
+  const secs=Math.round((Date.now()-(st.start||Date.now()))/1000);
+  const res={n,ok};
+  const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;
+  s.extra.push({id:uid(),kind:'prep',title:'Preposiciones',start:Date.now()-secs*1000,end:Date.now(),secs,done:true,res});
+  touchSes(s);
+}
+function prepFinish(){const st=ui.prep;prepRecordResult(st.sentences.length,st.ok);}
+/* pinta la frase actual con cada palabra pulsable, conservando espacios y signos de puntuación
+   tal cual (igual que morfoTextHTML). Antes de pulsar, todas son botones neutros; tras pulsar
+   una, se revela la correcta en verde y, si se pulsó otra distinta, esa se marca en rojo. */
+function prepSentHTML(st){
+  const sent=st.sentences[st.i];
+  let out='',pos=0;
+  sent.tokens.forEach((w,k)=>{
+    out+=esc(sent.texto.slice(pos,w.i));
+    const reveal=st.picked!==null;
+    let cls='';
+    if(reveal){
+      if(k===sent.idx)cls=' ok';
+      else if(k===st.picked)cls=' bad';
+    }
+    out+=`<button class="prepw${cls}" data-act="prepPick" data-i="${k}" ${reveal?'disabled':''}>${esc(w.t)}</button>`;
+    pos=w.e;
+  });
+  return out+esc(sent.texto.slice(pos));
+}
+function prepBody(){
+  const st=ui.prep;
+  if(st.stage==='loading')return `<div class="panel" style="text-align:center">🔗 Preparando frases nuevas… un momento.</div>`;
+  if(st.stage==='error')return `<div class="panel" style="border-color:var(--bad)">😕 ${esc(st.errMsg)}</div><div class="row" style="margin-top:10px"><button class="btn" data-act="prepBack">← Volver</button></div>`;
+  if(st.stage==='done'){
+    const bad=st.results.filter(r=>!r.ok);
+    return `<div class="panel" style="border-color:var(--ok);background:var(--okbg)"><h2 style="margin:0">${st.ok===st.sentences.length?'🎉 ¡Perfecto!':'💪 ¡Bien hecho!'}</h2><div style="font-size:1.4rem;font-weight:800;margin-top:6px">${st.ok} de ${st.sentences.length} frases bien</div></div>
+    ${bad.length?`<h3>Repasa estas</h3><div class="list">${bad.map(r=>`<div class="panel" style="padding:10px 14px">${esc(r.texto)}<br>La preposición era: <span class="right">${esc(r.correctWord)}</span>${r.pickedWord?` · pulsaste: <span class="wrong">${esc(r.pickedWord)}</span>`:' · no llegaste a pulsar ninguna palabra'}</div>`).join('')}</div>`:''}
+    <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="prepBack">← Volver</button></div>`;
+  }
+  const sent=st.sentences[st.i],picked=st.picked,ok=picked!==null?picked===sent.idx:null;
+  return `<p class="mute" style="margin:4px 0 10px">Frase ${st.i+1} de ${st.sentences.length}</p>
+  <p class="mute" style="margin:0 0 6px">Pulsa la palabra de la frase que es la <b>preposición</b>:</p>
+  <div class="panel" style="line-height:2.4;font-size:1.15rem">${prepSentHTML(st)}</div>
+  ${picked!==null?`<div class="msg ${ok?'right':'wrong'}" style="margin-top:10px">${ok?'✅ ¡Correcto!':`❌ La preposición era: «${esc(sent.tokens[sent.idx].t)}»`}</div>
+  <div class="row" style="margin-top:10px"><button class="btn success big" data-act="prepNext">${st.i+1<st.sentences.length?'Siguiente ➜':'Terminar'}</button></div>`:''}
+  <div class="row" style="margin-top:14px"><button class="link" data-act="prepBack">← Salir</button></div>`;
+}
+/* Modo Examen: sustituye por completo al ejercicio de frases (ver prepBody) -- la única tarea es
+   escribir de memoria la lista completa de las 21 preposiciones, sin ayuda. No se tolera ninguna
+   falta de ortografía salvo tildes (mismo criterio que exNorm/morfoWriteDiff en el resto de la
+   app): se compara palabra por palabra lo escrito contra PREP_LIST y se corrige todo junto al
+   comprobar, como el resto de Exámenes. */
+function prepExamBody(){
+  const st=ui.prep;
+  if(!st.examChecked){
+    return `<div class="panel"><p class="mute" style="margin-top:0">Escribe, separadas por comas o espacios, TODAS las preposiciones que te sepas de memoria (son ${PREP_LIST.length}):</p>
+    <textarea id="prepWriteAll" data-enter="prepWriteAll" placeholder="a, ante, bajo…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:90px">${esc(st.examGiven||'')}</textarea>
+    <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="prepExamCheck">✔ Comprobar</button></div></div>
+    <div class="row" style="margin-top:14px"><button class="link" data-act="prepBack">← Salir</button></div>`;
+  }
+  const r=st.examResult;
+  return `<div class="panel" style="border-color:var(--ok);background:var(--okbg)"><h2 style="margin:0">${r.found.length===PREP_LIST.length?'🎉 ¡Las sabes todas!':'💪 ¡Bien hecho!'}</h2><div style="font-size:1.4rem;font-weight:800;margin-top:6px">${r.found.length} de ${PREP_LIST.length}</div></div>
+  ${r.missing.length?`<div class="panel"><p class="mute" style="margin:0 0 6px">Te faltaron estas:</p><p style="margin:0;font-weight:700">${r.missing.map(esc).join(', ')}</p></div>`:''}
+  ${r.extra.length?`<div class="panel"><p class="mute" style="margin:0 0 6px">Esto que escribiste no es ninguna preposición:</p><p style="margin:0">${r.extra.map(esc).join(', ')}</p></div>`:''}
+  <div class="row" style="margin-top:12px"><button class="btn primary big" data-act="prepBack">← Volver</button></div>`;
+}
+function renderPrep(){
+  const st=ui.prep;if(!st){ui.screen='morfolist';return render();}
+  /* igual que en el resto de Exámenes de la app: una vez elegido Modo Examen, se bloquea hasta
+     terminar (aquí, hasta comprobar la lista escrita). */
+  const locked=st.level==='examen'&&!st.examChecked;
+  const lvlRow=`<div class="row" style="margin:6px 0 10px;gap:8px;flex-wrap:wrap">
+  <button class="btn ${st.level==='examen'?'':'primary'}" data-act="prepLevel" data-lv="estudio" ${locked?'disabled':''}>📖 Estudio</button>
+  <button class="btn ${st.level==='examen'?'primary':''}" data-act="prepLevel" data-lv="examen" ${locked?'disabled':''}>📝 Examen</button>
+  </div><p class="mute" style="margin:0 0 10px;font-size:.88rem">${st.level==='examen'?'Modo examen: escribe de memoria todas las preposiciones; no hay frases ni ayuda, y se corrige solo al comprobar.':'Modo estudio: pulsa en la frase la palabra que es la preposición, con la lista como ayuda y corrección al momento.'}</p>`;
+  const help=st.level==='estudio'?`<div class="panel" style="background:#e4fbf7;border-color:#9fe7da"><p class="mute" style="margin:0 0 4px">📋 Las ${PREP_LIST.length} preposiciones:</p><p style="margin:0;font-weight:700">${PREP_LIST.join(', ')}</p></div>`:'';
+  const body=st.level==='examen'?prepExamBody():prepBody();
+  app.innerHTML=`<div class="row" style="justify-content:space-between;align-items:flex-start"><h2 style="margin:0">🔗 Preposiciones</h2><button class="link" data-act="goMorfoTheory">📘 Ver la teoría</button></div>
+  ${lvlRow}${help}${body}`;
+  const ta=$('#prepWriteAll');if(ta)ta.focus();
+}
+const prepActions={
+  goPrep(){
+    if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar las Preposiciones');
+    prepStart(ui.screen);
+  },
+  prepPick(b){
+    const st=ui.prep;if(!st||st.stage!=='answer'||st.picked!==null)return;
+    const i=+b.dataset.i,sent=st.sentences[st.i];
+    st.picked=i;const ok=i===sent.idx;if(ok)st.ok++;
+    st.results.push({texto:sent.texto,ok,correctWord:sent.tokens[sent.idx].t,pickedWord:sent.tokens[i]?sent.tokens[i].t:''});
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  prepNext(){
+    const st=ui.prep;if(!st||st.picked===null)return;
+    st.i++;st.picked=null;
+    if(st.i>=st.sentences.length){st.stage='done';prepFinish();const y=scrollY;render();scrollTo(0,y);return;}
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  prepLevel(b){
+    const st=ui.prep;if(!st)return;
+    if(st.level==='examen'&&!st.examChecked)return; // en examen no se puede cambiar de modo hasta comprobar
+    st.level=b.dataset.lv==='examen'?'examen':'estudio';
+    render();
+  },
+  prepExamCheck(){
+    const st=ui.prep;if(!st||st.examChecked)return;
+    const v=($('#prepWriteAll')&&$('#prepWriteAll').value||'').trim();
+    if(!v)return toast('Escribe al menos una preposición primero');
+    st.examGiven=v;
+    const given=[...new Set(exNorm(v).split(' ').filter(Boolean))];
+    const found=PREP_LIST.filter(p=>given.includes(exNorm(p)));
+    const foundN=new Set(found.map(exNorm));
+    const missing=PREP_LIST.filter(p=>!foundN.has(exNorm(p)));
+    const extra=given.filter(g=>!PREP_SET.has(g));
+    st.examResult={found,missing,extra};st.examChecked=true;
+    prepRecordResult(PREP_LIST.length,found.length);
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  prepBack(){const back=(ui.prep&&ui.prep.back)||'morfolist';ui.prep=null;ui.screen=back;render();}
+};
 /* ================= diccionario guiado inglés → español (con IA) =================
    Julia escribe CUALQUIER palabra en inglés que quiera consultar. La IA nunca traduce
    directamente: da una definición sencilla en inglés, un par de frases de ejemplo y algún
@@ -4061,7 +4491,7 @@ const morfoActions={
    pistas, Julia intenta adivinar el significado en español, y solo al pulsar "Ver traducción"
    se le revela la traducción real para que ella misma compruebe si había acertado. */
 function engDictPrompt(word){
-  return [{role:'system',content:`Eres un profesor de inglés que ayuda a un alumno español de primaria (Year 6, 10-11 años, colegio británico) a adivinar el significado de una palabra en inglés SIN decírselo nunca. Te doy una palabra en inglés. Da pistas EN INGLÉS sencillo (adaptado a su nivel): una definición corta y fácil, 2 frases de ejemplo naturales usando la palabra, y hasta 2 sinónimos sencillos en inglés si existen. IMPORTANTE: en la definición, los ejemplos y los sinónimos NUNCA escribas la traducción al español de la palabra, ni la palabra en español, ni ninguna pista tan obvia que sea prácticamente decírselo (por ejemplo, no uses un cognado evidente si existe una forma de explicarlo sin él). Aparte, en un campo separado "translation" (que no se le mostrará al alumno hasta que él pida comprobar su respuesta), da la traducción correcta al español de esa palabra en este contexto. Devuelve SOLO un JSON válido: {"pos":"noun|verb|adjective|adverb|other","definition":"...","examples":["...","..."],"synonyms":["...","..."],"translation":"..."}. Si "${word}" no es una palabra real en inglés o no la reconoces, devuelve en su lugar SOLO {"error":"..."} con una frase breve en español explicando por qué.`},
+  return [{role:'system',content:`Eres un profesor de inglés que ayuda a un alumno español de primaria (Year 6, 10-11 años, colegio británico) a adivinar el significado de una palabra en inglés SIN decírselo nunca. Te doy una palabra en inglés. Da pistas EN INGLÉS sencillo (adaptado a su nivel): una definición corta y fácil, 2 frases de ejemplo naturales usando la palabra, y hasta 2 sinónimos sencillos en inglés si existen. IMPORTANTE: en la definición, los ejemplos y los sinónimos NUNCA escribas la traducción al español de la palabra, ni la palabra en español, ni ninguna pista tan obvia que sea prácticamente decírselo (por ejemplo, no uses un cognado evidente si existe una forma de explicarlo sin él). Además, en un campo separado "spanishHint", da una pista EXTRA pero esta vez EN ESPAÑOL (para cuando, aun con las pistas en inglés, el alumno siga sin saber qué significa): una explicación o definición sencilla en español de lo que significa la palabra, con la MISMA norma que antes — nunca escribas la traducción exacta de la palabra ni un sinónimo en español tan evidente que sea prácticamente decírsela. Aparte, en otro campo separado "translation" (que no se le mostrará al alumno hasta que él pida comprobar su respuesta), da la traducción correcta al español de esa palabra en este contexto. Devuelve SOLO un JSON válido: {"pos":"noun|verb|adjective|adverb|other","definition":"...","examples":["...","..."],"synonyms":["...","..."],"spanishHint":"...","translation":"..."}. Si "${word}" no es una palabra real en inglés o no la reconoces, devuelve en su lugar SOLO {"error":"..."} con una frase breve en español explicando por qué.`},
    {role:'user',content:`Palabra: "${word}"`}];
 }
 async function engDictAnalyze(word){
@@ -4075,6 +4505,7 @@ async function engDictAnalyze(word){
     definition:String(j.definition).slice(0,400),
     examples:(Array.isArray(j.examples)?j.examples:[]).map(x=>String(x).slice(0,200)).slice(0,3),
     synonyms:(Array.isArray(j.synonyms)?j.synonyms:[]).map(x=>String(x).slice(0,40)).slice(0,4),
+    spanishHint:String(j.spanishHint||'').slice(0,400),
     translation:String(j.translation).slice(0,120)
   };
 }
@@ -4096,6 +4527,8 @@ function engDictBody(st){
   <p style="margin-top:10px">${esc(c.definition)}</p>
   ${c.examples.length?`<ul style="margin:8px 0 0;padding-left:20px">${c.examples.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`:''}
   ${c.synonyms.length?`<p class="mute" style="margin-top:8px">Synonyms: ${c.synonyms.map(esc).join(', ')}</p>`:''}
+  ${!st.showEs&&c.spanishHint?`<div class="row" style="margin-top:10px"><button class="btn" data-act="dictEs">🇪🇸 ESPAÑOL</button></div>`:''}
+  ${st.showEs&&c.spanishHint?`<div class="panel" style="margin-top:10px;background:#fff4e5"><p class="mute" style="margin:0 0 4px;font-weight:700">🇪🇸 Pista en español</p><p style="margin:0">${esc(c.spanishHint)}</p></div>`:''}
   </div>
   <div class="panel"><p class="mute" style="margin-top:0">¿Qué crees que significa en español?</p>
   <textarea id="dictGuess" data-enter="dictGuess" placeholder="Escribe tu respuesta…" style="min-height:70px" ${st.revealed?'disabled':''}>${esc(st.guess||'')}</textarea>
@@ -4113,22 +4546,23 @@ function renderEngDict(){
   ${engDictBody(st)}`;
 }
 const engDictActions={
-  goDict(){ui.engdict={stage:'input',word:'',clue:null,guess:'',revealed:false,errMsg:'',done:0,ok:0};ui.screen='engdict';render();},
+  goDict(){ui.engdict={stage:'input',word:'',clue:null,guess:'',revealed:false,showEs:false,errMsg:'',done:0,ok:0};ui.screen='engdict';render();},
   dictSearch(){
     if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar el diccionario');
     const st=ui.engdict;if(!st||st.stage==='loading')return;
     const w=($('#dictWord')?.value||'').trim();
     if(!w)return toast('Escribe una palabra primero');
     if(!/^[a-zA-Z' -]{1,30}$/.test(w))return toast('Escribe solo una palabra en inglés');
-    st.word=w;st.stage='loading';st.guess='';st.revealed=false;render();
+    st.word=w;st.stage='loading';st.guess='';st.revealed=false;st.showEs=false;render();
     engDictAnalyze(w).then(c=>{const s2=ui.engdict;if(!s2||s2.stage!=='loading')return;s2.clue=c;s2.stage='clues';render();})
       .catch(e=>{const s2=ui.engdict;if(!s2)return;s2.stage='error';s2.errMsg=e.message||'No se ha podido buscar esta palabra';render();});
   },
   dictReveal(){const st=ui.engdict;if(!st||st.stage!=='clues'||st.revealed)return;st.guess=($('#dictGuess')?.value||'').trim();st.revealed=true;render();},
+  dictEs(){const st=ui.engdict;if(!st||st.stage!=='clues'||st.showEs)return;st.showEs=true;render();},
   dictSelf(b){
     const st=ui.engdict;if(!st||!st.revealed)return;
     st.done++;if(b.dataset.ok==='1')st.ok++;
-    st.stage='input';st.word='';st.clue=null;st.guess='';st.revealed=false;
+    st.stage='input';st.word='';st.clue=null;st.guess='';st.revealed=false;st.showEs=false;
     render();const i=$('#dictWord');if(i)i.focus();
   },
   dictAgain(){const st=ui.engdict;if(!st)return;st.stage='input';st.errMsg='';render();},
@@ -4257,8 +4691,15 @@ because"></textarea>
   <div class="row" style="margin-top:14px"><button class="btn primary big" data-act="spPublish">${l.status==='ready'?'✅ Publicada (Julia ya la ve)':'🚀 Publicar (que Julia la vea)'}</button></div>`;
 }
 function spInput(t){
-  if(t.id==='spPhoto'){if(t.type==='file'&&t.files&&t.files.length){spellActions.spPhotoUpload();}return true;}
-  if(t.id==='spDictPhoto'){if(t.type==='file'&&t.files&&t.files.length){spellRunActions.spDictPhotoUpload();}return true;}
+  /* subir foto (de la lista de palabras, o de la hoja de dictado de spelling): se lee con IA de
+     forma asíncrona, así que hay que sacar el archivo y VACIAR el campo ya mismo, aquí, antes de
+     esperar a que termine la lectura -si no, como los campos de tipo "file" disparan tanto
+     "input" como "change" al elegir un archivo, y ambos eventos llaman a spInput (ver los
+     document.addEventListener de más abajo), la lectura se lanzaba dos veces para la misma foto
+     (p.ej. 20 palabras leídas y añadidas como 40, duplicadas). Vaciar el campo aquí hace que la
+     2ª llamada (el otro evento) ya no vea ningún archivo y no haga nada. */
+  if(t.id==='spPhoto'){if(t.type==='file'&&t.files&&t.files.length){const f=t.files[0];t.value='';spellActions.spPhotoUpload(f);}return true;}
+  if(t.id==='spDictPhoto'){if(t.type==='file'&&t.files&&t.files.length){const f=t.files[0];t.value='';spellRunActions.spDictPhotoUpload(f);}return true;}
   if(t.dataset.spf){const l=spGet(ui.spId);if(l){l[t.dataset.spf]=t.value;save();}return true;}
   if(t.dataset.spsent){const l=spGet(ui.spId);if(l){const s=l.sentences.find(x=>x.id===t.dataset.spsent);if(s){s.text=t.value;save();}}return true;}
   return false;
@@ -4322,18 +4763,18 @@ const spellActions={
     const l=spGet(ui.spId);if(!l||!ui.spOrigWords)return;
     spCommitWords(l,ui.spOrigWords);
   },
-  async spPhotoUpload(){
+  async spPhotoUpload(file){
     const l=spGet(ui.spId);if(!l)return;
     if(!state.ai.photoOn)return toast('Activa la IA de fotos en Ajustes para leer fotos');
-    const inp=$('#spPhoto');const file=inp&&inp.files&&inp.files[0];if(!file)return;
+    if(!file)return;
     ui.spCheckedText=null;ui.spOrigWords=null;
     const st=()=>$('#spSt');if(st())st().textContent='🔎 Leyendo la foto…';
     try{
       const txt=await readSpellingPhoto(file);
+      const nWords=spParseWords(txt).length;
       const ta=$('#spWordsTa');if(ta)ta.value=(ta.value.trim()?ta.value.trim()+'\n':'')+txt;
-      const st2=$('#spSt');if(st2)st2.innerHTML='✅ <b>Revisa las palabras</b> en el cuadro de arriba (quita lo que no sea una palabra en inglés) y pulsa «Añadir estas palabras».';
+      const st2=$('#spSt');if(st2)st2.innerHTML=`✅ He leído ${nWords} ${nWords===1?'palabra':'palabras'} en la foto. <b>Revisa las palabras</b> en el cuadro de arriba (quita lo que no sea una palabra en inglés) y pulsa «Añadir estas palabras».`;
     }catch(e){const st3=$('#spSt');if(st3)st3.innerHTML=`⚠️ ${esc(e.message)}`;}
-    if(inp)inp.value='';
   },
   spWordDel(b){
     const l=spGet(ui.spId);if(!l)return;
@@ -4432,18 +4873,28 @@ function sayWordEN(text,cb){
   }catch(e){fin();}
 }
 function renderSpellList(){
-  let filterId=null,isHw=false;
-  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling'){filterId=it.spid;isHw=true;}}
+  let filterId=null,isHw=false,hwIt=null;
+  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling'){filterId=it.spid;isHw=true;hwIt=it;}}
+  /* ui.spHwCfg: guarda aquí mismo los nº de rondas que se van a mostrar, para que spHwStart use
+     EXACTAMENTE estos mismos números al armar el plan (en vez de volver a buscar el item de
+     deberes por su cuenta) y así nunca pueda mostrar un reparto distinto del que luego ejecuta,
+     ni siquiera si el item desaparece justo entre que se muestra esta lista y se pulsa "Empezar". */
+  if(isHw)ui.spHwCfg={dictRounds:(hwIt&&hwIt.dictRounds)||2,sentRounds:hwIt&&hwIt.sentRounds!==undefined?hwIt.sentRounds:1};
   const list=state.spelling.filter(l=>l.status==='ready'&&(!filterId||l.id===filterId));
   const row=l=>{
     const nSent=l.sentences.length;
-    /* cuando esta lista es el deber del día, no se elige libremente: se hacen 2 rondas de
-       escuchar palabras y 1 de frases, en orden (ver spHwStart/spHwRunStep). Si practica esta
-       misma lista suelta (no como deber), sigue pudiendo elegir entre dictado o frases, como
-       siempre. */
-    if(isHw)return `<div class="panel"><b>🔤 ${esc(l.title)}</b><br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'}</small>
-    <p class="mute" style="margin:6px 0">Hoy toca: 2 rondas escuchando las palabras${nSent?' y 1 de frases para completar':' (todavía no hay frases preparadas, así que hoy solo escuchar)'}.</p>
+    /* cuando esta lista es el deber del día, no se elige libremente: se hacen las rondas de
+       escuchar palabras y de frases que haya elegido el tutor al ponerla como deber (ver
+       taskAddOverlay en p4t.js; por defecto 2 de escuchar + 1 de frases), en orden (ver
+       spHwStart/spHwRunStep). Si practica esta misma lista suelta (no como deber), sigue pudiendo
+       elegir entre dictado o frases, como siempre. */
+    if(isHw){
+      const dR=ui.spHwCfg.dictRounds,sR=ui.spHwCfg.sentRounds;
+      const sRok=nSent?sR:0;
+      return `<div class="panel"><b>🔤 ${esc(l.title)}</b><br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'}</small>
+    <p class="mute" style="margin:6px 0">Hoy toca: ${dR} ${dR===1?'ronda':'rondas'} escuchando las palabras${sRok?` y ${sRok} ${sRok===1?'ronda':'rondas'} de frases para completar`:(nSent?' (sin frases esta vez)':' (todavía no hay frases preparadas, así que hoy solo escuchar)')}.</p>
     <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="spHwStart" data-id="${esc(l.id)}">▶ Empezar</button></div></div>`;
+    }
     return `<div class="panel"><b>🔤 ${esc(l.title)}</b><br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'}</small>
     <div class="row" style="margin-top:8px;flex-wrap:wrap">
     <button class="btn primary" data-act="spDictStart" data-id="${esc(l.id)}">🔊 Dictado de spelling</button>
@@ -4621,7 +5072,14 @@ const spellRunActions={
   spHwStart(b){
     const l=spGet(b.dataset.id);if(!l||l.status!=='ready')return toast('Esta lista no está disponible');
     if(!l.words.length)return toast('Esta lista no tiene palabras');
-    ui.spHw={listId:l.id,step:0,steps:['dict','dict','sent'],rounds:[],secs:0};
+    /* usa los mismos nº de rondas que renderSpellList acaba de mostrar (ui.spHwCfg), para no
+       poder ejecutar un reparto distinto del que se veía en pantalla. Si por lo que sea no hay
+       spHwCfg (deberes creados antes de este cambio, o se llama sin haber pasado por
+       renderSpellList), se usa el reparto de siempre: 2 de escuchar + 1 de frases. */
+    const cfg=ui.spHwCfg||{};
+    const dR=cfg.dictRounds||2,sR=cfg.sentRounds!==undefined?cfg.sentRounds:1;
+    const steps=Array(Math.max(1,dR)).fill('dict').concat(Array(Math.max(0,sR)).fill('sent'));
+    ui.spHw={listId:l.id,step:0,steps,rounds:[],secs:0};
     spHwRunStep();
   },
   spHwNext(){
@@ -4697,10 +5155,12 @@ const spellRunActions={
        "✔ Comprobar significado" (solo en el dictado de spelling, no en las frases). */
     if(r.ok===false&&!r.retypeOk)return toast('Primero vuelve a escribir la palabra correctamente');
     if(r.meaningOk===undefined)return toast('Comprueba primero el significado');
-    /* al terminar una ronda de "escuchar palabras" (suelta o dentro de los deberes), un minijuego
-       antes de ver el resultado, como pequeño descanso. */
-    if(r.i+1>=words.length){r.stage='done';spellFinish(l,r,'dict');return startMiniGame('spelldict');}
     r.i++;r.given='';r.ok=null;r.meaning='';r.meaningOk=undefined;r.meaningCorrect='';r.retypeGiven='';r.retypeOk=false;r.stage='typing';
+    /* igual que en mates/exámenes/estudio de temas/análisis morfológico: un minijuego cada X
+       palabras según la frecuencia de Ajustes (miniGameEvery), nunca garantizado al terminar la
+       ronda (ver miniGameDue, p5d.js). */
+    if(r.i>=words.length){r.stage='done';spellFinish(l,r,'dict');return render();}
+    if(miniGameDue(r.i,words.length))return startMiniGame('spelldict');
     const y=scrollY;render();scrollTo(0,y);
   },
   spDictPhoneNext(){
@@ -4708,25 +5168,26 @@ const spellRunActions={
     const mSt=(r.photoMeaningOk||[])[r.i];
     if(mSt===undefined)return toast('Comprueba primero el significado');
     const words=spWordObjs(l,r.order);
-    if(r.i+1>=words.length){r.stage='photoupload';return render();}
-    r.i++;render();
+    r.i++;
+    if(r.i>=words.length){r.stage='photoupload';return render();}
+    if(miniGameDue(r.i,words.length))return startMiniGame('spelldict');
+    render();
   },
-  async spDictPhotoUpload(){
+  async spDictPhotoUpload(file){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
     if(!state.ai.photoOn)return toast('Activa la IA de fotos en Ajustes para leer fotos');
-    const inp=$('#spDictPhoto');const file=inp&&inp.files&&inp.files[0];if(!file)return;
+    if(!file)return;
     const st=$('#spDictPhotoSt');if(st)st.textContent='🔎 Leyendo tu foto…';
     const words=spWordObjs(l,r.order);
     try{
       const txt=await readSpellingAnswerPhoto(file);
       const lines=txt.split('\n').map(x=>x.trim()).filter(Boolean);
       r.results=words.map((w,i)=>{const given=lines[i]||'';return {wordId:w.id,word:w.w,given,ok:spGrade(given,w.w),meaning:(r.photoMeanings&&r.photoMeanings[i])||'',meaningOk:(r.photoMeaningOk&&r.photoMeaningOk[i])};});
-      r.stage='done';spellFinish(l,r,'dict');startMiniGame('spelldict');
+      r.stage='done';spellFinish(l,r,'dict');render();
     }catch(e){
       r.photoErr=e.message;
       const st2=$('#spDictPhotoSt');if(st2)st2.innerHTML=`⚠️ ${esc(e.message)}`;
     }
-    if(inp)inp.value='';
   },
   spDictRepeat(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
@@ -4752,10 +5213,11 @@ const spellRunActions={
   },
   spSentNext(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);
-    /* al terminar una ronda de "frases para completar" (suelta o dentro de los deberes), un
-       minijuego antes de ver el resultado, igual que en el dictado de spelling. */
-    if(r.i+1>=r.order.length){r.stage='done';spellFinish(l,r,'sent');return startMiniGame('spellsent');}
     r.i++;r.given='';r.ok=null;r.stage='answer';
+    /* igual que en el dictado de spelling (y en mates/exámenes/estudio/morfología): minijuego
+       cada X frases según la frecuencia de Ajustes, nunca garantizado al terminar la ronda. */
+    if(r.i>=r.order.length){r.stage='done';spellFinish(l,r,'sent');return render();}
+    if(miniGameDue(r.i,r.order.length))return startMiniGame('spellsent');
     const y=scrollY;render();scrollTo(0,y);
   },
   spSentRepeat(){
@@ -4769,10 +5231,16 @@ const spellRunActions={
 function renderTutor(){
   if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
   if(!ui.unlocked){app.innerHTML=`<h2>🔐 Área de tutor</h2><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" data-enter="pin" placeholder="PIN"><br><br><button class="btn primary big" data-act="pinEnter">Entrar</button></div>`;return;}
-  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad'],['examenes','📚 Teoría y exámenes'],['spelling','🔤 Spelling'],['morfologia','🔎 Morfología'],['reglas','📘 Reglas propias'],['historial','📊 Historial'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
+  /* "Actividad" e "Historial" eran dos pestañas distintas para lo mismo en el fondo (mirar hacia
+     atrás cómo le ha ido a Julia): Actividad mostraba el día a día de TODAS las actividades
+     (mates, exámenes, teoría, spelling, morfología, dictado...) y Historial solo las estadísticas
+     de Dictado (palabras falladas, reglas, tendencia). Se unen en una sola pestaña: Actividad
+     primero (el día a día) y, debajo, la sección de estadísticas de Dictado que antes era
+     Historial (ver tabActividad). */
+  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad e Historial'],['examenes','📚 Teoría y exámenes'],['spelling','🔤 Spelling'],['morfologia','🔎 Morfología'],['reglas','📘 Reglas propias'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
   app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><button class="btn" data-act="lock">🔒 Bloquear</button></div>
   <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>${taskAddOverlay()}`;
-  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,spelling:tabSpelling,morfologia:tabMorfologia,reglas:tabReglas,historial:tabHistorial,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
+  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,spelling:tabSpelling,morfologia:tabMorfologia,reglas:tabReglas,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
 }
 function tabNotas(){
   const list=(state.notas||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
@@ -4830,9 +5298,12 @@ function tabReglas(){
   <table>${rs.map((r,i)=>`<tr><td style="width:32%"><input type="text" data-cr="word" data-i="${i}" value="${esc(r.word)}" placeholder="palabra" autocapitalize="off" autocorrect="off"></td><td><textarea class="short" data-cr="rule" data-i="${i}" placeholder="Regla…">${esc(r.rule)}</textarea></td><td><button class="btn danger" data-act="delRule" data-i="${i}">🗑</button></td></tr>`).join('')}</table>
   <button class="btn primary" data-act="addRule">＋ Añadir regla</button></div>`;
 }
-function tabHistorial(){
+/* estadísticas de Dictado (antes la pestaña "Historial" aparte, ahora una sección dentro de
+   "Actividad e Historial", ver tabActividad). Devuelve el HTML en vez de pintarlo directamente,
+   para poder componerlo junto con el día a día de Actividad. */
+function historialBodyHTML(){
   const H=state.history,fd=d=>new Date(d).toLocaleString('es-ES',{dateStyle:'medium',timeStyle:'short'});
-  if(!H.length){$('#tab').innerHTML='<p class="mute">Todavía no hay correcciones. Cuando Julia haga un dictado y pulse «Corregir», aquí verás sus estadísticas.</p>';return;}
+  if(!H.length)return '<p class="mute">Todavía no hay correcciones. Cuando Julia haga un dictado y pulse «Corregir», aquí verás sus estadísticas.</p>';
   const pct=h=>h.total?Math.round(100*(h.total-h.wrong)/h.total):100,avg=a=>a.length?Math.round(a.reduce((s,h)=>s+pct(h),0)/a.length):0;
   const chr=H.slice().reverse(),n=H.length,totErr=H.reduce((s,h)=>s+h.wrong,0),totW=H.reduce((s,h)=>s+h.total,0);
   const last5=avg(H.slice(0,5)),prev5=avg(H.slice(5,10)),trend=H.length>5?(last5-prev5>=3?`📈 mejora (+${last5-prev5} puntos)`:prev5-last5>=3?`📉 baja (${last5-prev5} puntos)`:'➡️ estable'):'';
@@ -4847,7 +5318,7 @@ function tabHistorial(){
   const dicts=Object.values(D).sort((a,b)=>b.list[b.list.length-1].date.localeCompare(a.list[a.list.length-1].date));
   const stat=(v,l)=>`<div style="flex:1;min-width:120px;background:#f3f0ff;border-radius:14px;padding:12px;text-align:center"><div style="font-size:1.7rem;font-weight:800;color:var(--pri2)">${v}</div><small class="mute">${l}</small></div>`;
   const spark=list=>list.slice(-12).map(h=>{const p=pct(h);return `<i title="${p}%" style="display:inline-block;width:12px;height:${8+p*.3}px;background:${p>=90?'var(--ok)':p>=70?'var(--warn)':'var(--bad)'};border-radius:3px;margin-right:3px;vertical-align:bottom"></i>`;}).join('');
-  $('#tab').innerHTML=`<div class="row" style="gap:10px;flex-wrap:wrap">${stat(n,'dictados hechos')}${stat(avg(H)+'%','acierto medio')}${stat(totErr,'palabras falladas')}${stat(H.reduce((s,h)=>s+(h.punct||0),0),'fallos de puntuación')}</div>
+  return `<div class="row" style="gap:10px;flex-wrap:wrap">${stat(n,'dictados hechos')}${stat(avg(H)+'%','acierto medio')}${stat(totErr,'palabras falladas')}${stat(H.reduce((s,h)=>s+(h.punct||0),0),'fallos de puntuación')}</div>
   ${trend?`<p class="mute" style="margin:8px 0">Últimos 5 dictados: <b>${last5}%</b> de acierto · ${trend}</p>`:''}
   <h3>🔴 Palabras que más falla</h3>
   ${words.length?`<div class="panel" style="padding:8px 16px"><table style="width:100%;border-collapse:collapse;font-size:1rem">
@@ -4893,7 +5364,7 @@ function tabAjustes(){
   <div class="row" style="margin-top:12px"><button class="btn primary" data-act="testAI">🔊 Probar voz IA</button></div>
   <p class="mute" style="margin-bottom:0">Si cambias la voz, el modelo o el largo de las frases, hay que pulsar «Generar voz» en cada dictado (o se genera sola la primera vez que Julia lo empieza). Si falla algo, la app usa la voz del iPad.</p></div>
   <div class="panel"><h3>PIN</h3><button class="btn" data-act="changePin">Cambiar PIN</button></div>
-  <div class="panel"><h3>🎮 Minijuegos</h3><p class="mute" style="margin-top:0">Cada cuántos ejercicios seguidos (mates, exámenes, estudio de temas, análisis morfológico) aparece un minijuego de descanso. También sale uno, siempre, justo después de corregir cada dictado y al terminar cada ronda de Spelling (dictado o frases).</p>
+  <div class="panel"><h3>🎮 Minijuegos</h3><p class="mute" style="margin-top:0">Cada cuántos ejercicios seguidos (mates, exámenes, estudio de temas, análisis morfológico, Spelling) aparece un minijuego de descanso. También sale uno, siempre, justo después de corregir cada dictado.</p>
   <label class="f">Frecuencia <span class="v" id="v_miniGameEvery">cada ${state.miniGameEvery||15} ejercicios</span><input type="range" min="5" max="30" step="1" value="${state.miniGameEvery||15}" data-set2="miniGameEvery"></label>
   <p class="mute" style="margin:12px 0 6px">Prueba aquí cada juego, tal cual lo verá Julia:</p>
   <div class="row" style="flex-wrap:wrap;gap:8px">${MINI_KINDS.map(k=>`<button class="btn" data-act="miniPreview" data-kind="${k}">▶ ${MINI_LABELS[k]}</button>`).join('')}</div></div>
@@ -5012,7 +5483,7 @@ const studentActions={
     save();render();
   }
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,engDictActions,spellActions,spellRunActions);
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,prepActions,engDictActions,spellActions,spellRunActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
@@ -5051,7 +5522,8 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
   if(t.dataset.enter==='spDictRetype')spellRunActions.spDictRetypeCheck();
   if(t.dataset.enter==='studyWriteAns')studyActions.studyWriteCheck();
   if(t.dataset.enter==='morfoWriteAns')morfoActions.morfoWriteCheck();
-  if(t.dataset.enter==='morfoExtraRaiz')morfoActions.morfoExtraRaizCheck();});
+  if(t.dataset.enter==='morfoExtraRaiz')morfoActions.morfoExtraRaizCheck();
+  if(t.dataset.enter==='prepWriteAll')prepActions.prepExamCheck();});
 render();
 async function readDictPhotos(files){
   const st=$('#dictPhotoSt');if(!state.ai.photoOn){if(st)st.textContent='';return toast('Activa la IA de fotos en Ajustes para leer fotos');}
