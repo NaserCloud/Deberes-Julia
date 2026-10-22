@@ -865,7 +865,7 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.21-4';
+const APP_VERSION='2026.10.21-7';
 /* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
    la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
    esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
@@ -1039,11 +1039,44 @@ const APP_VERSION='2026.10.21-4';
    copiarlo). De paso, los ids nuevos de dictados y textos de morfología (al guardar, copiar en
    cualquiera de los dos sentidos) ya no se basan solo en la hora exacta (que podía coincidir si
    se pulsaba un botón dos veces muy seguidas, por ejemplo al recuperar varios textos uno detrás
-   de otro), sino también en un sufijo aleatorio, para que nunca puedan coincidir dos ids. */
+   de otro), sino también en un sufijo aleatorio, para que nunca puedan coincidir dos ids.
+   v2026.10.21-5: pitido de acierto (dos notas) y de fallo (un tono grave) al corregir cada
+   pregunta o palabra al momento: dictado (al corregirlo entero, según falte o no alguna palabra),
+   Spelling (escuchar palabras, frases y comprobar significado), Teoría/estudio de temas, Análisis
+   Morfológico (categoría+subtipo, y el "análisis extra" de variable/raíz/morfema) y Preposiciones.
+   Así David puede saber cómo le va a Julia sin tener que estar mirando la pantalla. Se generan con
+   el propio navegador (sin archivos de audio) y se pueden apagar desde Ajustes (activados por
+   defecto). A propósito no suenan en los Exámenes combinados ni en los pasos de "vuelve a
+   escribirlo hasta que esté bien" (reintentos tras fallar), que no son una corrección nueva.
+   Encontrado por la revisión adversarial antes de entregar: el aviso de audio (despertar el
+   AudioContext dentro del propio gesto del usuario, necesario en iOS/Safari) solo se hacía al
+   pulsar un botón; si Julia corregía pulsando Enter en el teclado en vez de tocar el botón (algo
+   que la app ya permite en casi todas las preguntas), el primer sonido podía perderse en algún
+   caso. Arreglado añadiendo el mismo aviso también al pulsar Enter.
+   v2026.10.21-6: en Nivel 2 de Teoría/estudio ("sin foto", para ver cuánto recuerda Julia sola)
+   ya no se oculta del todo la teoría: ahora sale el mismo bloque "Ver fotos y teoría" que en
+   Nivel 1 (con la foto real, no solo el texto), pero empieza PLEGADO (etiqueta "¿Te atascas? Ver
+   fotos y teoría") para no quitarle el reto de recordar primero -- si se atasca, puede abrirlo y
+   verlo igual que en Nivel 1. También en la parte del tutor: la vista "✅ Publicado" (minimizada)
+   de cada tarjeta de teoría ahora muestra las miniaturas reales de las fotos subidas (se pueden
+   ampliar tocándolas), no solo el número de fotos como antes -- sin tener que entrar en
+   "✏️ Ver/editar" cada vez solo para mirar una foto.
+   Encontrado por la revisión adversarial antes de entregar: el historial y la pantalla de "fin de
+   ronda" de Teoría todavía decían "Nivel 2 (sin foto)", lo cual ya no era del todo exacto (ahora
+   se puede ver si Julia se atasca). Cambiado a "repaso de memoria" / "con la foto siempre
+   visible" en esos dos sitios y en el botón de pasar de nivel, para que no diga que algo está
+   completamente oculto cuando ya no lo está.
+   v2026.10.21-7: en el minijuego del Ahorcado, ahora sale una pequeña pista en español de qué es
+   la palabra (p.ej. "Animal con el cuello muy, muy largo" para "jirafa"), para que no sea solo
+   adivinar letras a ciegas. Revisadas también las 30 palabras del minijuego: ya eran apropiadas
+   para un niño de 10 años, así que no se ha cambiado la lista, solo se ha añadido la pista.
+   Revisión adversarial antes de entregar: no se encontró ningún problema real (las 30 palabras y
+   las 30 pistas coinciden una a una, sin ninguna palabra sin pista; ninguna pista revela la
+   palabra ni es incorrecta; y el código no rompe si alguna vez faltara una pista). */
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
-const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,voice:'',spVoice:''};
+const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,fxSound:true,voice:'',spVoice:''};
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
@@ -1101,6 +1134,41 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const app=$('#app');
 let toastT;
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.add('on');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('on'),2600);}
+/* ================= sonido de acierto/fallo =================
+   Pedido por David: un pitido corto al acertar y otro al fallar en cualquier pregunta/palabra que
+   la app ya corrige AL MOMENTO (dictado, Spelling -palabras, frases y comprobar significado-,
+   Teoría/estudio de temas y Análisis Morfológico -incluido el "análisis extra" y Preposiciones-),
+   para que David pueda saber cómo le va a Julia sin tener que estar mirando la pantalla. Se
+   generan con el propio navegador (Web Audio API, sin archivos de audio). Se puede apagar desde
+   Ajustes (interruptor "🔊 Sonido de acierto/fallo", state.settings.fxSound, activado por
+   defecto). A propósito NO se usa en los Exámenes combinados (ui.ex/exSubmit): esos ya no corrigen
+   nada hasta el final, así que tampoco tiene sentido un pitido por pregunta ahí. */
+let _fxCtx=null;
+function _fxAudioCtx(){
+  try{
+    if(!_fxCtx){const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;_fxCtx=new C();}
+    if(_fxCtx.state==='suspended')_fxCtx.resume();
+    return _fxCtx;
+  }catch(e){return null;}
+}
+function playTone(freq,dur,delay,type){
+  const ctx=_fxAudioCtx();if(!ctx)return;
+  try{
+    const t0=ctx.currentTime+(delay||0);
+    const osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.type=type||'sine';osc.frequency.value=freq;
+    gain.gain.setValueAtTime(0.0001,t0);
+    gain.gain.exponentialRampToValueAtTime(0.22,t0+0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+    osc.connect(gain);gain.connect(ctx.destination);
+    osc.start(t0);osc.stop(t0+dur+0.03);
+  }catch(e){}
+}
+function chime(ok){
+  if(!state.settings||state.settings.fxSound===false)return;
+  if(ok){playTone(880,0.11,0);playTone(1175,0.14,0.09);}
+  else playTone(196,0.22,0,'sawtooth');
+}
 const nWords=t=>getWords(t).length;
 (function(){const v=$('#appVer');if(v)v.textContent='v'+APP_VERSION;})();
 
@@ -1600,6 +1668,7 @@ function goCorrect(){
   const r=computeCorrection(d.text,ui.answer,state.customRules);
   r.errors.forEach(e=>{e.stage=e.type==='extra'?'ack':'word';e.fails=0;e.done=false;
     if(e.type==='sub'){e.opts=state.rulesMode==='test'?makeOptions(e.a):null;e.wrongPicks=[];e.manual=state.rulesMode!=='test';}});
+  chime(r.wrong===0);
   ui.fix=r;ui.origOK=false;ui.pinAsk=false;ui.screen='fix';
   state.history.unshift({id:Date.now(),did:d.id,photo:!!ui.photo,date:new Date().toISOString(),title:d.title,total:r.total,wrong:r.wrong,punct:r.punct.length,errs:r.errors.map(e=>({type:e.type,typed:e.typed||'',correct:e.correct||'',rule:e.rule||''}))});
   state.history=state.history.slice(0,500);save();render();
@@ -1885,7 +1954,7 @@ function sessionReport(s){
     else if(r.kind==='mates'&&r.res){const x=r.res;o.line=`${x.first} de ${x.n} a la primera · ${x.ok} de ${x.n} correctos`;
       o.det=x.wrong.map(w=>`${w.q.replace(/\s*=\s*$/,'')} = ${w.a}${w.given&&w.given.length?' (puso '+w.given.join(', ')+')':''}`);}
     else if(r.kind==='examen'&&r.res){const x=r.res;o.line=`${(Math.round(x.score*10)/10).toString().replace('.',',')} de ${x.n} puntos (${Math.round(100*x.score/x.n)}%)`;o.det=x.qa.filter(a=>exEff(a)<0.7).map(a=>`${a.q} → ${a.correct}`);}
-    else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (sin foto)'}`;}
+    else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (repaso de memoria)'}`;}
     else if(r.kind==='minijuego'&&r.res){o.line=r.res.line;}
     else if(r.kind==='morfo'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien clasificadas`;}
     else if(r.kind==='prep'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} preposiciones bien`;}
@@ -2752,7 +2821,8 @@ function exCompactView(t,e){
   <button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button>
   </span></div>
   <p class="mute" style="margin:8px 0 0">✅ Publicado: Julia ya puede ${e.isExam?'hacer este examen':'estudiar esta tarjeta de teoría'}. Minimizado para no llenar la pantalla si tienes varios a la vez.</p>
-  </div>`;
+  ${nph?`<div style="margin-top:8px">${examPhotosHTML(e.id)}</div>`:''}
+  </div>${exPhotoOverlay(e.id)}`;
 }
 function exEditView(t,e){
   if(e.status==='ready'&&ui.exExpand!==e.id)return exCompactView(t,e);
@@ -3222,7 +3292,10 @@ function studyOpen(id){
     if(rebuilt.length){qs=rebuilt;i=Math.min(saved.i,qs.length-1);firstOk=saved.firstOk||0;level=saved.level||1;showPhoto=saved.showPhoto!==undefined?saved.showPhoto:true;}
   }
   if(!qs)qs=shuffleArr(pool);
-  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk,n:qs.length,recorded:false,theoryOpen:true};
+  /* theoryOpen empieza abierto en Nivel 1 (con foto) y PLEGADO en Nivel 2 (sin foto): David quiere
+     que Julia pueda ver la foto también en Nivel 2 si se atasca, pero que no salga ya abierta de
+     golpe, para no quitarle del todo el reto de intentar recordar primero (ver studyTheoryOrWarn). */
+  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk,n:qs.length,recorded:false,theoryOpen:showPhoto};
   ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 /* ---- nº de preguntas y rotación cuando la teoría se pone como DEBER del día ----
@@ -3273,18 +3346,19 @@ function studyOpenHomework(id,n,mode){
     let rebuilt=ordered.concat(extra);
     if(nReq&&rebuilt.length>nReq)rebuilt=rebuilt.slice(0,nReq);
     if(rebuilt.length){
-      ui.study={temaId:id,level:saved.level||1,showPhoto:saved.showPhoto!==undefined?saved.showPhoto:true,qs:rebuilt,i:Math.min(saved.i,rebuilt.length-1),stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk:saved.firstOk||0,n:rebuilt.length,recorded:false,theoryOpen:true,hwN:nReq,hwMode:modeReq};
+      const showPhoto2=saved.showPhoto!==undefined?saved.showPhoto:true;
+      ui.study={temaId:id,level:saved.level||1,showPhoto:showPhoto2,qs:rebuilt,i:Math.min(saved.i,rebuilt.length-1),stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk:saved.firstOk||0,n:rebuilt.length,recorded:false,theoryOpen:showPhoto2,hwN:nReq,hwMode:modeReq};
       ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();return;
     }
   }
   const qs=studyPickHomeworkSet(id,pool,n);
   const level=modeReq==='examen'?2:1,showPhoto=level===1;
-  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:true,hwN:nReq,hwMode:modeReq};
+  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:nReq,hwMode:modeReq};
   ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 function studyRound(temaId,level,showPhoto){
   const e=exGet(temaId),pool=e.pool.filter(q=>!q.off);
-  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk:0,n:pool.length,recorded:false,theoryOpen:true};
+  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,firstOk:0,n:pool.length,recorded:false,theoryOpen:showPhoto};
   ui.studyPhotoView=null;ui.studyQuitAsk=false;studySave();render();
 }
 function studyPhotosHTML(id){
@@ -3304,8 +3378,13 @@ function studyTheoryOrWarn(e){
   const txt=String(e&&e.notes||'').trim();
   if(!photos&&!txt)return `<div class="panel" style="border-color:#e0a800;background:#fff8e1;margin-bottom:8px">⚠️ <b>A esta tarjeta de teoría no le queda ninguna foto ni texto de teoría guardado</b> (puede que se borrara la foto). Las preguntas siguen aquí, pero pídele a tu tutor que vuelva a subir la foto o el texto en «Teoría y estudio».</div>`;
   const st=ui.study,open=st?!!st.theoryOpen:true;
+  /* en Nivel 2 ("sin foto") el botón empieza plegado (ver los puntos donde se crea ui.study,
+     theoryOpen:showPhoto) para no quitarle a Julia el reto de recordar primero -- pero David
+     quiere que, si se atasca, pueda igualmente ver la foto y el texto, así que la etiqueta del
+     botón lo deja claro en vez de parecer que no hay nada que ver. */
+  const label=(st&&st.showPhoto===false)?'🙈 ¿Te atascas? Ver fotos y teoría':'📖 Ver fotos y teoría';
   return `<div class="panel" style="margin-top:8px">
-  <button data-act="studyToggleTheory" style="all:unset;display:block;width:100%;cursor:pointer;font-weight:800">📖 Ver fotos y teoría <span style="float:right">${open?'▲ minimizar':'▼ ver'}</span></button>
+  <button data-act="studyToggleTheory" style="all:unset;display:block;width:100%;cursor:pointer;font-weight:800">${label} <span style="float:right">${open?'▲ minimizar':'▼ ver'}</span></button>
   ${open?`${photos?`<div style="margin-top:10px">${photos}</div>`:''}${txt?`<div class="mute" style="margin-top:10px;white-space:pre-wrap;line-height:1.5">${esc(txt)}</div>`:''}`:''}</div>`;
 }
 function studyPhotoOverlay(){
@@ -3367,9 +3446,9 @@ function renderStudyDone(){
   recordStudyOnce(st,e);
   const pct=st.n?Math.round(100*st.firstOk/st.n):100;
   app.innerHTML=`<button class="link" data-act="studyQuitOk">← Teoría y exámenes</button><h2>${pct>=80?'🎉 ¡Genial, Julia!':pct>=50?'👍 ¡Buen trabajo!':'💪 ¡Sigue practicando!'}</h2>
-  <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${st.firstOk} de ${st.n} a la primera (${pct}%)</div><small class="mute">Nivel ${st.level}${st.level===1?' · con la foto':' · sin la foto'}</small></div>
+  <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${st.firstOk} de ${st.n} a la primera (${pct}%)</div><small class="mute">Nivel ${st.level}${st.level===1?' · con la foto siempre visible':' · repaso de memoria'}</small></div>
   <div class="row" style="flex-wrap:wrap">
-  ${st.level===1?`<button class="btn primary big" data-act="studyLevel2">🚀 Pasar a nivel 2 (sin foto)</button>`:''}
+  ${st.level===1?`<button class="btn primary big" data-act="studyLevel2">🚀 Pasar a nivel 2 (repasar de memoria)</button>`:''}
   <button class="btn" data-act="studyRepeat">🔁 Repetir esta ronda</button>
   <button class="btn" data-act="studyQuitOk">← Volver a temas y exámenes</button>
   </div>`;
@@ -3390,13 +3469,13 @@ function renderStudy(){
   const e=exGet(st.temaId);if(!e){ui.study=null;ui.screen='exlist';return render();}
   if(st.i>=st.qs.length)return renderStudyDone();
   const q=st.qs[st.i];
-  const levelBtn=st.level===1?`<button class="btn" data-act="studyLevel2">🚀 Nivel 2 (sin foto)</button>`:`<button class="btn" data-act="studyLevel1">📷 Volver a nivel 1 (con foto)</button>`;
+  const levelBtn=st.level===1?`<button class="btn" data-act="studyLevel2">🚀 Nivel 2 (repasar de memoria)</button>`:`<button class="btn" data-act="studyLevel1">📷 Volver a nivel 1 (con la foto siempre visible)</button>`;
   const overlay=studyPhotoOverlay();
   app.innerHTML=`<button class="link" data-act="studyQuit">← Salir</button><h2 style="margin:0">📘 ${esc(e.title)}</h2>
   <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0">
   <span class="mute">Nivel ${st.level} · pregunta ${st.i+1} de ${st.qs.length}</span>
   <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="studyPrev" ${st.i?'':'disabled'}>⬅ Anterior</button>${levelBtn}</span></div>
-  ${st.showPhoto?studyTheoryOrWarn(e):'<p class="mute" style="margin:4px 0 10px">🙈 Nivel 2: sin la foto. ¡A ver cuánto recuerdas!</p>'}
+  ${studyTheoryOrWarn(e)}
   <div class="panel" id="qpanel"><div style="font-size:1.2rem;font-weight:800;line-height:1.4;margin-bottom:12px">${esc(q.q)}</div>
   ${studyAnswerHTML(st,q)}</div>${overlay}${studyQuitOverlay()}`;
   const ta=$('#studyAns')||$('#studyWriteAns');if(ta)ta.focus();
@@ -3426,6 +3505,7 @@ const studyActions={
     }
     if(ok){st.firstOk++;st.stage='ok';}
     else{st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.stage='rule';}
+    chime(ok);
     render();scrollQCenter();
   },
   studyRulePick(b){
@@ -3478,6 +3558,41 @@ const studyActions={
    según esa frecuencia (ver miniGameDue). Aparte, siempre (no según esa frecuencia): al terminar
    de corregir un dictado normal. Seis juegos posibles, elegidos al azar cada vez. */
 const MINI_WORDS=['jirafa','pelicano','bicicleta','manzana','estrella','planeta','cocodrilo','biblioteca','elefante','mariposa','castillo','tortuga','oceano','montana','cuaderno','ventana','sombrero','jardin','musica','pintura','camion','paraguas','delfin','tijeras','calendario','lampara','escalera','desierto','volcan','cometa'];
+/* pedido por David: en el Ahorcado, dar una pista sencilla (nivel 10 años) de qué es la palabra,
+   para que no sea imposible adivinarla sin ninguna ayuda si no sale ninguna letra fácil al
+   principio. Un mapa fijo, sin IA (no hace falta gastar nada por una pista tan simple). */
+const MINI_WORD_HINTS={
+  jirafa:'Animal con el cuello muy, muy largo',
+  pelicano:'Ave con un pico enorme, vive cerca del mar',
+  bicicleta:'Tiene dos ruedas y se mueve pedaleando',
+  manzana:'Fruta redonda, roja o verde',
+  estrella:'Brilla en el cielo por la noche',
+  planeta:'La Tierra es uno, igual que Marte',
+  cocodrilo:'Reptil con muchos dientes que vive en los ríos',
+  biblioteca:'Sitio con muchísimos libros para leer o pedir prestados',
+  elefante:'El animal terrestre más grande, tiene trompa',
+  mariposa:'Insecto de colores que antes fue oruga',
+  castillo:'Donde vivían los reyes antiguamente, con torres',
+  tortuga:'Animal muy lento con un caparazón duro',
+  oceano:'Masa enorme de agua salada, como el Atlántico',
+  montana:'Terreno muy alto que se puede escalar',
+  cuaderno:'Donde escribes los deberes del colegio',
+  ventana:'Por donde entra la luz y se ve la calle',
+  sombrero:'Se pone en la cabeza para protegerse del sol',
+  jardin:'Sitio con plantas y flores en una casa',
+  musica:'Se escucha con los oídos, tiene ritmo y melodía',
+  pintura:'Se usa con un pincel para colorear un dibujo',
+  camion:'Vehículo grande que transporta cosas pesadas',
+  paraguas:'Lo abres cuando llueve para no mojarte',
+  delfin:'Animal marino muy listo que salta fuera del agua',
+  tijeras:'Sirven para cortar papel o tela',
+  calendario:'Dice qué día, mes y año es',
+  lampara:'Da luz en una habitación',
+  escalera:'Sirve para subir o bajar de piso',
+  desierto:'Lugar muy seco con mucha arena, como el Sahara',
+  volcan:'Montaña que puede echar fuego y lava',
+  cometa:'Puede ser una estrella con cola, o un juguete que vuela con un hilo',
+};
 const MINI_EMOJIS=['🐶','🐱','🐵','🦁','🐸','🐧','🦋','🐢','🐬','🦖','🍎','🍉','⚽','🎈','🚗','🌈','⭐','🎵','🌙','☀️'];
 const MINI_FACES=['🙂','😕','😟','😧','😨','😱'];
 const MINI_KINDS=['memoria','ahorcado','tres','caza','puzzle','simon'];
@@ -3557,8 +3672,9 @@ function ahorcadoHTML(){
   const g=ui.mgame,letters='abcdefghijklmnñopqrstuvwxyz'.split('');
   const shown=g.word.split('').map(ch=>g.guessed.includes(ch)?ch:'_').join(' ');
   const face=MINI_FACES[Math.min(g.fails,MINI_FACES.length-1)];
+  const hint=MINI_WORD_HINTS[g.word];
   return `<h2 style="margin:0">🔤 Ahorcado</h2>
-  <p class="mute" style="margin-top:4px">Un pequeño descanso antes de seguir. Adivina la palabra.</p>
+  <p class="mute" style="margin-top:4px">Un pequeño descanso antes de seguir. Adivina la palabra.${hint?` <br>💡 Pista: ${esc(hint)}`:''}</p>
   <div class="panel" style="text-align:center">
   <div style="font-size:2.6rem">${face}</div>
   <div style="font-size:2rem;font-weight:800;letter-spacing:6px;margin:10px 0">${esc(shown.toUpperCase())}</div>
@@ -4242,6 +4358,7 @@ const morfoActions={
     st.results[st.i]={ok,pick,pickSub,correct,correctSub};if(ok)st.ok++;
     st.stage=ok?'ok':'wrong';st.writeGiven='';st.writeOk=false;st.writeDiff=null;
     st.extra=morfoExtraNeeded(st)?morfoMakeExtra():null;
+    chime(ok);
     const y=scrollY;render();scrollTo(0,y);
   },
   /* los 3 pasos del "análisis extra" (cada 5 palabras): variable/invariable, raíz y tipo de cada
@@ -4252,6 +4369,7 @@ const morfoActions={
     const st=ui.morfo;if(!st||!st.extra||st.extra.stage!=='varinv'||st.extra.varPick)return;
     const cat=st.cats[st.i],variable=MORFO_VARIABLE[cat],v=b.dataset.v;
     st.extra.varPick=v;st.extra.varOk=(v==='variable')===variable;
+    chime(st.extra.varOk);
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoExtraRaizCheck(){
@@ -4260,6 +4378,7 @@ const morfoActions={
     const v=($('#morfoExtraRaiz')&&$('#morfoExtraRaiz').value||'').trim();
     if(!v)return toast('Escribe la raíz primero');
     st.extra.raizGiven=v;st.extra.raizChecked=true;st.extra.raizOk=exNorm(v)===exNorm(morf.raiz);
+    chime(st.extra.raizOk);
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoExtraMorf(b){
@@ -4268,6 +4387,7 @@ const morfoActions={
     const ex=st.extra;if(ex.morfPicks[ex.morfIdx])return;
     const m=morf.morfemas[ex.morfIdx],v=b.dataset.v;
     ex.morfPicks[ex.morfIdx]={pick:v,ok:v===m.tipo};
+    chime(ex.morfPicks[ex.morfIdx].ok);
     const y=scrollY;render();scrollTo(0,y);
   },
   /* avanza al siguiente paso del análisis extra que aplique a esta palabra (se salta raíz/morfemas
@@ -4508,6 +4628,7 @@ const prepActions={
     const i=+b.dataset.i,sent=st.sentences[st.i];
     st.picked=i;const ok=i===sent.idx;if(ok)st.ok++;
     st.results.push({texto:sent.texto,ok,correctWord:sent.tokens[sent.idx].t,pickedWord:sent.tokens[i]?sent.tokens[i].t:''});
+    chime(ok);
     const y=scrollY;render();scrollTo(0,y);
   },
   prepNext(){
@@ -4534,6 +4655,7 @@ const prepActions={
     const extra=given.filter(g=>!PREP_SET.has(g));
     st.examResult={found,missing,extra};st.examChecked=true;
     prepRecordResult(PREP_LIST.length,found.length);
+    chime(!missing.length&&!extra.length);
     const y=scrollY;render();scrollTo(0,y);
   },
   prepBack(){const back=(ui.prep&&ui.prep.back)||'morfolist';ui.prep=null;ui.screen=back;render();}
@@ -5164,6 +5286,7 @@ const spellRunActions={
     if(!v)return toast('Escribe la palabra primero');
     r.ok=spGrade(v,w.w);r.stage='checked';r.retypeGiven='';r.retypeOk=false;
     r.results.push({wordId:w.id,word:w.w,given:v,ok:r.ok});
+    chime(r.ok);
     const y=scrollY;render();scrollTo(0,y);
   },
   /* si falla la palabra, antes de poder seguir con el significado (y pasar a la siguiente)
@@ -5193,6 +5316,7 @@ const spellRunActions={
     let ok=null,correct='';
     try{const g=await spGradeMeaning(w.w,mv);ok=g.ok;correct=g.correct;}catch(e){ok=null;correct='';}
     r.meaningBusy=false;
+    if(ok!==null)chime(ok);
     if(r.stage==='checked'){
       r.meaning=mv;r.meaningOk=ok;r.meaningCorrect=correct;
       if(r.results.length)Object.assign(r.results[r.results.length-1],{meaning:mv,meaningOk:ok});
@@ -5264,6 +5388,7 @@ const spellRunActions={
     if(!v)return toast('Escribe la palabra que falta');
     r.ok=w?spGrade(v,w.w):false;r.stage='checked';
     r.results.push({word:w?w.w:'?',given:v,ok:r.ok});
+    chime(r.ok);
     const y=scrollY;render();scrollTo(0,y);
   },
   spSentNext(){
@@ -5397,7 +5522,8 @@ function tabAjustes(){
   <label class="f">Repetir cada trozo <span class="v" id="v_repeat">${s.repeat} ${s.repeat>1?'veces':'vez'}</span><input type="range" min="1" max="3" value="${s.repeat}" data-set="repeat"></label>
   <label class="f" id="gapBox" style="${s.repeat>1?'':'display:none'}">Segundos entre repeticiones <span class="v" id="v_gap">${s.gap} s</span><input type="range" min="1" max="20" value="${s.gap}" data-set="gap"></label>
   <label class="f"><input type="checkbox" data-set="punct" ${s.punct?'checked':''}> Dictar los signos de puntuación</label><br>
-  <label class="f"><input type="checkbox" data-set="showOrig" ${s.showOrig!==false?'checked':''}> Al corregir, permitir ver el texto original del dictado (Julia necesita el PIN de tutor)</label>
+  <label class="f"><input type="checkbox" data-set="showOrig" ${s.showOrig!==false?'checked':''}> Al corregir, permitir ver el texto original del dictado (Julia necesita el PIN de tutor)</label><br>
+  <label class="f"><input type="checkbox" data-set="fxSound" ${s.fxSound!==false?'checked':''}> 🔊 Sonido de acierto/fallo (al corregir cada pregunta o palabra en dictado, Spelling, Teoría y Análisis Morfológico)</label>
   <label class="f">Pausa después de cada signo<select data-set="ppause"><option value="0.6" ${s.ppause==0.6?'selected':''}>Corta</option><option value="1" ${s.ppause==1?'selected':''}>Normal</option><option value="1.6" ${s.ppause==1.6?'selected':''}>Larga</option><option value="2.2" ${s.ppause==2.2?'selected':''}>Muy larga</option></select></label>
   ${Dict.voices().length?`<label class="f">Voz<select data-set="voice">${Dict.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.voice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en español en este dispositivo.</p>'}</div>
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
@@ -5573,7 +5699,15 @@ const studentActions={
   }
 };
 const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,prepActions,engDictActions,spellActions,spellRunActions);
-document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;const f=ALL[b.dataset.act];if(f)f(b,e);});
+document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;
+  /* "despierta" el audio del sonido de acierto/fallo en el primer click de lo que sea: en iOS/
+     Safari un AudioContext solo se puede crear/reanudar dentro de un gesto del usuario, y algunas
+     de las acciones que acaban llamando a chime() (p.ej. studyCheck, si pide una 2ª opinión a la
+     IA) lo hacen después de un await, ya fuera del gesto original. Haciéndolo aquí, en el mismo
+     listener que despacha TODAS las acciones (synchronous, antes de cualquier await), se evita
+     que el primer sonido se pierda por llegar tarde a crear el audio. */
+  _fxAudioCtx();
+  const f=ALL[b.dataset.act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
   if(t.id==='exans'&&ui.ex){ui.ex.ans[ui.ex.i]=t.value;return;}
@@ -5624,6 +5758,12 @@ document.addEventListener('drop',e=>{
   handler(files);
 });
 document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.target;
+  /* mismo motivo que en el listener de click: varias de estas acciones (p.ej. spDictCheckMeaning,
+     o studyCheck cuando pide una 2ª opinión a la IA) llaman a chime() DESPUÉS de un await, ya
+     fuera del gesto del usuario -- si solo se "despertara" el audio en los clics de botones, una
+     corrección hecha pulsando Enter en el teclado (en vez de tocar el botón) podría perder el
+     primer sonido si el audio necesitaba reactivarse justo en ese momento. */
+  _fxAudioCtx();
   if(t.dataset.enter==='word')fixActions.word({dataset:{i:t.dataset.i}});
   if(t.dataset.enter==='mans')taskActions.mcheck();
   if(t.dataset.enter==='opin')fixActions.origGo();
