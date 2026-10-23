@@ -980,7 +980,41 @@ function dictadoPreviewHTML(text){
    (el candado photoBusy, el aviso en pantalla, y las 2 formas de "ronda fantasma" -Salir y la
    cabecera fija- sin dar tiempo de pantalla de más). Suite completa en verde salvo los 2
    hallazgos pre-existentes ya documentados, sin relación con este cambio. */
-const APP_VERSION='2026.10.23-2';
+/* v2026.10.23-3 -- pedido por David (a partir de una captura de la lista de tarjetas de un tema):
+   quería poder probar una tarjeta de teoría con un test rápido de 3 preguntas, desde la propia
+   pantalla de tarjetas, sin tener que pasar por la pestaña "🧪 Zona de pruebas" (que elige una
+   tarjeta al azar y usa el banco completo). Confirmado con 3 preguntas: (a) un botón nuevo en CADA
+   tarjeta ya publicada, no solo en la Zona de Pruebas; (b) siempre exactamente 3 preguntas, fijo;
+   (c) solo para que el tutor lo pruebe, con la MISMA garantía de seguridad que la Zona de Pruebas
+   (no toca los datos reales de Julia).
+   Nuevo botón "🧪 Probar (3 preguntas)" en cada tarjeta de teoría ya publicada (exTemaView), junto
+   a "Agregar a deberes"/"Abrir"/"Borrar" -- solo visible si la tarjeta está publicada (status
+   'ready') y tiene al menos 1 pregunta activa. Nueva acción examActions.exProbar3(b): entra en
+   modo de pruebas y abre esa tarjeta EN CONCRETO (no una al azar) con 3 preguntas, reutilizando
+   studyOpenHomework(id,3,'estudio'), ya existente.
+   Para compartir la garantía de seguridad con la Zona de Pruebas (copia de seguridad completa de
+   "state", save()/Cloud.sync() bloqueados mientras tanto) sin duplicar código, se extrajo la
+   función pruebaEnter() (usada ahora por pruebaStart() y por exProbar3()) y se añadió
+   ui.testZoneReturn para que pruebaExit() vuelva exactamente a la pantalla de tarjetas de la que
+   se entró (en vez de saltar siempre a la pestaña "🧪 Zona de pruebas" como antes) -- la Zona de
+   Pruebas sigue volviendo a su propia pestaña, sin cambios de comportamiento ahí.
+   Revisión adversarial (2 rondas, 1 hallazgo real, corregido):
+   1) MEDIO: si el tutor ya había puesto esa MISMA tarjeta como deber real con exactamente n=3 y
+      modo 'estudio', y Julia la había dejado a medias, "Probar" retomaba esa ronda real a medias
+      en vez de sortear 3 preguntas nuevas al azar -- no corrompía nada (pruebaExit() restaura
+      "state" entero igualmente) pero contradecía lo que promete el botón. Arreglado borrando
+      state.studyProgress[id] justo DESPUÉS de tomar la copia de seguridad (pruebaEnter()), así que
+      es inocuo: el progreso real de Julia reaparece intacto en cuanto se sale del modo de pruebas.
+   La 2ª ronda, centrada en ese arreglo (persistencia durante la prueba, cierre de pestaña a medio
+   camino, tipo de studyProgress), no encontró ningún problema nuevo.
+   Cubierto por un test nuevo: verify_exprobar3.js (el botón aparece solo en tarjetas publicadas
+   con preguntas y no en borradores, lanza la tarjeta correcta con exactamente 3 preguntas nuevas
+   al azar -incluso con progreso real a medias guardado-, pruebaExit() restaura "state" entero y
+   vuelve a la pantalla de tarjetas de origen, la Zona de Pruebas sigue volviendo a su pestaña de
+   siempre, y los casos límite: tarjeta inexistente, sin preguntas, doble entrada sin salir).
+   Suite completa en verde salvo los 2 hallazgos pre-existentes ya documentados, sin relación con
+   este cambio. */
+const APP_VERSION='2026.10.23-3';
 /* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
    1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
       hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
@@ -3177,7 +3211,7 @@ function exTemaView(t,tm){
     const act=e.pool.filter(q=>!q.off).length,nph=(state.examFotos[e.id]||[]).length;
     return `<div class="panel row" style="justify-content:space-between">
     <span><b>Tarjeta de teoría: ${esc(e.title||'(sin título)')}</b> ${e.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicado</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${EX_MODES[e.mode]} · banco de ${act}${nph?` · ${nph} ${nph===1?'foto':'fotos'}`:''}</small></span>
-    <span class="row">${e.status==='ready'?`<button class="btn" data-act="taskAddOpen" data-type="teoria" data-id="${esc(e.id)}" data-title="${esc(e.title||'(sin título)')}">📅 Agregar a deberes</button>`:''}<button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span>
+    <span class="row">${e.status==='ready'?`<button class="btn" data-act="taskAddOpen" data-type="teoria" data-id="${esc(e.id)}" data-title="${esc(e.title||'(sin título)')}">📅 Agregar a deberes</button>`:''}${e.status==='ready'&&act>0?`<button class="btn" data-act="exProbar3" data-id="${esc(e.id)}" title="La prueba tú, con 3 preguntas al azar -- no toca los datos reales de Julia">🧪 Probar (3 preguntas)</button>`:''}<button class="btn" data-act="exOpen" data-id="${esc(e.id)}">✏️ Abrir</button><button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button></span>
     </div>`;
   };
   t.innerHTML=`<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
@@ -3353,6 +3387,31 @@ const examActions={
     state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;ui.exCombineOn=false;ui.exCombineSel=[];render();
   },
   exOpen(b){ui.exId=b.dataset.id;ui.exExpand=null;render();},
+  /* pedido por David (2026-10-23): poder probar una tarjeta de teoría CONCRETA con solo 3
+     preguntas, directamente desde la lista de tarjetas de un tema, sin tener que irse a la Zona
+     de pruebas (que elige una tarjeta al azar y usa el banco COMPLETO, tedioso solo para "ver
+     cómo funciona"). Reutiliza EXACTAMENTE la misma garantía de seguridad que la Zona de pruebas
+     (pruebaEnter()/pruebaExit(): copia de seguridad de "state" entera y role='alumna' temporal,
+     con save() bloqueado mientras tanto) -- esto NO es un camino nuevo y paralelo, es la MISMA
+     Zona de pruebas, solo que entrando directamente a una tarjeta en concreto con 3 preguntas en
+     vez de "Tarjeta de teoría" (al azar, banco completo). Al salir (mismo botón "✕ Salir" de
+     siempre), se vuelve a esta misma pantalla de tarjetas (ver pruebaEnter/pruebaExit), no a la
+     pestaña de Zona de pruebas. */
+  exProbar3(b){
+    if(ui.testZoneBackup)return toast('Primero sal de la prueba anterior (✕ Salir) antes de empezar otra');
+    const e=exGet(b.dataset.id);
+    if(!e||e.status!=='ready')return toast('Esta tarjeta todavía no está publicada');
+    if(!e.pool.filter(q=>!q.off).length)return toast('Esta tarjeta no tiene preguntas todavía');
+    pruebaEnter();
+    // Hallazgo de la revisión adversarial: si el tutor ya había puesto esta MISMA tarjeta como
+    // deber real con n=3 y modo 'estudio', y Julia la dejó a medias, studyOpenHomework() retomaría
+    // esa ronda real a medias en vez de sortear 3 preguntas nuevas al azar -- contradiciendo lo que
+    // dice el botón. No corrompe nada (pruebaExit() restaura "state" entero igualmente), pero
+    // confundiría al tutor sobre qué está viendo. Se borra aquí, DESPUÉS de pruebaEnter() (ya hay
+    // copia de seguridad hecha), así que es inocuo: se descarta sin dejar rastro al salir.
+    if(state.studyProgress)delete state.studyProgress[e.id];
+    studyOpenHomework(e.id,3,'estudio');
+  },
   asigNew(){const name=(prompt('Nombre de la nueva asignatura:')||'').trim();if(!name)return;snapUndo();state.asignaturas.push({id:'asig-'+uid(),name});save();render();},
   asigOpen(b){ui.exAsigId=b.dataset.id;ui.exTemaId=null;render();},
   asigBack(){ui.exAsigId=null;render();},
@@ -6578,11 +6637,24 @@ const studentActions={
   }
 };
 const pickRand=arr=>arr&&arr.length?arr[Math.floor(Math.random()*arr.length)]:null;
+/* entra en la Zona de pruebas: guarda una copia de seguridad de TODO "state" (ver pruebaExit, que
+   la restaura entera al salir, descartando cualquier cosa grabada durante la prueba) y pasa a
+   role='alumna' temporalmente. También recuerda DESDE DÓNDE se entró (testZoneReturn: la pestaña
+   del tutor y, si aplica, en qué asignatura/tema/tarjeta estaba) para poder volver exactamente
+   ahí al salir, en vez de siempre a la pestaña "🧪 Zona de pruebas" -- necesario desde que hay
+   un segundo punto de entrada aparte de esa pestaña (el botón "🧪 Probar (3 preguntas)" de cada
+   tarjeta de teoría, ver examActions.exProbar3). Compartida por los dos puntos de entrada: es la
+   MISMA garantía de seguridad en los dos casos, nunca un camino paralelo. */
+function pruebaEnter(){
+  ui.testZoneReturn={tab:ui.tab,exId:ui.exId,exTemaId:ui.exTemaId,exAsigId:ui.exAsigId};
+  ui.testZoneBackup=JSON.parse(JSON.stringify(state));
+  ui.role='alumna';
+}
 const pruebaActions={
   pruebaStart(b){
     if(ui.testZoneBackup)return toast('Primero sal de la prueba anterior (✕ Salir) antes de empezar otra');
     const kind=b.dataset.kind;
-    const enter=()=>{ui.testZoneBackup=JSON.parse(JSON.stringify(state));ui.role='alumna';};
+    const enter=pruebaEnter;
     if(kind==='mates'){enter();taskActions.mstart({dataset:{g:'mix'}});return;}
     if(kind==='examen'){
       const pick=pickRand(state.examenes.filter(e=>e.status==='ready'&&e.isExam));
@@ -6633,7 +6705,13 @@ const pruebaActions={
     if(!ui.testZoneBackup)return;
     state=ui.testZoneBackup;ui.testZoneBackup=null;
     try{Dict.stop();}catch(e){}
-    ui.role='tutor';ui.tab='pruebas';ui.unlocked=true;
+    const ret=ui.testZoneReturn;ui.testZoneReturn=null;
+    ui.role='tutor';ui.unlocked=true;
+    /* vuelve a donde estaba el tutor al entrar (ver pruebaEnter); si por lo que sea no se guardó
+       nada (p.ej. un "state" antiguo restaurado de un punto intermedio raro), se cae al mismo
+       sitio de siempre (pestaña "🧪 Zona de pruebas") como ya hacía esta función. */
+    if(ret){ui.tab=ret.tab;ui.exId=ret.exId;ui.exTemaId=ret.exTemaId;ui.exAsigId=ret.exAsigId;}
+    else ui.tab='pruebas';
     ui.mrun=null;ui.study=null;ui.ex=null;ui.exres=null;ui.dict=null;ui.item=null;ui.morfo=null;
     ui.prep=null;ui.spRun=null;ui.mgame=null;ui.engdict=null;ui.answer='';ui.photo=null;ui.fix=null;
     ui.studyVideoOpen=false;
