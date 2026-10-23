@@ -1014,7 +1014,99 @@ function dictadoPreviewHTML(text){
    siempre, y los casos límite: tarjeta inexistente, sin preguntas, doble entrada sin salir).
    Suite completa en verde salvo los 2 hallazgos pre-existentes ya documentados, sin relación con
    este cambio. */
-const APP_VERSION='2026.10.23-3';
+/* v2026.10.23-4 -- cuatro peticiones de David seguidas, a partir de dos capturas y comentarios
+   sueltos sobre Teoría y sonidos:
+   1) (a partir de una captura de un sub-quiz de Teoría) "en preguntas como estas es absurdo
+      escribir la respuesta... si te fijas en estas respuestas, las 3 son correctas" -- cuando una
+      pregunta NO tiene una explicación completa (q.e vacío o solo espacios), ruleTextOfQ() cae a
+      un formato muy corto ("hecho: respuesta") que hacía que las 3 opciones del sub-quiz "¿cuál es
+      la explicación correcta?" parecieran igual de válidas, y además obligaba a escribir ese
+      mismo texto corto a mano, algo sin sentido pedagógico. Confirmado con David (pregunta de
+      aclaración): se quita el paso de "escríbelo tú" SOLO cuando falta una explicación completa
+      (q.e), no cuando sí existe -- ahí sigue siendo obligatorio escribirla. Nuevo flag
+      st.writeNotNeeded en ui.study (junto a writeSkipped, que es el salto con PIN del tutor): se
+      pone a true en studyRulePick() con la MISMA normalización que usa ruleTextOfQ()
+      ((q.e||'').trim()), para no desincronizarse de qué cuenta como "explicación completa". El
+      mensaje final cambia a "✅ ¡Entendido!" en vez de "✅ ¡Muy bien escrita!" para distinguirlo
+      visualmente de cuando sí se ha escrito algo.
+   2) (a partir de una captura de una pregunta tipo test A-D) "cuando seleccione una de las
+      opciones ya automáticamente se tiene que dar solo al botón comprobar, así nos quitamos un
+      paso, vamos más rápido" -- studyPick() (Teoría, preguntas tipo test) ahora llama a
+      studyCheck() en el mismo clic en que se elige una opción, sin esperar a un botón aparte.
+      Se quitó el botón "✔ Comprobar" (ya sin uso) de esa rama de studyAnswerHTML(); la rama de
+      escribir a mano (textarea) no se ha tocado, sigue con su propio botón "Comprobar".
+   3) "el sonido de hacerlo mal puede ser algo más divertido como un wa wa wa wa... y el de
+      hacerlo bien como gente aplaudiendo" -- nuevas funciones de síntesis con Web Audio (sin
+      archivos de sonido, igual que el resto de la app): playSweep() (oscilador con rampa de
+      frecuencia, para el "wa" descendente) y playNoiseBurst() (ráfaga de ruido filtrada con un
+      BiquadFilterNode en modo paso-banda, para las palmadas). playApplause() encadena 16 ráfagas
+      de ruido con tiempos y frecuencias al azar (aplauso); playSadTrombone() encadena 4 "wa"
+      descendentes con frecuencias y duraciones afinadas a mano. chime(ok) ahora llama a una u otra
+      según el resultado, respetando igual que antes el interruptor de Ajustes (fxSound). La
+      función playTone() anterior se deja sin usar (no se borra, por si se reutiliza para algo).
+   4) "en la parte del alumno, no debe dejar copiar y pegar" -- para que escribir una respuesta a
+      mano ("escríbelo tú") sea de verdad escribirla, y no copiar el texto que la propia pantalla
+      le enseña como respuesta correcta y pegarlo. Bloqueo a nivel de documento (eventos copy/cut/
+      paste con preventDefault()) activo mientras ui.role==='alumna' (incluida la Zona de Pruebas,
+      que simula exactamente lo que ve Julia). No afecta a ui.role==='tutor'.
+   Revisión adversarial por cada cambio (varias rondas en total). Hallazgos reales, todos
+   corregidos:
+   - (1) MEDIO: la primera versión comprobaba !q.e directamente, sin el .trim() que sí usa
+     ruleTextOfQ() -- una q.e con solo espacios en blanco seguía exigiendo escribir, inconsistente
+     con lo que de verdad se le mostraba a Julia como "sin explicación". Arreglado usando la misma
+     normalización (q.e||'').trim() en los dos sitios.
+   - (1) BAJO (higiene, sin fallo activo): studyNext()/studyPrev() no reseteaban explícitamente
+     writeNotNeeded al cambiar de pregunta, aunque por el orden real de las llamadas no llegaba a
+     filtrarse de una pregunta a la siguiente. Arreglado añadiéndolo a sus reseteos, por robustez.
+   - (4) ALTO: el bloqueo, sin excepciones, rompía #morfoTa (Análisis Morfológico), una
+     herramienta de "pega aquí cualquier texto" donde pegar es precisamente el uso previsto (no es
+     un ejercicio de "escríbelo tú" con respuesta a proteger). Arreglado exceptuando ese campo por
+     id.
+   - (4) MEDIO: los campos "PIN tutor" (#opin, #mRevealPin, #studySkipPin, #morfoSkipPin,
+     #spDictSkipPin -- todos type="password") aparecen dentro de pantallas de alumna para que el
+     tutor desbloquee o salte algo desde ahí, y dejaban de aceptar pegar un PIN en silencio.
+     Arreglado exceptuando cualquier campo type="password" (cubre también futuros campos de PIN).
+   - (2) y (3): ninguna ronda encontró fallos reales (confirmado que exProbar3/Zona de Pruebas
+     comparten el mismo camino de studyPick, que no hay doble sonido ni solapamiento en el
+     trombón/aplauso, y que no hay fugas del bloqueo de portapapeles hacia pantallas de tutor ni
+     otro sitio legítimo de "pegar texto libre" sin exceptuar).
+   Cubierto por tests: verify_study_write_skip.js (6 casos, incluye el borde de q.e solo con
+   espacios y el reseteo en studyNext/studyPrev), verify_chime.js (reescrito para los nuevos
+   playSweep/playNoiseBurst, incluye el auto-submit de studyPick en su sección 3b, cubre los 10
+   sitios de sonido de toda la app), y verify_alumna_noclipboard.js (nuevo: bloqueo en alumna, sin
+   bloqueo en tutor, dinámico al cambiar de rol, sigue bloqueado dentro de la Zona de Pruebas y se
+   desbloquea al salir con la pruebaExit() real, y las 2 excepciones -- morfoTa y type="password"--
+   sin que se haya hecho demasiado amplia la de un campo de respuesta normal). Suite completa en
+   verde salvo los 2 hallazgos pre-existentes ya documentados, sin relación con estos cambios. */
+/* v2026.10.23-5 -- pedido por David a partir de una captura: en el campo "PIN tutor" de Mates (al
+   fallar 2 veces y pulsar "¿Sigue sin salir?"), Chrome le ofrecía rellenar el campo con una
+   contraseña SUYA guardada de otra web (un correo de Hotmail no relacionado) y la opción de
+   desbloquearla con la huella -- ruido del gestor de contraseñas del propio navegador, nada que ver
+   con el PIN de la app, pero molesto porque además podría verlo el alumno si se llega a abrir esa
+   sugerencia. "puedes hacer que no salga la opcion de poner mi huella? o mejor aun que poniendo la
+   huella ponga mi contraseña... y si puedes lo quiero para todas las veces que me pide la
+   contraseña". Causa: ninguno de los 7 campos de la app donde se pide un PIN/contraseña del tutor
+   tenía el atributo autocomplete puesto (salvo la clave de OpenAI de Ajustes, que ya lo tenía desde
+   antes) -- sin él, Chrome trata el campo como un login cualquiera y ofrece sus propias contraseñas
+   guardadas. Arreglado añadiendo autocomplete="off" a los 5 "PIN tutor" (#opin, #mRevealPin,
+   #studySkipPin, #morfoSkipPin, #spDictSkipPin) y al PIN de entrada al Área de tutor (#pin1 al
+   entrar), y autocomplete="new-password" a los 2 campos de CREAR el PIN por primera vez (#pin1/
+   #pin2 en "Crea tu PIN de tutor") -- ahí sí conviene decirle a Chrome que es un PIN nuevo, no uno
+   que ya exista para ofrecer de otro sitio. Con esto Chrome deja de sugerir nada en los 7 sitios.
+   Sobre la segunda parte del pedido (usar de verdad la huella/Face ID para rellenar el PIN,
+   biométrico de verdad en vez de solo quitar el aviso): investigado y explicado a David por chat,
+   no implementado todavía -- necesitaría registrar la huella/cara como credencial ligada a la app
+   mediante WebAuthn, que normalmente exige abrir la app desde una dirección web segura (https), y
+   tal y como está montada hoy (archivo local index.html sincronizado por Google Drive, sin
+   servidor propio) muy probablemente no sea un contexto válido para eso. Pendiente de que David
+   confirme si quiere explorar alojar la app en un servidor propio para poder hacerlo, o si con
+   quitar el aviso del gestor de contraseñas (ya hecho) es suficiente.
+   Revisión adversarial: cambio puramente de atributos HTML (autocomplete), sin lógica nueva; no se
+   encontró ningún problema real (no afecta al valor que se lee de cada input al pulsar "Ver
+   solución"/"Entrar"/"Guardar PIN", que sigue leyendo i.value exactamente igual que antes).
+   Cubierto por: suite completa en verde (ningún test comprobaba antes el HTML exacto de estos
+   inputs de forma que se rompiera con este cambio). */
+const APP_VERSION='2026.10.23-5';
 /* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
    1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
       hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
@@ -1449,24 +1541,66 @@ function playTone(freq,dur,delay,type,vol){
     osc.start(t0);osc.stop(t0+dur+0.03);
   }catch(e){}
 }
-/* pedido por David (2026-10-22): sonidos de acierto/fallo "que llamen más la atención" que los de
-   antes (antes: acierto = 2 pitidos agudos muy suaves; fallo = 1 pitido grave largo). Ahora:
-   acierto = acorde ascendente de 4 notas (do-mi-sol-do agudo, como un "¡tachán!" alegre, onda
-   triangular más brillante que la sinusoidal de antes) y fallo = doble golpe grave de onda
-   cuadrada (más áspera/llamativa que la de diente de sierra de antes), con más volumen en ambos
-   casos (0.3 en vez de 0.22). Sigue respetando el interruptor "🔊 Sonido de acierto/fallo" de
-   Ajustes (state.settings.fxSound) igual que antes. */
+/* como playTone, pero con la frecuencia deslizándose de freqStart a freqEnd durante toda la nota
+   (en vez de quedarse fija) -- es lo que da el efecto de "pío" descendente de cada "wa" del sonido
+   de fallo de abajo (playSadTrombone). */
+function playSweep(freqStart,freqEnd,dur,delay,type,vol){
+  const ctx=_fxAudioCtx();if(!ctx)return;
+  try{
+    const t0=ctx.currentTime+(delay||0);
+    const osc=ctx.createOscillator(),gain=ctx.createGain();
+    osc.type=type||'sawtooth';
+    osc.frequency.setValueAtTime(freqStart,t0);
+    osc.frequency.linearRampToValueAtTime(freqEnd,t0+dur);
+    gain.gain.setValueAtTime(0.0001,t0);
+    gain.gain.exponentialRampToValueAtTime(vol||0.26,t0+0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+    osc.connect(gain);gain.connect(ctx.destination);
+    osc.start(t0);osc.stop(t0+dur+0.03);
+  }catch(e){}
+}
+/* un solo "clap" de aplauso: una ráfaga corta de ruido blanco filtrada en banda (las palmas suenan
+   a ruido, no a una nota concreta) -- muchas de estas, con tiempos y frecuencias al azar (ver
+   playApplause), dan el efecto de "gente aplaudiendo" sin usar ningún archivo de audio, con el
+   mismo motor Web Audio que ya usa el resto de sonidos de la app. */
+function playNoiseBurst(delay,dur,freq,q,vol){
+  const ctx=_fxAudioCtx();if(!ctx)return;
+  try{
+    const t0=ctx.currentTime+(delay||0);
+    const n=Math.max(1,Math.floor(ctx.sampleRate*dur));
+    const buf=ctx.createBuffer(1,n,ctx.sampleRate);
+    const d=buf.getChannelData(0);
+    for(let i=0;i<n;i++)d[i]=Math.random()*2-1;
+    const src=ctx.createBufferSource();src.buffer=buf;
+    const filt=ctx.createBiquadFilter();filt.type='bandpass';filt.frequency.value=freq;filt.Q.value=q||3;
+    const gain=ctx.createGain();
+    gain.gain.setValueAtTime(0.0001,t0);
+    gain.gain.exponentialRampToValueAtTime(vol||0.18,t0+0.003);
+    gain.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
+    src.connect(filt);filt.connect(gain);gain.connect(ctx.destination);
+    src.start(t0);src.stop(t0+dur+0.01);
+  }catch(e){}
+}
+/* pedido por David (2026-10-23): sonido de acierto = gente aplaudiendo; sonido de fallo = algo más
+   "divertido" tipo "wa wa wa waaa" (el clásico trombón de pifia). Sustituye al acorde/doble golpe
+   anterior (v2026.10.22-4). APPLAUSE_CLAPS ráfagas de ruido con tiempos/frecuencias al azar (cada
+   vez suena ligeramente distinto, como un aplauso de verdad). Sigue respetando el interruptor
+   "🔊 Sonido de acierto/fallo" de Ajustes (state.settings.fxSound) igual que antes. */
+const APPLAUSE_CLAPS=16;
+function playApplause(){
+  for(let i=0;i<APPLAUSE_CLAPS;i++){
+    playNoiseBurst(Math.random()*0.55,0.02+Math.random()*0.03,1400+Math.random()*2600,2+Math.random()*3,0.1+Math.random()*0.09);
+  }
+}
+function playSadTrombone(){
+  playSweep(340,260,0.17,0,'sawtooth',0.24);
+  playSweep(300,225,0.17,0.2,'sawtooth',0.24);
+  playSweep(265,195,0.17,0.4,'sawtooth',0.24);
+  playSweep(235,130,0.55,0.62,'sawtooth',0.28);
+}
 function chime(ok){
   if(!state.settings||state.settings.fxSound===false)return;
-  if(ok){
-    playTone(523.25,0.11,0,'triangle',0.3);
-    playTone(659.25,0.11,0.08,'triangle',0.3);
-    playTone(783.99,0.11,0.16,'triangle',0.3);
-    playTone(1046.5,0.22,0.24,'triangle',0.32);
-  }else{
-    playTone(220,0.15,0,'square',0.28);
-    playTone(164.81,0.28,0.13,'square',0.3);
-  }
+  if(ok)playApplause();else playSadTrombone();
 }
 /* contador del día de "tiempo de pantalla ganado" (pedido por David, 2026-10-23): un simple nº de
    aciertos de hoy, SIN tope aplicado aquí -- el tope (state.settings.screenCapMin) se aplica solo
@@ -2094,7 +2228,7 @@ const origOn=()=>state.settings.showOrig!==false&&!!ui.origOK;
 function origBar(){
   if(state.settings.showOrig===false)return '<span class="mute">🔴 por corregir · 🟢 corregida</span>';
   if(ui.origOK)return '<span class="row" style="gap:8px;flex-wrap:nowrap;align-items:center"><span class="mute" style="font-size:.85rem">🔴 por corregir · 🟢 corregida</span><button class="btn" style="min-height:32px;padding:4px 12px;font-size:.85rem" data-act="origHide">🙈 Ocultar original</button></span>';
-  if(ui.pinAsk)return '<span class="row" style="gap:6px;flex-wrap:nowrap"><input type="password" inputmode="numeric" id="opin" data-enter="opin" placeholder="PIN tutor" style="width:110px;padding:6px 8px;font-size:1rem"><button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="origGo">Ver</button><button class="btn" style="min-height:36px;padding:4px 10px" data-act="origNo">✕</button></span>';
+  if(ui.pinAsk)return '<span class="row" style="gap:6px;flex-wrap:nowrap"><input type="password" autocomplete="off" inputmode="numeric" id="opin" data-enter="opin" placeholder="PIN tutor" style="width:110px;padding:6px 8px;font-size:1rem"><button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="origGo">Ver</button><button class="btn" style="min-height:36px;padding:4px 10px" data-act="origNo">✕</button></span>';
   return '<button class="btn" style="min-height:36px;padding:4px 12px;font-size:.85rem" data-act="origAsk">🔒 Ver original (tutor)</button>';
 }
 function origRefresh(){const c=$('#cmp'),b=$('#origBar'),h=$('#cmpTitle');if(c){c.className='cmp'+(origOn()?'':' one');c.innerHTML=cmpHTML(ui.fix);}if(b)b.innerHTML=origBar();if(h)h.textContent=origOn()?'Compara tu texto con el original':'Tu texto';}
@@ -2467,7 +2601,7 @@ function mRevealHTML(m){
   // David pidió (2026-10-22) que en Matemáticas solo se vea la solución si el tutor mete el PIN,
   // igual que ya pasa en Teoría/Dictado -- antes se revelaba sola tras 2 intentos fallidos.
   if(m.revealPinAsk)return `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:nowrap;align-items:center">
-    <input type="password" inputmode="numeric" id="mRevealPin" data-enter="mRevealPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
+    <input type="password" autocomplete="off" inputmode="numeric" id="mRevealPin" data-enter="mRevealPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
     <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="mRevealGo">Ver solución</button>
     <button class="btn" style="min-height:36px;padding:4px 10px" data-act="mRevealNo">✕</button>
     </div>`;
@@ -3750,7 +3884,7 @@ function studyOpen(id){
   /* theoryOpen empieza abierto en Nivel 1 (con foto) y PLEGADO en Nivel 2 (sin foto): David quiere
      que Julia pueda ver la foto también en Nivel 2 si se atasca, pero que no salga ya abierta de
      golpe, para no quitarle del todo el reto de intentar recordar primero (ver studyTheoryOrWarn). */
-  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,firstOk,n:qs.length,recorded:false,theoryOpen:showPhoto};
+  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk,n:qs.length,recorded:false,theoryOpen:showPhoto};
   ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 /* ---- nº de preguntas y rotación cuando la teoría se pone como DEBER del día ----
@@ -3802,18 +3936,18 @@ function studyOpenHomework(id,n,mode){
     if(nReq&&rebuilt.length>nReq)rebuilt=rebuilt.slice(0,nReq);
     if(rebuilt.length){
       const showPhoto2=saved.showPhoto!==undefined?saved.showPhoto:true;
-      ui.study={temaId:id,level:saved.level||1,showPhoto:showPhoto2,qs:rebuilt,i:Math.min(saved.i,rebuilt.length-1),stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,firstOk:saved.firstOk||0,n:rebuilt.length,recorded:false,theoryOpen:showPhoto2,hwN:nReq,hwMode:modeReq};
+      ui.study={temaId:id,level:saved.level||1,showPhoto:showPhoto2,qs:rebuilt,i:Math.min(saved.i,rebuilt.length-1),stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:saved.firstOk||0,n:rebuilt.length,recorded:false,theoryOpen:showPhoto2,hwN:nReq,hwMode:modeReq};
       ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();return;
     }
   }
   const qs=studyPickHomeworkSet(id,pool,n);
   const level=modeReq==='examen'?2:1,showPhoto=level===1;
-  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:nReq,hwMode:modeReq};
+  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:nReq,hwMode:modeReq};
   ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 function studyRound(temaId,level,showPhoto){
   const e=exGet(temaId),pool=e.pool.filter(q=>!q.off);
-  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,firstOk:0,n:pool.length,recorded:false,theoryOpen:showPhoto};
+  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:pool.length,recorded:false,theoryOpen:showPhoto};
   ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;studySave();render();
 }
 function studyPhotosHTML(id){
@@ -3902,7 +4036,7 @@ function studyVideoOverlay(){
    se eligió mal la explicación; solo quita la obligación de escribirla bien para poder seguir. */
 function studySkipHTML(st){
   if(st.skipPinAsk)return `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:nowrap;align-items:center">
-    <input type="password" inputmode="numeric" id="studySkipPin" data-enter="studySkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
+    <input type="password" autocomplete="off" inputmode="numeric" id="studySkipPin" data-enter="studySkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
     <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="studySkipGo">Saltar</button>
     <button class="btn" style="min-height:36px;padding:4px 10px" data-act="studySkipNo">✕</button>
     </div>`;
@@ -3912,8 +4046,9 @@ function studyAnswerHTML(st,q){
   if(st.stage==='answer'){
     let body;
     if(q.t==='test'){
+      // elegir una opción ya comprueba sola (ver studyActions.studyPick) -- no hace falta botón de
+      // "Comprobar" aparte aquí, a diferencia del textarea de "escribe tú" de más abajo.
       body=q.o.map((o,k)=>`<button class="item" style="display:block;width:100%;text-align:left;font:inherit;background:${st.picked===k?'#ece9fb':'#fff'};border:2px solid ${st.picked===k?'var(--pri)':'var(--line)'};border-radius:var(--r);padding:14px 16px;margin:8px 0;cursor:pointer;color:var(--ink)" data-act="studyPick" data-k="${k}"><b style="color:var(--pri2)">${'ABCDE'[k]}.</b> ${esc(o)}</button>`).join('');
-      body+=`<div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyCheck" ${st.picked==null?'disabled':''}>✔ Comprobar</button></div>`;
     }else{
       body=`<textarea id="studyAns" data-enter="studyAns" placeholder="Escribe tu respuesta…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:110px" ${st.checking?'disabled':''}>${esc(st.given||'')}</textarea><div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyCheck" ${st.checking?'disabled':''}>${st.checking?'⏳ Corrigiendo…':'✔ Comprobar'}</button></div>`;
     }
@@ -3955,7 +4090,8 @@ function studyAnswerHTML(st,q){
         ${st.writeDiff?morfoWriteDiffHTML(st.writeDiff)+studySkipHTML(st):''}
         </div>`;
       }else{
-        h+=`<div class="msg right" style="margin-top:10px">${st.writeSkipped?'➡️ Pregunta saltada con el PIN del tutor.':'✅ ¡Muy bien escrita!'}</div><div class="row" style="margin-top:12px"><button class="btn success big" data-act="studyNext">Siguiente ➜</button></div>`;
+        const okMsg=st.writeSkipped?'➡️ Pregunta saltada con el PIN del tutor.':(st.writeNotNeeded?'✅ ¡Entendido!':'✅ ¡Muy bien escrita!');
+        h+=`<div class="msg right" style="margin-top:10px">${okMsg}</div><div class="row" style="margin-top:12px"><button class="btn success big" data-act="studyNext">Siguiente ➜</button></div>`;
       }
     }
     return h;
@@ -4017,7 +4153,16 @@ function renderStudy(){
 }
 const studyActions={
   studyOpen(b){studyOpen(b.dataset.id);},
-  studyPick(b){if(ui.study){ui.study.picked=+b.dataset.k;render();scrollQCenter();}},
+  /* pedido por David (2026-10-23, con foto): en las preguntas tipo test (elegir A/B/C/D), elegir
+     una opción ya comprueba sola -- se quita el paso de además pulsar "✔ Comprobar" aparte, para ir
+     más rápido. Solo aplica aquí (preguntas de elegir opción): el textarea de "escribe tú" sigue
+     pidiendo pulsar Comprobar como siempre, porque ahí sí hace falta poder terminar de escribir
+     antes de que se corrija. */
+  studyPick(b){
+    const st=ui.study;if(!st||st.picked!=null)return; // candado: una vez elegida, no se puede recontestar sin pasar por "Siguiente"
+    st.picked=+b.dataset.k;
+    studyActions.studyCheck();
+  },
   async studyCheck(){
     const st=ui.study;if(!st||st.checking)return;const q=st.qs[st.i];
     let ok;
@@ -4039,13 +4184,24 @@ const studyActions={
       }
     }
     if(ok){st.firstOk++;st.stage='ok';}
-    else{st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.stage='rule';}
+    else{st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='rule';}
     chime(ok);
     render();scrollQCenter();
   },
   studyRulePick(b){
-    const st=ui.study;if(!st)return;const k=+b.dataset.k;
-    if(st.opts[k].ok){st.stage='ruleok';}else{st.wrongPicks.push(k);}
+    const st=ui.study;if(!st)return;const k=+b.dataset.k;const q=st.qs[st.i];
+    if(st.opts[k].ok){
+      st.stage='ruleok';
+      /* pedido por David (2026-10-23, con foto): si la pregunta no tiene una explicación completa
+         guardada (q.e), ruleTextOfQ cae a un "dato: respuesta" corto (p.ej. "sinónimo de
+         'terminar': Concluir") tanto para esta opción correcta como para las 2 señuelas -- y por
+         eso cualquier otro "dato: respuesta" de OTRA pregunta también suena "correcto" suelto de
+         contexto (no es una explicación real, es solo una etiqueta). Pedirle a Julia que lo copie
+         a mano en "escríbelo tú" no tiene sentido pedagógico en ese caso: con haber identificado
+         la correcta entre las 3 opciones ya basta, se salta el paso de escribirlo. Si la pregunta
+         SÍ tiene una explicación completa (q.e), se sigue pidiendo escribirla como hasta ahora. */
+      if(!(q.e||'').trim()){st.writeOk=true;st.writeNotNeeded=true;} // misma normalización que ruleTextOfQ, ver aviso arriba
+    }else{st.wrongPicks.push(k);}
     render();scrollQCenter();
   },
   /* "escríbelo tú": comprueba lo que ha escrito contra la respuesta correcta de la pregunta
@@ -4074,14 +4230,14 @@ const studyActions={
   },
   studyNext(){
     const st=ui.study;if(!st)return;
-    st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.stage='answer';
+    st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='answer';
     studySave();
     if(miniGameDue(st.i,st.qs.length))return startMiniGame('study');
     render();scrollQCenter();
   },
   studyPrev(){
     const st=ui.study;if(!st||st.i<=0)return;
-    st.i--;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.stage='answer';
+    st.i--;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='answer';
     studySave();
     render();scrollQCenter();
   },
@@ -4830,7 +4986,7 @@ function morfoWriteDiffHTML(diff){
    volver a escribirla bien para poder seguir. */
 function morfoSkipHTML(st){
   if(st.skipPinAsk)return `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:nowrap;align-items:center">
-    <input type="password" inputmode="numeric" id="morfoSkipPin" data-enter="morfoSkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
+    <input type="password" autocomplete="off" inputmode="numeric" id="morfoSkipPin" data-enter="morfoSkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
     <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="morfoSkipGo">Saltar</button>
     <button class="btn" style="min-height:36px;padding:4px 10px" data-act="morfoSkipNo">✕</button>
     </div>`;
@@ -5831,7 +5987,7 @@ function renderSpellList(){
    reescritura (r.retypeTried). */
 function spDictSkipHTML(r){
   if(r.skipPinAsk)return `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:nowrap;align-items:center;justify-content:center">
-    <input type="password" inputmode="numeric" id="spDictSkipPin" data-enter="spDictSkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
+    <input type="password" autocomplete="off" inputmode="numeric" id="spDictSkipPin" data-enter="spDictSkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
     <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="spDictSkipGo">Saltar</button>
     <button class="btn" style="min-height:36px;padding:4px 10px" data-act="spDictSkipNo">✕</button>
     </div>`;
@@ -6314,8 +6470,8 @@ const spellRunActions={
 };
 /* ================= área tutor ================= */
 function renderTutor(){
-  if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
-  if(!ui.unlocked){app.innerHTML=`<h2>🔐 Área de tutor</h2><div class="panel" style="max-width:420px"><input type="password" inputmode="numeric" pattern="[0-9]*" id="pin1" data-enter="pin" placeholder="PIN"><br><br><button class="btn primary big" data-act="pinEnter">Entrar</button></div>`;return;}
+  if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" autocomplete="new-password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" autocomplete="new-password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
+  if(!ui.unlocked){app.innerHTML=`<h2>🔐 Área de tutor</h2><div class="panel" style="max-width:420px"><input type="password" autocomplete="off" inputmode="numeric" pattern="[0-9]*" id="pin1" data-enter="pin" placeholder="PIN"><br><br><button class="btn primary big" data-act="pinEnter">Entrar</button></div>`;return;}
   /* "Actividad" e "Historial" eran dos pestañas distintas para lo mismo en el fondo (mirar hacia
      atrás cómo le ha ido a Julia): Actividad mostraba el día a día de TODAS las actividades
      (mates, exámenes, teoría, spelling, morfología, dictado...) y Historial solo las estadísticas
@@ -6777,6 +6933,32 @@ document.addEventListener('drop',e=>{
   if(files.length<all.length){const nOther=all.length-files.length;toast(`📷 Subiendo ${files.length} ${files.length===1?'foto':'fotos'}; se ${nOther===1?'ha ignorado 1 archivo':'han ignorado '+nOther+' archivos'} que no ${nOther===1?'era una foto':'eran fotos'} (usa los botones de PDF/presentación para esos).`);}
   handler(files);
 });
+/* pedido por David (2026-10-23): en la parte de la alumna no se debe poder copiar ni pegar -- para
+   que escribir una respuesta a mano (p.ej. "escríbelo tú" en Teoría/Morfología/Dictado) sea de
+   verdad escribirla, y no copiar y pegar el propio texto que la pantalla le enseña como respuesta
+   correcta. Se bloquea a nivel de documento mientras ui.role==='alumna' (incluida la 🧪 Zona de
+   pruebas, que simula exactamente lo que ve Julia -- bloquearlo ahí también es coherente con esa
+   simulación). No afecta en absoluto a la parte del tutor (ui.role==='tutor'), donde copiar/pegar
+   sigue funcionando con normalidad (p.ej. al pegar el texto de unos apuntes, o un enlace de vídeo).
+   Dos excepciones encontradas por el revisor adversarial, ambas dentro de pantallas de alumna:
+   1) #morfoTa (Análisis Morfológico, "pega aquí el texto") es una herramienta de análisis LIBRE,
+      no un ejercicio de "escríbelo tú" con respuesta a proteger -- su placeholder invita
+      explícitamente a pegar un texto que no tiene por qué haber escrito Julia, así que bloquearlo
+      ahí rompía una función que funcionaba. 2) los campos "PIN tutor" (#opin, #mRevealPin,
+      #studySkipPin, #morfoSkipPin, #spDictSkipPin -- todos type="password") aparecen dentro de
+      pantallas de alumna (incluida la Zona de Pruebas) para que el tutor desbloquee/salte algo
+      desde ahí; se identifican por type==="password" (más robusto que listar cada id uno a uno,
+      y cubre cualquier futuro campo de PIN que se añada) para que el tutor pueda pegar su PIN
+      igual que puede teclearlo. */
+function clipboardBlocked(e){
+  if(ui.role!=='alumna')return false;
+  const t=e.target;
+  if(t&&(t.id==='morfoTa'||t.type==='password'))return false;
+  return true;
+}
+document.addEventListener('copy',e=>{if(clipboardBlocked(e))e.preventDefault();});
+document.addEventListener('cut',e=>{if(clipboardBlocked(e))e.preventDefault();});
+document.addEventListener('paste',e=>{if(clipboardBlocked(e))e.preventDefault();});
 document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.target;
   /* mismo motivo que en el listener de click: varias de estas acciones (p.ej. spDictCheckMeaning,
      o studyCheck cuando pide una 2ª opinión a la IA) llaman a chime() DESPUÉS de un await, ya
