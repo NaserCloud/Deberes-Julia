@@ -865,7 +865,163 @@ function dictadoPreviewHTML(text){
   </div>`;
 }
 /* ================= estado ================= */
-const APP_VERSION='2026.10.22-4';
+/* v2026.10.22-7 -- pedido por David: una "🧪 Zona de pruebas" dentro del área de Tutor, para poder
+   probar él mismo cualquier tipo de ejercicio exactamente como lo vive Julia, con un ejemplo real
+   al azar de entre lo que ya haya cargado (dictados, exámenes, tarjetas de teoría, morfología,
+   spelling, preposiciones, inglés, minijuegos y mates), sin que nada de lo que se haga ahí toque
+   los datos reales de Julia. Ver PRUEBA_KINDS/tabPruebas/pruebaActions, y el banner fijo
+   "🧪 Modo de pruebas" (pruebaBannerHTML) que aparece encima de cualquier pantalla de alumna
+   mientras se está probando, con un botón "✕ Salir" (pruebaExit).
+   Mecanismo: al entrar se guarda una copia completa de "state" en ui.testZoneBackup y se cambia a
+   ui.role='alumna', pero reutilizando los MISMOS puntos de entrada que usa Julia de verdad (no se
+   ha escrito ninguna lógica de ejercicio paralela/duplicada). Al salir, "state" se sustituye
+   entero por esa copia (se descarta cualquier cosa que se haya grabado durante la prueba) y se
+   vuelve a ui.role='tutor', pestaña "pruebas".
+   Revisión adversarial (2 rondas): encontró y se corrigieron 3 fallos reales, los 3 sobre la
+   garantía de "no toca los datos reales" --
+   1) CRÍTICO: aunque se guardaba la copia de seguridad, el "state" real seguía siendo el MISMO
+      objeto que usaban las funciones de ejercicio normales, así que cualquier acción durante la
+      prueba (corregir un dictado, abrir una tarjeta de teoría, terminar un examen o un
+      minijuego...) se grababa de verdad en disco (localStorage) y se sincronizaba con el servidor
+      en tiempo real, mucho antes de pulsar "Salir" -- y si nunca se pulsaba "Salir", se quedaba
+      así para siempre. Arreglado bloqueando save() entero (persist()+Cloud.mark()) mientras
+      ui.testZoneBackup esté puesto.
+   2) CRÍTICO (relacionado, no cubierto por el arreglo anterior): la sincronización automática de
+      Cloud (el aviso cada 25 segundos, al volver a la pestaña o al recuperar la conexión) llama a
+      Cloud.mark()/Cloud.sync() directamente, sin pasar por save() -- así que podía subir a la nube
+      el "state" real ya contaminado por la prueba igualmente. Arreglado añadiendo el mismo
+      bloqueo al principio de Cloud.mark() y Cloud.sync().
+   3) El botón de arriba "Tutor/Alumna" (siempre visible, fuera de la pantalla de cada ejercicio)
+      permitía "escapar" del modo de pruebas sin pasar por pruebaExit(), perdiendo el banner de
+      salida sin haber restaurado nada -- y si se empezaba otra prueba después, se perdía para
+      siempre la copia de seguridad original. Arreglado: ese botón, en medio de una prueba, sale
+      limpiamente (como "✕ Salir") en vez de solo cambiar de rol; y empezar una prueba nueva sin
+      haber salido de la anterior avisa y no hace nada, en vez de sobrescribir la copia.
+   Cubierto por tests: verify_testzone.js (31 comprobaciones: cada uno de los 10 tipos de ejercicio
+   entra y usa contenido real al azar, los que dependen de contenido avisan si no hay nada cargado,
+   el banner aparece y desaparece donde debe, pruebaExit() restaura "state" entero y limpia todo el
+   estado de ejecución, y los 3 arreglos de arriba uno por uno). Suite completa en verde salvo los
+   2 hallazgos pre-existentes ya documentados (4º y 7º bloque), sin relación con este cambio. */
+/* v2026.10.23-1 -- pedido por David: vídeos de teoría hechos con IA.
+   En cada tarjeta de teoría (no en los exámenes combinados) el tutor puede pegar un enlace de
+   vídeo (YouTube, Vimeo, Google Drive o un archivo de vídeo directo) en un campo nuevo dentro de
+   exEditView() (data-exf="video", se guarda solo con el manejador genérico que ya existía para
+   data-exf, sin código nuevo de guardado). Julia tiene un botón "🎬 Ver vídeo de teoría" SIEMPRE
+   visible mientras estudia esa tarjeta -no solo una vez antes de las preguntas, exactamente como
+   lo pidió David ("que luego se pueda ver cuando se quiera durante la teoría")- que abre un
+   overlay de pantalla completa (studyVideoOverlay(), mismo patrón que el ya existente de las
+   fotos) reabrible cuantas veces quiera durante toda la ronda. Solo aparece el botón si la tarjeta
+   tiene vídeo puesto.
+   videoEmbedSrc(url) reconoce enlaces normales de YouTube (watch/shorts/youtu.be), Vimeo y Google
+   Drive y los convierte en la URL que se puede meter en un <iframe>; videoPlayerHTML(url) usa
+   <video controls> para un archivo de vídeo directo (.mp4/.webm/.ogg/.mov), un <iframe> si
+   videoEmbedSrc() reconoce el servicio, o un aviso si no reconoce nada -- todo validando primero
+   que la URL empiece por http(s):// (se rechaza cualquier otro esquema, p.ej. javascript:).
+   No se ha hecho previsualización dentro del panel de edición del tutor: puede probar el vídeo
+   exactamente como lo verá Julia desde 🧪 Zona de pruebas → Tarjeta de teoría.
+   Revisión adversarial (2 rondas): la 1ª encontró 2 fallos reales, ya corregidos --
+   1) La Zona de Pruebas → Tarjeta de teoría elegía una tarjeta de teoría publicada AL AZAR, no la
+      que el tutor tenía abierta en edición, así que el aviso de "previsualízalo aquí" en
+      exEditView() no se cumplía si había más de una tarjeta publicada. Arreglado: ahora prueba
+      primero la tarjeta que el tutor tiene abierta (ui.exId) si ya está publicada, y solo cae a
+      una al azar si esa tarjeta todavía es un borrador sin publicar. El texto de ayuda se
+      reescribió para distinguir ambos casos.
+   2) (Higiene, severidad baja) el flag nuevo ui.studyVideoOpen no se limpiaba en pruebaExit() ni
+      en el "guard" de tarjeta borrada de renderStudy(), a diferencia de los demás puntos de salida
+      de una ronda de estudio. Arreglado añadiéndolo en ambos sitios.
+   La 2ª ronda, centrada en esas dos correcciones, no encontró ningún problema nuevo.
+   Cubierto por un test nuevo: verify_study_video.js (exNew() con el campo video, videoEmbedSrc()/
+   videoPlayerHTML() con enlaces válidos e inválidos, aparición/desaparición del botón según si hay
+   vídeo, apertura/cierre repetible del overlay, el flag se resetea en los 4 puntos de entrada a
+   estudio y en los 3 studyQuit*, los exámenes combinados no tienen campo video, y la preferencia
+   por la tarjeta en edición en la Zona de Pruebas, con su fallback al azar si es un borrador).
+   Suite completa en verde salvo los 2 hallazgos pre-existentes ya documentados, sin relación. */
+/* v2026.10.23-2 -- pedido por David: tiempo de pantalla (móvil/TV) ganado según los aciertos.
+   Julia se gana minutos de pantalla por cada respuesta correcta en CUALQUIER ejercicio (Mates,
+   Teoría, Análisis Morfológico, Spelling, Preposiciones, Dictado), a razón de unos segundos por
+   acierto (por defecto 26, calculado junto con David a partir de los deberes reales de un día,
+   para llegar a 30 min con un 80% de aciertos) con un tope diario (por defecto 45 min, lo que
+   David decidió al final). Ella ve SIEMPRE un contador en pantalla ("🎬 Tiempo de pantalla ganado
+   hoy: m:ss") mientras hace deberes, nunca durante la Zona de Pruebas. Configurable desde Ajustes
+   (dos sliders nuevos: segundos por acierto, tope diario).
+   earnScreenTime(n) suma n aciertos de golpe y se llama UNA SOLA VEZ por ejercicio, al TERMINARLO
+   del todo, con el nº de aciertos de ESE ejercicio completo (finishMath/recordStudyOnce/
+   morfoFinish/spellFinish/prepRecordResult/goCorrect) -- nunca pregunta a pregunta. Dictado y
+   Preposiciones (examen) dan crédito PROPORCIONAL (aciertos de los que se podía fallar), no
+   todo-o-nada como el sonido de chime().
+   Revisión adversarial (5 rondas, 4 hallazgos reales, todos corregidos):
+   1) CRÍTICO (diseño inicial descartado): la primera versión sumaba el contador dentro de
+      chime(ok), pregunta a pregunta. Eso (a) dejaba a Mates sin ganar nada (nunca llama a
+      chime()) y (b) permitía "granjear" tiempo repitiendo con "Anterior"/"Otra vez" una pregunta
+      ya acertada. Arreglado con un rediseño completo: mover el gancho a la función de "terminar"
+      de cada ejercicio, con el resultado FINAL (ver arriba) -- repetir de verdad un ejercicio
+      entero sigue dando más tiempo (es trabajo real), pero ya no hay atajo pregunta a pregunta.
+   2) MEDIO-ALTO: el contador (state.screenTime) se sincronizaba con la nube como el resto de
+      claves simples (todo el objeto, gana el dispositivo con el reloj más nuevo), lo que podía
+      "perder" aciertos ya ganados en otro dispositivo el mismo día (p.ej. tablet y ordenador).
+      Arreglado con una fusión especial campo a campo (mergeScreenTime, dentro de Cloud.merge):
+      mismo día -> se queda con el MÁS ALTO de los dos; día distinto -> gana la fecha más reciente.
+   3) MEDIO-ALTO: en Spelling, subir una foto de la hoja de dictado (spDictPhotoUpload) es
+      asíncrono (espera a la IA); sin ningún candado, elegir una segunda foto mientras la primera
+      todavía se estaba leyendo disparaba una segunda llamada real y daba tiempo de pantalla por
+      duplicado (y, si era parte de los deberes del día, duplicaba la ronda). Arreglado con un
+      candado r.photoBusy (bloquea una segunda foto mientras la primera se lee; el selector se
+      oculta en pantalla mientras tanto, con un aviso "⏳ Leyendo tu foto…").
+   4) MEDIO: aun con ese candado, si Julia abandonaba o reiniciaba la ronda MIENTRAS la foto
+      seguía leyéndose (por "Salir", "Otra vez", o simplemente saliendo por la cabecera fija
+      "📚 Deberes de Julia" sin pasar por ningún botón de salir), la lectura tardía seguía dando
+      tiempo de pantalla "fantasma" por una ronda ya descartada. Arreglado comprobando, justo
+      después de esperar a la IA, que la ronda sigue siendo la activa: ui.spRun===r (misma
+      referencia) Y ui.screen==='spelldict' (sigue en esa pantalla) -- si no, no se hace nada.
+   Cubierto por tests: verify_screentime.js (defaults, earnScreenTime/screenTimeEarnedSecs/
+   screenTimeBadgeHTML, que chime() ya NO toca el contador, el banner solo en pantallas de alumna
+   y nunca en Zona de Pruebas, los 6 ganchos de "terminar ejercicio" con sus aciertos reales, y la
+   fusión con la nube sin perder aciertos en 5 escenarios distintos) y verify_spdictphoto_concurrent.js
+   (el candado photoBusy, el aviso en pantalla, y las 2 formas de "ronda fantasma" -Salir y la
+   cabecera fija- sin dar tiempo de pantalla de más). Suite completa en verde salvo los 2
+   hallazgos pre-existentes ya documentados, sin relación con este cambio. */
+const APP_VERSION='2026.10.23-2';
+/* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
+   1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
+      hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
+      tanto Julia puede seguir intentándolo. Confirmado por David que Exámenes y el resto de
+      ejercicios no necesitaban este cambio.
+   2) Limpieza de definiciones de Análisis Morfológico (David confirmó: SOLO morfología, las 102
+      reglas de ortografía de Dictado se quedan como están porque sus ejemplos son intencionados):
+      se quitaron los paréntesis y ejemplos que quedaban en MORFO_THEORY.verbo, MORFO_THEORY.
+      preposicion y MORFO_MORF_THEORY (raíz/flexivo/derivativo).
+   3) Nueva función grande: reglas de la tilde en Análisis Morfológico. Cada palabra del texto que
+      lleve tilde pregunta, en formato de elegir una opción (Aguda/Llana/Esdrújula/Tilde
+      diacrítica/Hiato), por qué la lleva -- hay que responder (no hace falta acertar) antes de
+      poder pulsar "Siguiente", igual que el "análisis extra" de cada 5 palabras. Ver
+      MORFO_TILDE_RULES/morfoTildeRule.
+   Revisión adversarial: encontró 2 fallos reales en el clasificador de tildes (palabras compuestas
+   con guión que corrompían la silabificación, y tildes diacríticas "viejas" pre-2010 como "sólo"
+   que se explicaban con un texto incorrecto), ambos corregidos antes de entregar. No encontró
+   ningún fallo en el PIN de Mates ni en la limpieza de definiciones. */
+/* v2026.10.22-5: pedido por David -- "en todos los ejercicios hay que poner los botones de atras
+   y el boton de adelante con pin cuando no consigamos saber la respuesta por si acaso, en la parte
+   del alumno en deberes y en ejercicios normales". Se repasó CADA tipo de ejercicio para ver dónde
+   hacía falta de verdad cada cosa (no se aplicó a lo bruto en todos):
+   - Mates y Exámenes: YA tenían "Anterior", y ninguno deja atascada a Julia sin PIN (Mates revela
+     la respuesta sola tras 2 intentos; en Exámenes "Siguiente" no exige contestar). Sin cambios.
+   - Teoría ("escríbelo tú"): ya tenía "Anterior"; le faltaba el salto con PIN tras fallar el
+     reintento -- añadido igual que ya hacía Análisis Morfológico (studySkipAsk/Go/No).
+   - Spelling, dictado escribiendo en el ordenador: no tenía NI "Anterior" NI salto, y sí tiene un
+     paso obligatorio (reescribir bien la palabra) -- se añaden los dos (spDictPrev,
+     spDictSkipAsk/Go/No).
+   - Spelling (frases) y Preposiciones (Modo Estudio): no tenían "Anterior", pero tampoco tienen
+     ningún paso obligatorio del que atascarse (fallar ya deja seguir) -- solo se añade el botón de
+     volver (spSentPrev, prepPrev), sin PIN.
+   También, pedido en el mismo aviso: destacar más la palabra que toca analizar en Análisis
+   Morfológico (antes solo tenía un fondo suave; ahora además borde, sombra y letra más grande).
+   Hallazgo real de la revisión adversarial, ya corregido: en Spelling (dictado y frases) y en
+   Preposiciones, comprobar/responder el elemento actual y pasar al siguiente son DOS pasos
+   separados (a diferencia de Mates, que hace ambas cosas en el mismo clic) -- pulsar "Anterior"
+   justo DESPUÉS de comprobar pero ANTES de "Siguiente" dejaba sin descartar el resultado recién
+   guardado del elemento actual, duplicando o perdiendo en silencio un resultado. Arreglado para
+   descartar primero ese resultado sin confirmar (si lo hay) y solo entonces retroceder y descartar
+   el resultado antiguo del elemento de destino. */
 /* v2026.10.12-2: Análisis Morfológico ahora indica el subtipo de pronombre/adverbio/adjetivo en
    la respuesta y en la teoría del modo Estudio; el tutor puede preparar sus propios textos para
    esta actividad (pestaña Morfología), aparte de analizar un dictado o pegar texto suelto.
@@ -1162,7 +1318,7 @@ const APP_VERSION='2026.10.22-4';
 const KEY='deberesJulia.v1';
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
-const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,fxSound:true,voice:'',spVoice:''};
+const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,fxSound:true,voice:'',spVoice:'',screenSecPerOk:26,screenCapMin:45};
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
@@ -1191,7 +1347,16 @@ function loadState(){
 }
 let state=loadState();
 const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
-const save=()=>{persist();try{Cloud.mark();}catch(e){}};
+/* mientras la "Zona de pruebas" está activa (ui.testZoneBackup puesto, ver pruebaActions más
+   abajo), CUALQUIER guardado se bloquea aquí -- no solo en disco (persist), sino también el aviso
+   a la sincronización en la nube (Cloud.mark) -- para que nada de lo que se grabe de pega durante
+   una prueba (un "Corregir" de dictado, abrir una tarjeta de teoría, terminar un examen o un
+   minijuego...) llegue a tocar ni el localStorage real ni, mucho menos, otro dispositivo antes de
+   que el tutor pulse "Salir". Al salir (pruebaExit) se pone testZoneBackup=null ANTES de llamar a
+   save(), así que ese guardado final SÍ pasa, y vuelve a dejar grabado el estado real tal cual
+   estaba. Revisión adversarial (2026-10-22): sin este guardia, el "state" real se mutaba y se
+   sincronizaba en tiempo real durante la prueba (bug crítico, ver changelog). */
+const save=()=>{if(typeof ui!=='undefined'&&ui.testZoneBackup)return;persist();try{Cloud.mark();}catch(e){}};
 /* ---- deshacer (undo) ----
    Guarda una copia completa de "state" justo ANTES de las acciones de gestión del tutor que
    pueden ser "un error" (borrar, convertir, vaciar...), para poder recuperarla con el botón
@@ -1214,7 +1379,7 @@ function undoLast(){
   ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;
   render();toast('↩️ Última acción deshecha');
 }
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,spCheckedText:null,spOrigWords:null,spHwQuitAsk:false,morfoEditId:null,morfoDraft:null,morfoGenBusy:false,taskAdd:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,spCheckedText:null,spOrigWords:null,spHwQuitAsk:false,morfoEditId:null,morfoDraft:null,morfoGenBusy:false,taskAdd:null,testZoneBackup:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -1268,6 +1433,45 @@ function chime(ok){
     playTone(220,0.15,0,'square',0.28);
     playTone(164.81,0.28,0.13,'square',0.3);
   }
+}
+/* contador del día de "tiempo de pantalla ganado" (pedido por David, 2026-10-23): un simple nº de
+   aciertos de hoy, SIN tope aplicado aquí -- el tope (state.settings.screenCapMin) se aplica solo
+   al mostrarlo (screenTimeBadgeHTML) y al calcular los segundos, nunca al propio contador de
+   aciertos, para que si el tutor cambia el tope o los segundos por acierto a medio día no haga
+   falta recalcular ni perder lo que ya lleva acumulado. Se reinicia solo (a 0) en cuanto cambia la
+   fecha de hoy.
+   earnScreenTime(n) SUMA n aciertos de golpe -- se llama una sola vez por ejercicio, al TERMINARLO
+   (en finishMath/studyDone/morfoFinish/spellFinish/spHwFinishAll/exSubmit/prepRecordResult/
+   goCorrect), con el nº de respuestas correctas de ESE ejercicio completo (res.ok, o equivalente),
+   NUNCA pregunta a pregunta dentro de chime(). Esto fue una corrección de una revisión adversarial
+   (2026-10-23): la primera versión sumaba 1 acierto cada vez que chime(true) sonaba, pero eso (a)
+   no cubría Mates, que nunca llama a chime(), y (b) dejaba "granjear" tiempo de pantalla sin
+   esfuerzo real con los botones "Anterior"/"Otra vez" ya existentes (volver atrás y re-responder
+   la misma pregunta ya acertada, una y otra vez). Al contar solo el resultado FINAL de todo el
+   ejercicio (que no cambia por ir y volver dentro de la misma ronda sin terminarla), ese atajo ya
+   no funciona; para ganar más tiempo hace falta terminar ejercicios de verdad (nuevos o repetidos
+   enteros, lo que sí es trabajo real). */
+function earnScreenTime(n){
+  n=Math.max(0,Math.round(n)||0);
+  if(!n)return;
+  const today=todayStr();
+  if(!state.screenTime||state.screenTime.date!==today)state.screenTime={date:today,ok:0};
+  state.screenTime.ok+=n;
+  save();
+}
+function screenTimeEarnedSecs(){
+  const ss=state.settings||{};
+  const secPer=Math.max(1,ss.screenSecPerOk!=null?+ss.screenSecPerOk:26);
+  const capSec=Math.max(0,ss.screenCapMin!=null?+ss.screenCapMin:45)*60;
+  const today=todayStr();
+  const okN=(state.screenTime&&state.screenTime.date===today)?state.screenTime.ok:0;
+  return {earned:Math.min(okN*secPer,capSec),cap:capSec,ok:okN};
+}
+function screenTimeBadgeHTML(){
+  const {earned,cap}=screenTimeEarnedSecs();
+  const mm=Math.floor(earned/60),ss=earned%60;
+  const full=cap>0&&earned>=cap;
+  return `<div class="panel" style="background:#133a2b;color:#fff;border:none;margin-bottom:10px;position:sticky;top:0;z-index:4"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><b>🎬 Tiempo de pantalla ganado hoy: ${mm}:${String(ss).padStart(2,'0')}</b>${full?'<span style="font-weight:800">¡Tope de hoy alcanzado! 🎉</span>':''}</div></div>`;
 }
 const nWords=t=>getWords(t).length;
 (function(){const v=$('#appVer');if(v)v.textContent='v'+APP_VERSION;})();
@@ -1440,7 +1644,7 @@ const Voz=(()=>{
 /* ================= sincronización con Supabase ================= */
 const SB_URL='https://rzzaizkzszgiirwmilyq.supabase.co',SB_KEY='sb_publishable_xdaxsZhA3FDyGWsMeT2pLA_4TSyUvpl';
 const Cloud=(()=>{
-  const K=['dictados','customRules','rulesMode','pin','settings','ai','studyProgress','studyHist','miniGameEvery','spellProgress'];
+  const K=['dictados','customRules','rulesMode','pin','settings','ai','studyProgress','studyHist','miniGameEvery','spellProgress','screenTime'];
   /* "examenes" y "tareas" son listas de elementos con id propio (temas, exámenes, deberes) que se
      crean/editan/borran desde varios dispositivos. Antes se sincronizaban como el resto de claves
      (K): se comparaba un único "reloj" para TODA la lista y, si un dispositivo tenía un reloj más
@@ -1497,7 +1701,30 @@ const Cloud=(()=>{
   };
   const pristine=(k,v)=>{if(k==='dictados')return !Array.isArray(v)||v.every(d=>d.id==='demo');if(k==='pin')return v===null||v===undefined;if(k==='ai')return true;if(k==='customRules')return !v||!v.length;if(k==='rulesMode')return v==='test'||v==null;
     if(k==='studyProgress'||k==='studyHist'||k==='spellProgress')return !v||!Object.keys(v).length;if(k==='miniGameEvery')return !v||v===15;
+    if(k==='screenTime')return !v||!v.ok;
     if(k==='settings'){const o=Object.assign({},DEF_SETTINGS,v||{});delete o.voice;delete o.spVoice;const d=Object.assign({},DEF_SETTINGS);delete d.voice;delete d.spVoice;return canon(o)===canon(d);}return false;};
+  /* "screenTime" (tiempo de pantalla ganado por aciertos, ver earnScreenTime) es un CONTADOR que
+     solo crece durante el día: si se fusionara como el resto de K (el objeto entero del
+     dispositivo con el "reloj" más nuevo "gana" y el del otro se descarta por completo), Julia
+     podría perder minutos ya ganados si hiciera deberes en dos dispositivos el mismo día (p.ej.
+     tablet y ordenador) y el que sincroniza en último lugar tuviera, por casualidad, menos
+     aciertos acumulados en ese momento que el otro. Hallazgo real de la revisión adversarial
+     (2026-10-23). Por eso se fusiona aparte, campo a campo, como con IK/mergeItems pero para un
+     contador en vez de una lista: mismo día -> nos quedamos con el MÁS ALTO de los dos (nunca se
+     pierde un acierto ya contado en cualquiera de los dos dispositivos); día distinto -> gana la
+     fecha más reciente (empieza de cero el nuevo día, igual que earnScreenTime). No es una fusión
+     perfecta -- si ambos dispositivos sumaran aciertos DISTINTOS por su cuenta sin sincronizar
+     entre medias, lo correcto sería sumar ambos y aquí solo nos quedamos con el máximo -- pero
+     evita el caso real y grave de "perder" tiempo ya ganado, y en el uso normal (un dispositivo
+     sincronizando a menudo) da el resultado correcto. */
+  const mergeScreenTime=(local,remote)=>{
+    const L=local&&local.date?local:null,R=remote&&remote.date?remote:null;
+    if(!L&&!R)return null;
+    if(!L)return{date:R.date,ok:Math.max(0,+R.ok||0)};
+    if(!R)return{date:L.date,ok:Math.max(0,+L.ok||0)};
+    if(L.date===R.date)return{date:L.date,ok:Math.max(+L.ok||0,+R.ok||0)};
+    return L.date>R.date?{date:L.date,ok:Math.max(0,+L.ok||0)}:{date:R.date,ok:Math.max(0,+R.ok||0)};
+  };
   let timer=null,busy=false,again=false,started=false;
   const C={status:'idle',err:'',on:!!SB_URL&&!!SB_KEY,
     set(s,e){C.status=s;C.err=e||'';const el=$('#cloudSt');if(el)el.innerHTML=C.html();},
@@ -1520,7 +1747,13 @@ const Cloud=(()=>{
       return d;
     },
     mark(){
-      if(!C.on)return;const s=state.sync;let d=false;
+      /* mientras se está probando algo en la "Zona de pruebas" (ui.testZoneBackup puesto), NO se
+         marca nada como "cambiado" ni se guarda en disco -- si no, el "timer" de aquí abajo acaba
+         llamando a C.sync() igualmente (ver más abajo), aunque save() ya bloquee su propia llamada
+         a Cloud.mark(). Hallazgo real de la revisión adversarial (2026-10-22): el guardia de
+         save() no cubría el "setInterval" propio de Cloud.start() (cada 25s) ni "visibilitychange"
+         ni "online", que llaman a C.sync() -> C.mark() directamente, sin pasar por save(). */
+      if(!C.on||(typeof ui!=='undefined'&&ui.testZoneBackup))return;const s=state.sync;let d=false;
       K.forEach(k=>{const j=js(k);if(s.j[k]!==j){s.j[k]=j;s.t[k]=Date.now();d=true;}});
       IK.forEach(k=>{if(C.markItems(k))d=true;});
       const hj=state.history.map(h=>h.id).join(',');if(s.hj!==hj){s.hj=hj;d=true;}
@@ -1597,6 +1830,13 @@ const Cloud=(()=>{
       const s=state.sync,first=!s.init,out={v:1,t:{},d:{},history:[],hclear:0,ses:[],iarr:{},itomb:{}};let changed=false;
       const localD=state.dictados.slice();let adoptedD=false;
       K.forEach(k=>{
+        if(k==='screenTime'){
+          const merged=mergeScreenTime(state.screenTime,rv&&rv.d?rv.d.screenTime:undefined);
+          if(canon(merged)!==canon(state.screenTime||null)){state.screenTime=merged;changed=true;}
+          s.t.screenTime=Date.now();s.j.screenTime=js('screenTime');
+          out.t.screenTime=s.t.screenTime;out.d.screenTime=merged;
+          return;
+        }
         let lt=first&&rv?0:(s.t[k]||0);let rt=rv?(rv.t&&rv.t[k]||0):-1;
         if(first&&rv&&rv.d&&rv.d[k]!==undefined&&pristine(k,rv.d[k])&&!pristine(k,part(k)))rt=0;
         if(rv&&rv.d&&rv.d[k]!==undefined&&rt>lt){
@@ -1624,7 +1864,14 @@ const Cloud=(()=>{
       return {out,changed,skip:!rv&&allP&&first,push:!rv||canon(out)!==canon(rvCmp)};
     },
     async sync(manual){
-      if(!C.on)return;if(busy){again=true;return;}
+      /* mismo motivo que en mark() (ver comentario allí): si se sincronizara mientras se está
+         probando algo en la Zona de pruebas, se podría subir a la nube el "state" real ya
+         contaminado por la prueba (o descargar y fusionar datos de otro dispositivo encima de él)
+         antes de que el tutor pulse "Salir" y se restaure todo. Por eso se bloquea aquí también,
+         no solo en mark(): C.sync() puede llegar a llamarse directamente (el "setInterval" cada
+         25s, o los listeners de "visibilitychange"/"online" de start(), más abajo), sin pasar
+         por mark() primero. */
+      if(!C.on||(typeof ui!=='undefined'&&ui.testZoneBackup))return;if(busy){again=true;return;}
       busy=true;C.set('sync');
       try{
         C.mark();
@@ -1661,11 +1908,24 @@ function scrollQCenter(){
     if(el&&el.scrollIntoView)el.scrollIntoView({block:'center'});
   }catch(e){}
 }
+/* banner fijo de la "Zona de pruebas" (ver tabPruebas/pruebaActions): mientras ui.testZoneBackup
+   esté puesto, el tutor está "disfrazado" de alumna probando un ejercicio con una copia aparte de
+   los datos reales. Se añade encima de CUALQUIER pantalla de alumna (no solo la del ejercicio que
+   se abrió), para poder salir siempre, pase lo que pase dentro del ejercicio (incluido su propio
+   botón de "← volver/salir", que puede dejarte en otra pantalla de alumna distinta). */
+function pruebaBannerHTML(){
+  return `<div class="panel" style="background:#2b2140;color:#fff;border:none;margin-bottom:10px;position:sticky;top:0;z-index:5"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><b>🧪 Modo de pruebas — esto no toca los datos reales de Julia</b><button class="btn" style="min-height:34px" data-act="pruebaExit">✕ Salir</button></div></div>`;
+}
 function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
   ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo,morfolist:renderMorfoList,morfoTheory:renderMorfoTheory,morfoprep:renderPrep,engdict:renderEngDict,notasAlumna:renderNotasAlumna,spelllist:renderSpellList,spelldict:renderSpellDict,spellsent:renderSpellSent}[ui.screen]||renderHome)();
+  if(ui.testZoneBackup)app.innerHTML=pruebaBannerHTML()+app.innerHTML;
+  /* pedido por David (2026-10-23): que Julia vea en todo momento, en cualquier pantalla suya,
+     cuánto tiempo de pantalla lleva ganado hoy -- se queda fuera a propósito durante la Zona de
+     Pruebas (ui.testZoneBackup), donde ui.role también vale 'alumna' pero no son datos reales. */
+  else if(ui.role==='alumna')app.innerHTML=screenTimeBadgeHTML()+app.innerHTML;
 }
 function renderList(){
   const L=state.dictados;
@@ -1769,6 +2029,7 @@ function goCorrect(){
   r.errors.forEach(e=>{e.stage=e.type==='extra'?'ack':'word';e.fails=0;e.done=false;
     if(e.type==='sub'){e.opts=state.rulesMode==='test'?makeOptions(e.a):null;e.wrongPicks=[];e.manual=state.rulesMode!=='test';}});
   chime(r.wrong===0);
+  earnScreenTime(Math.max(0,r.total-r.wrong));
   ui.fix=r;ui.origOK=false;ui.pinAsk=false;ui.screen='fix';
   state.history.unshift({id:Date.now(),did:d.id,photo:!!ui.photo,date:new Date().toISOString(),title:d.title,total:r.total,wrong:r.wrong,punct:r.punct.length,errs:r.errors.map(e=>({type:e.type,typed:e.typed||'',correct:e.correct||'',rule:e.rule||''}))});
   state.history=state.history.slice(0,500);save();render();
@@ -2150,7 +2411,7 @@ function renderMlist(){
 }
 function startMath(cfg,seed,itemId,title){
   const ex=makeExercises(cfg,seed);
-  ui.mrun={ex,i:0,tries:0,log:[],cfg,itemId,title:title||mathTitle(cfg),msg:'',reveal:false,given:[],t0:Date.now(),et:Date.now(),acc:0};
+  ui.mrun={ex,i:0,tries:0,log:[],cfg,itemId,title:title||mathTitle(cfg),msg:'',reveal:false,stuck:false,revealPinAsk:false,given:[],t0:Date.now(),et:Date.now(),acc:0};
   ui.t0=Date.now();ui.screen='mrun';render();
 }
 function renderMrun(){
@@ -2162,14 +2423,26 @@ function renderMrun(){
   ${m.msg?`<p style="font-weight:800;color:${m.msgOk?'var(--ok)':'var(--bad)'};margin:6px 0">${esc(m.msg)}</p>`:''}
   <div class="panel"><div style="font-size:${e.q.length>30?'1.3':'2'}rem;font-weight:800;line-height:1.4">${esc(e.q)}</div>
   ${m.reveal?`<p style="margin:12px 0 0">La respuesta correcta era: <b style="font-size:1.6rem;color:var(--ok)">${esc(e.txt)}</b></p>`
-   :`<div class="row" style="margin-top:14px;flex-wrap:nowrap"><input type="text" id="mans" data-enter="mans" inputmode="${e.kind==='num'?'decimal':'text'}" placeholder="${e.kind==='frac'?'Ej.: 3/4':'Tu respuesta'}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="max-width:260px"><button class="btn primary big" data-act="mcheck">✔ Comprobar</button></div>`}</div>
+   :`<div class="row" style="margin-top:14px;flex-wrap:nowrap"><input type="text" id="mans" data-enter="mans" inputmode="${e.kind==='num'?'decimal':'text'}" placeholder="${e.kind==='frac'?'Ej.: 3/4':'Tu respuesta'}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" style="max-width:260px"><button class="btn primary big" data-act="mcheck">✔ Comprobar</button></div>`}
+  ${!m.reveal&&m.stuck?mRevealHTML(m):''}</div>
   ${m.reveal?`<div class="row"><button class="btn primary big" data-act="mnext">${m.i+1<m.ex.length?'Siguiente ➜':'Terminar'}</button></div>`:''}`;
-  const i=$('#mans');if(i)i.focus();
+  const fsel=m.revealPinAsk?'#mRevealPin':'#mans';
+  const i=$(fsel);if(i)i.focus();
+}
+function mRevealHTML(m){
+  // David pidió (2026-10-22) que en Matemáticas solo se vea la solución si el tutor mete el PIN,
+  // igual que ya pasa en Teoría/Dictado -- antes se revelaba sola tras 2 intentos fallidos.
+  if(m.revealPinAsk)return `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:nowrap;align-items:center">
+    <input type="password" inputmode="numeric" id="mRevealPin" data-enter="mRevealPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
+    <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="mRevealGo">Ver solución</button>
+    <button class="btn" style="min-height:36px;padding:4px 10px" data-act="mRevealNo">✕</button>
+    </div>`;
+  return `<div class="row" style="margin-top:10px"><button class="link" data-act="mRevealAsk">🔑 ¿Sigue sin salir? Pide a tu tutor que te enseñe la solución</button></div>`;
 }
 function mathAdvance(ok,first){
   const m=ui.mrun,e=m.ex[m.i];
   m.log.push({q:e.q,a:e.txt,given:m.given.slice(),ok,first,secs:Math.round((Date.now()-m.et)/1000)});
-  m.i++;m.tries=0;m.given=[];m.reveal=false;m.et=Date.now();
+  m.i++;m.tries=0;m.given=[];m.reveal=false;m.stuck=false;m.revealPinAsk=false;m.et=Date.now();
   if(m.i>=m.ex.length)return finishMath();
   if(miniGameDue(m.i,m.ex.length))return startMiniGame('mrun');
   m.msg=ok?'✅ ¡Bien!':'';m.msgOk=true;render();
@@ -2177,7 +2450,7 @@ function mathAdvance(ok,first){
 function finishMath(){
   const m=ui.mrun,secs=Math.round((Date.now()-ui.t0)/1000);
   const res={n:m.ex.length,ok:m.log.filter(x=>x.ok).length,first:m.log.filter(x=>x.first).length,secs,wrong:m.log.filter(x=>!x.first).map(x=>({q:x.q,a:x.a,given:x.given,ok:x.ok})),log:m.log.map(x=>({secs:x.secs}))};
-  m.res=res;
+  m.res=res;earnScreenTime(res.ok);
   let s=null;
   if(m.itemId){const it=itemsOf(todayStr()).find(x=>x.id===m.itemId);if(it){const [ss,r]=recItem(it);r.secs=(r.secs||0)+secs;r.end=Date.now();r.done=true;r.res=res;s=ss;}}
   if(!s){s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;s.extra.push({id:uid(),kind:'mates',title:m.title,start:Date.now()-secs*1000,end:Date.now(),secs,res,done:true});}
@@ -2227,14 +2500,23 @@ const taskActions={
     if(c.ok)return mathAdvance(true,m.tries===0);
     if(c.bad||c.soft){m.msg=c.hint;m.msgOk=!!c.soft;render();return;}
     m.given.push(v);m.tries++;
-    if(m.tries>=2){m.reveal=true;m.msg='No pasa nada, mira la respuesta y sigue 💪';m.msgOk=false;}else{m.msg='Todavía no. ¡Inténtalo otra vez!';m.msgOk=false;}
+    if(m.tries>=2){m.stuck=true;m.msg='No pasa nada, sigue intentándolo o pide a tu tutor que te enseñe la solución 💪';m.msgOk=false;}else{m.msg='Todavía no. ¡Inténtalo otra vez!';m.msgOk=false;}
+    render();
+  },
+  mRevealAsk(){const m=ui.mrun;if(!m)return;m.revealPinAsk=true;render();const i=$('#mRevealPin');if(i)i.focus();},
+  mRevealNo(){const m=ui.mrun;if(!m)return;m.revealPinAsk=false;render();},
+  mRevealGo(){
+    const m=ui.mrun;if(!m)return;
+    const i=$('#mRevealPin');
+    if(state.pin&&!(i&&i.value===state.pin)){toast('PIN incorrecto');if(i){i.value='';i.focus();}return;}
+    m.revealPinAsk=false;m.stuck=false;m.reveal=true;
     render();
   },
   mnext(){mathAdvance(false,false);},
   mprev(){
     const m=ui.mrun;if(!m||m.i<=0)return;
     m.i--;m.log.pop();
-    m.tries=0;m.given=[];m.reveal=false;m.msg='';m.et=Date.now();
+    m.tries=0;m.given=[];m.reveal=false;m.stuck=false;m.revealPinAsk=false;m.msg='';m.et=Date.now();
     render();
   },
   finishDay(){
@@ -2946,6 +3228,8 @@ function exEditView(t,e){
   <div class="panel" data-dropzone="exPhotos"><h3 style="margin-top:0">📷 Teoría a estudiar</h3>
   <div class="grid2"><label class="f">Título<input type="text" data-exf="title" value="${esc(e.title)}" placeholder="Ej.: Los romanos — Year 6"></label>
   <label class="f">Idioma<select data-exf="lang"><option value="auto" ${e.lang==='auto'?'selected':''}>El de los apuntes</option><option value="es" ${e.lang==='es'?'selected':''}>Español</option><option value="en" ${e.lang==='en'?'selected':''}>English</option></select></label></div>
+  ${!e.isExam?`<label class="f">🎬 Vídeo explicando esta teoría (opcional — enlace de YouTube, Google Drive, Vimeo, etc.)<input type="text" data-exf="video" value="${esc(e.video||'')}" placeholder="Pega aquí el enlace del vídeo"></label>
+  <small class="mute">Julia tendrá un botón para verlo cuando quiera mientras estudia esta tarjeta.${e.status==='ready'?' Puedes previsualizarlo exactamente como lo verá ella desde la 🧪 Zona de pruebas → Tarjeta de teoría (al estar ya publicada, se probará esta misma tarjeta).':' Publícala y luego podrás previsualizarlo exactamente como lo verá ella desde la 🧪 Zona de pruebas → Tarjeta de teoría.'}</small>`:''}
   ${(!e.isExam&&e.pool.length&&!e.notes.trim()&&!(state.examFotos[e.id]||[]).length)?'<p class="msg wrong" style="margin-top:0">⚠️ Este tema ya tiene preguntas generadas pero no le queda ninguna foto ni texto de apuntes guardado (puede que se borrara una foto y se borrase también su texto). Julia no verá nada que estudiar antes de las preguntas hasta que vuelvas a subir la foto, el PDF o la presentación, o pegues el texto aquí abajo.</p>':''}
   <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap">
   <label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label>
@@ -3065,7 +3349,7 @@ async function readNotesPhotos(files){
 const examActions={
   exNew(){
     const tm=state.temas.find(x=>x.id===ui.exTemaId);if(!tm)return toast('Abre primero un tema para crear una tarjeta de teoría');
-    const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',hint:'',pool:[],dropped:[],status:'draft',isExam:false,temaId:tm.id,asigId:tm.asigId};
+    const e={id:'e'+uid(),title:'',date:todayStr(),mode:'test',n:10,bank:40,lang:'auto',notes:'',hint:'',video:'',pool:[],dropped:[],status:'draft',isExam:false,temaId:tm.id,asigId:tm.asigId};
     state.examenes.push(e);save();ui.exId=e.id;ui.exExpand=null;ui.exCombineOn=false;ui.exCombineSel=[];render();
   },
   exOpen(b){ui.exId=b.dataset.id;ui.exExpand=null;render();},
@@ -3407,8 +3691,8 @@ function studyOpen(id){
   /* theoryOpen empieza abierto en Nivel 1 (con foto) y PLEGADO en Nivel 2 (sin foto): David quiere
      que Julia pueda ver la foto también en Nivel 2 si se atasca, pero que no salga ya abierta de
      golpe, para no quitarle del todo el reto de intentar recordar primero (ver studyTheoryOrWarn). */
-  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,firstOk,n:qs.length,recorded:false,theoryOpen:showPhoto};
-  ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
+  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,firstOk,n:qs.length,recorded:false,theoryOpen:showPhoto};
+  ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 /* ---- nº de preguntas y rotación cuando la teoría se pone como DEBER del día ----
    El propio tutor elige, al poner la tarjeta como deber (en "Agregar a deberes", ver
@@ -3459,19 +3743,19 @@ function studyOpenHomework(id,n,mode){
     if(nReq&&rebuilt.length>nReq)rebuilt=rebuilt.slice(0,nReq);
     if(rebuilt.length){
       const showPhoto2=saved.showPhoto!==undefined?saved.showPhoto:true;
-      ui.study={temaId:id,level:saved.level||1,showPhoto:showPhoto2,qs:rebuilt,i:Math.min(saved.i,rebuilt.length-1),stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,firstOk:saved.firstOk||0,n:rebuilt.length,recorded:false,theoryOpen:showPhoto2,hwN:nReq,hwMode:modeReq};
-      ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();return;
+      ui.study={temaId:id,level:saved.level||1,showPhoto:showPhoto2,qs:rebuilt,i:Math.min(saved.i,rebuilt.length-1),stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,firstOk:saved.firstOk||0,n:rebuilt.length,recorded:false,theoryOpen:showPhoto2,hwN:nReq,hwMode:modeReq};
+      ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();return;
     }
   }
   const qs=studyPickHomeworkSet(id,pool,n);
   const level=modeReq==='examen'?2:1,showPhoto=level===1;
-  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:nReq,hwMode:modeReq};
-  ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
+  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:nReq,hwMode:modeReq};
+  ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 function studyRound(temaId,level,showPhoto){
   const e=exGet(temaId),pool=e.pool.filter(q=>!q.off);
-  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,firstOk:0,n:pool.length,recorded:false,theoryOpen:showPhoto};
-  ui.studyPhotoView=null;ui.studyQuitAsk=false;studySave();render();
+  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,firstOk:0,n:pool.length,recorded:false,theoryOpen:showPhoto};
+  ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;studySave();render();
 }
 function studyPhotosHTML(id){
   const L=(state.examFotos[id]||[]).filter(p=>!p.err);if(!L.length)return '';
@@ -3508,6 +3792,62 @@ function studyPhotoOverlay(){
   <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">${p.name?`<b>${esc(p.name)}</b>`:'<span></span>'}<button class="btn" data-act="studyPhotoClose">✕ Cerrar</button></div>
   ${p.desc?`<p class="mute" style="margin:4px 0">${esc(p.desc)}</p>`:''}
   <div style="text-align:center;margin-top:6px"><img src="${p.full||p.thumb}" alt="Teoría" style="${imgStyle};transform:rotate(${rot}deg);border-radius:10px"></div></div></div>`;
+}
+/* vídeos de teoría (pedido por David, 2026-10-23): el tutor pega un enlace (YouTube, Vimeo, Google
+   Drive o un archivo de vídeo directo) en la tarjeta de teoría y Julia tiene un botón, siempre
+   visible mientras estudia esa tarjeta -no solo una vez antes de las preguntas-, para abrirlo y
+   cerrarlo cuando quiera. videoEmbedSrc() reconoce los enlaces normales de esos servicios y los
+   convierte en la URL que se puede meter en un <iframe>; si no reconoce el servicio ni es un
+   archivo de vídeo directo, videoPlayerHTML() muestra un aviso en vez de intentar incrustarlo. */
+function videoEmbedSrc(url){
+  url=String(url||'').trim();
+  if(!/^https?:\/\//i.test(url))return null;
+  try{
+    const u=new URL(url);
+    const host=u.hostname.replace(/^www\./i,'').toLowerCase();
+    if(host==='youtu.be'){
+      const id=u.pathname.slice(1).split('/')[0];
+      if(id)return `https://www.youtube.com/embed/${id}`;
+    }
+    if(host==='youtube.com'||host==='m.youtube.com'){
+      if(u.pathname==='/watch'){const id=u.searchParams.get('v');if(id)return `https://www.youtube.com/embed/${id}`;}
+      const shortsM=u.pathname.match(/^\/shorts\/([^/]+)/);if(shortsM)return `https://www.youtube.com/embed/${shortsM[1]}`;
+      const embedM=u.pathname.match(/^\/embed\/([^/]+)/);if(embedM)return url;
+    }
+    if(host==='vimeo.com'){const m=u.pathname.match(/^\/(\d+)/);if(m)return `https://player.vimeo.com/video/${m[1]}`;}
+    if(host==='player.vimeo.com')return url;
+    if(host==='drive.google.com'){const m=u.pathname.match(/\/file\/d\/([^/]+)/);if(m)return `https://drive.google.com/file/d/${m[1]}/preview`;}
+  }catch(e){}
+  return null;
+}
+function videoPlayerHTML(url){
+  url=String(url||'').trim();
+  if(!/^https?:\/\//i.test(url))return '<p class="msg wrong">Este enlace de vídeo no es válido.</p>';
+  if(/\.(mp4|webm|ogg|mov)(\?.*)?$/i.test(url))return `<video controls style="max-width:100%;max-height:70vh;border-radius:10px" src="${esc(url)}"></video>`;
+  const embed=videoEmbedSrc(url);
+  if(embed)return `<iframe src="${esc(embed)}" style="width:100%;max-width:900px;height:50vh;border:0;border-radius:10px" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+  return '<p class="msg wrong">No se ha podido reconocer este enlace de vídeo. Comprueba que sea un enlace de YouTube, Vimeo, Google Drive o un archivo de vídeo directo.</p>';
+}
+function studyVideoOverlay(){
+  const st=ui.study;if(!st||!ui.studyVideoOpen)return '';
+  const e=exGet(st.temaId);if(!e||!e.video)return '';
+  return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.studyVideoClose()"><div class="exph-box" style="max-width:96vw">
+  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><b>🎬 Vídeo de teoría</b><button class="btn" data-act="studyVideoClose">✕ Cerrar</button></div>
+  <div style="text-align:center;margin-top:10px">${videoPlayerHTML(e.video)}</div></div></div>`;
+}
+/* pedido por David (2026-10-22): igual que ya existía en Análisis Morfológico, si Julia se queda
+   atascada aquí (tras fallar "escríbelo tú" en Teoría) que pueda saltar la pregunta pidiendo el
+   PIN del tutor, en vez de quedarse bloqueada sin poder avanzar. Solo aparece DESPUÉS de un primer
+   intento fallido (st.writeDiff), para animar a intentarlo antes de saltar -- mismo criterio que
+   morfoSkipHTML (p5c.js). Saltar no regala el acierto: la pregunta ya contaba como fallo desde que
+   se eligió mal la explicación; solo quita la obligación de escribirla bien para poder seguir. */
+function studySkipHTML(st){
+  if(st.skipPinAsk)return `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:nowrap;align-items:center">
+    <input type="password" inputmode="numeric" id="studySkipPin" data-enter="studySkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
+    <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="studySkipGo">Saltar</button>
+    <button class="btn" style="min-height:36px;padding:4px 10px" data-act="studySkipNo">✕</button>
+    </div>`;
+  return `<div class="row" style="margin-top:10px"><button class="link" data-act="studySkipAsk">🔑 ¿Sigue sin dejarte seguir? Pide a tu tutor que la salte</button></div>`;
 }
 function studyAnswerHTML(st,q){
   if(st.stage==='answer'){
@@ -3553,10 +3893,10 @@ function studyAnswerHTML(st,q){
         <b>✍️ Para continuar, escribe tú la respuesta correcta:</b>
         <textarea id="studyWriteAns" data-enter="studyWriteAns" placeholder="Escribe aquí la respuesta correcta…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:70px;margin-top:8px">${esc(st.writeGiven||'')}</textarea>
         <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyWriteCheck">✔ Comprobar</button></div>
-        ${st.writeDiff?morfoWriteDiffHTML(st.writeDiff):''}
+        ${st.writeDiff?morfoWriteDiffHTML(st.writeDiff)+studySkipHTML(st):''}
         </div>`;
       }else{
-        h+=`<div class="msg right" style="margin-top:10px">✅ ¡Muy bien escrita!</div><div class="row" style="margin-top:12px"><button class="btn success big" data-act="studyNext">Siguiente ➜</button></div>`;
+        h+=`<div class="msg right" style="margin-top:10px">${st.writeSkipped?'➡️ Pregunta saltada con el PIN del tutor.':'✅ ¡Muy bien escrita!'}</div><div class="row" style="margin-top:12px"><button class="btn success big" data-act="studyNext">Siguiente ➜</button></div>`;
       }
     }
     return h;
@@ -3565,7 +3905,7 @@ function studyAnswerHTML(st,q){
 }
 function recordStudyOnce(st,e){
   if(st.recorded)return;st.recorded=true;
-  const res={n:st.n,ok:st.firstOk,level:st.level};
+  const res={n:st.n,ok:st.firstOk,level:st.level};earnScreenTime(res.ok);
   if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='teoria'){const [s,r]=recItem(it);r.end=Date.now();r.done=true;r.res=res;touchSes(s);studyClearProgress(st.temaId);return;}}
   const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now();
   s.extra.push({id:uid(),kind:'teoria',title:'Teoría: '+(e?e.title:''),start:Date.now(),end:Date.now(),secs:0,done:true,res});
@@ -3597,18 +3937,23 @@ function studyQuitOverlay(){
 }
 function renderStudy(){
   const st=ui.study;if(!st){ui.screen='exlist';return render();}
-  const e=exGet(st.temaId);if(!e){ui.study=null;ui.screen='exlist';return render();}
+  const e=exGet(st.temaId);if(!e){ui.study=null;ui.studyVideoOpen=false;ui.screen='exlist';return render();}
   if(st.i>=st.qs.length)return renderStudyDone();
   const q=st.qs[st.i];
   const levelBtn=st.level===1?`<button class="btn" data-act="studyLevel2">🚀 Nivel 2 (repasar de memoria)</button>`:`<button class="btn" data-act="studyLevel1">📷 Volver a nivel 1 (con la foto siempre visible)</button>`;
   const overlay=studyPhotoOverlay();
+  const videoOv=studyVideoOverlay();
+  /* botón del vídeo de teoría: SIEMPRE visible mientras se estudia esta tarjeta (no solo una vez
+     antes de las preguntas), para que Julia pueda verlo cuando quiera -pedido por David. Solo
+     aparece si el tutor ha puesto un enlace de vídeo en esta tarjeta. */
+  const videoBtn=e.video?`<button class="btn" data-act="studyVideoOpen">🎬 Ver vídeo de teoría</button>`:'';
   app.innerHTML=`<button class="link" data-act="studyQuit">← Salir</button><h2 style="margin:0">📘 ${esc(e.title)}</h2>
   <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0">
   <span class="mute">Nivel ${st.level} · pregunta ${st.i+1} de ${st.qs.length}</span>
-  <span class="row" style="gap:8px;flex-wrap:wrap"><button class="btn" data-act="studyPrev" ${st.i?'':'disabled'}>⬅ Anterior</button>${levelBtn}</span></div>
+  <span class="row" style="gap:8px;flex-wrap:wrap">${videoBtn}<button class="btn" data-act="studyPrev" ${st.i?'':'disabled'}>⬅ Anterior</button>${levelBtn}</span></div>
   ${studyTheoryOrWarn(e)}
   <div class="panel" id="qpanel"><div style="font-size:1.2rem;font-weight:800;line-height:1.4;margin-bottom:12px">${esc(q.q)}</div>
-  ${studyAnswerHTML(st,q)}</div>${overlay}${studyQuitOverlay()}`;
+  ${studyAnswerHTML(st,q)}</div>${overlay}${videoOv}${studyQuitOverlay()}`;
   const ta=$('#studyAns')||$('#studyWriteAns');if(ta)ta.focus();
 }
 const studyActions={
@@ -3635,7 +3980,7 @@ const studyActions={
       }
     }
     if(ok){st.firstOk++;st.stage='ok';}
-    else{st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.stage='rule';}
+    else{st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.stage='rule';}
     chime(ok);
     render();scrollQCenter();
   },
@@ -3656,16 +4001,28 @@ const studyActions={
     else{st.writeDiff=morfoWriteDiff(v,correct);toast('Todavía no es correcto del todo, mira en rojo qué palabras no coinciden');}
     render();scrollQCenter();
   },
+  /* igual que morfoSkipAsk/morfoSkipGo/morfoSkipNo (p5c.js): si el tutor todavía no ha puesto PIN,
+     se deja pasar sin pedirlo (no tiene sentido bloquear a Julia por un PIN que nadie ha
+     configurado). Saltar cuenta como fallo igual (ya contaba desde que falló la explicación). */
+  studySkipAsk(){const st=ui.study;if(!st)return;st.skipPinAsk=true;render();const i=$('#studySkipPin');if(i)i.focus();},
+  studySkipNo(){const st=ui.study;if(!st)return;st.skipPinAsk=false;render();},
+  studySkipGo(){
+    const st=ui.study;if(!st)return;
+    const i=$('#studySkipPin');
+    if(state.pin&&!(i&&i.value===state.pin)){toast('PIN incorrecto');if(i){i.value='';i.focus();}return;}
+    st.skipPinAsk=false;st.writeOk=true;st.writeSkipped=true;
+    render();scrollQCenter();
+  },
   studyNext(){
     const st=ui.study;if(!st)return;
-    st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.stage='answer';
+    st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.stage='answer';
     studySave();
     if(miniGameDue(st.i,st.qs.length))return startMiniGame('study');
     render();scrollQCenter();
   },
   studyPrev(){
     const st=ui.study;if(!st||st.i<=0)return;
-    st.i--;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.stage='answer';
+    st.i--;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.stage='answer';
     studySave();
     render();scrollQCenter();
   },
@@ -3675,11 +4032,13 @@ const studyActions={
   studyRepeat(){const st=ui.study;if(!st)return;studyRound(st.temaId,st.level,st.showPhoto);},
   studyPhotoOpen(b){ui.studyPhotoView=b.dataset.id;render();},
   studyPhotoClose(){ui.studyPhotoView=null;render();},
+  studyVideoOpen(){ui.studyVideoOpen=true;render();},
+  studyVideoClose(){ui.studyVideoOpen=false;render();},
   studyQuit(){ui.studyQuitAsk=true;const y=scrollY;render();scrollTo(0,y);},
   studyQuitCancel(){ui.studyQuitAsk=false;const y=scrollY;render();scrollTo(0,y);},
-  studyQuitResume(){ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.screen=ui.item?'today':'exlist';render();},
-  studyQuitDiscard(){const st=ui.study;if(st)studyClearProgress(st.temaId);ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.screen=ui.item?'today':'exlist';render();},
-  studyQuitOk(){ui.study=null;ui.studyPhotoView=null;ui.studyQuitAsk=false;ui.screen=ui.item?'today':'exlist';render();}
+  studyQuitResume(){ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.screen=ui.item?'today':'exlist';render();},
+  studyQuitDiscard(){const st=ui.study;if(st)studyClearProgress(st.temaId);ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.screen=ui.item?'today':'exlist';render();},
+  studyQuitOk(){ui.study=null;ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen=ui.item?'today':'exlist';render();}
 };
 /* ================= minijuegos: cada 15 preguntas, un descanso interactivo =================
    Se insertan al azar dentro de las tandas largas de ejercicios (mates, exámenes, estudio de
@@ -4057,10 +4416,51 @@ const MORFO_VAR_THEORY={
    un "análisis extra" periódico, para no saturar a Julia con esto en cada palabra. */
 const MORFO_EXTRA_EVERY=5;
 const MORFO_MORF_THEORY={
-  raiz:'La raíz (o lexema) es la parte de la palabra que no cambia y lleva su significado principal.',
-  flexivo:'Morfema flexivo: cambia la forma de la palabra para marcar género, número, persona o tiempo, sin crear una palabra nueva (gato → gato+s).',
-  derivativo:'Morfema derivativo: se añade a la raíz para formar una palabra nueva o matizar su significado (pan → pan+adero).'
+  raiz:'La raíz, o lexema, es la parte de la palabra que no cambia y lleva su significado principal.',
+  flexivo:'Morfema flexivo: cambia la forma de la palabra para marcar género, número, persona o tiempo, sin crear una palabra nueva.',
+  derivativo:'Morfema derivativo: se añade a la raíz para formar una palabra nueva o matizar su significado.'
 };
+/* reglas de la tilde, para la nueva pregunta tipo test de Morfología (pedido de David, 2026-10-22):
+   cada palabra del texto que lleve tilde pregunta, en formato de elegir una opción, por qué la
+   lleva. Reutiliza las mismas herramientas que ya usa Dictado para esto (hasTilde, stressInfo) y
+   el mismo mapa de palabras diacríticas (DIAC, más arriba) -- Dictado solo las usa comparando lo
+   que escribe Julia contra la palabra correcta de una lista fija; aquí se usan para clasificar
+   CUALQUIER palabra ya bien escrita del texto que se esté analizando. Mismo orden de prioridad que
+   ya usa Dictado (ver RULES, más arriba) cuando una palabra podría encajar en más de una regla:
+   diacrítica, luego hiato, y solo si ninguna de esas aplica, aguda/llana/esdrújula según la sílaba
+   tónica. */
+const MORFO_TILDE_RULES={
+  diac:{l:'Tilde diacrítica',t:'Lleva tilde diacrítica: se escribe así para distinguirla de otra palabra que se escribe igual pero significa otra cosa.'},
+  hiato:{l:'Hiato',t:'Lleva tilde porque forma un hiato: la vocal débil suena más fuerte que la vocal fuerte de al lado, así que quedan en sílabas distintas.'},
+  aguda:{l:'Aguda',t:'Es una palabra aguda: el golpe de voz va en la última sílaba, y lleva tilde porque acaba en vocal, en N o en S.'},
+  llana:{l:'Llana',t:'Es una palabra llana: el golpe de voz va en la penúltima sílaba, y lleva tilde porque no acaba en vocal, ni en N ni en S.'},
+  esdrujula:{l:'Esdrújula',t:'Es una palabra esdrújula o sobresdrújula: el golpe de voz va en la antepenúltima sílaba o antes, y estas palabras siempre llevan tilde.'}
+};
+const MORFO_TILDE_ORDER=['aguda','llana','esdrujula','diac','hiato'];
+/* tildes diacríticas "viejas" (anteriores a la reforma de la RAE de 2010: sólo/solo, éste/este...),
+   que ya no se enseñan ni se usan en los textos actuales pero podrían aparecer si se pega un texto
+   antiguo -- sin esto, se clasificarían por su sílaba tónica (p.ej. "sólo" como llana) y el texto
+   de esa regla ("no acaba en vocal, ni en N ni en S") sería falso para esa palabra en concreto
+   (hallazgo de la revisión adversarial, 2026-10-22). Aparte de DIAC (que es de Dictado, con las
+   reglas actuales) para no tocar su comportamiento. */
+const MORFO_OLD_DIAC=new Set(['sólo','éste','ésta','éstos','éstas','ése','ésa','ésos','ésas','aquél','aquélla','aquéllos','aquéllas']);
+function morfoTildeRule(wordRaw){
+  const wl=String(wordRaw||'').toLowerCase();
+  if(!hasTilde(wl))return null;
+  if(DIAC[wl]||MORFO_OLD_DIAC.has(wl))return 'diac';
+  /* palabras compuestas con guión (p.ej. "árabe-israelí"): cada mitad tiene su propia sílaba
+     tónica, y silabificar el conjunto unido corrompía las sílabas justo en el guión (hallazgo de
+     la revisión adversarial, 2026-10-22). Se clasifica según la mitad que de verdad lleva la
+     tilde (la primera, si llevaran tilde las dos, caso rarísimo en un texto de primaria). */
+  const parts=wl.split('-').filter(Boolean);
+  const target=parts.length>1?(parts.find(p=>hasTilde(p))||wl):wl;
+  if(/[aeoáéó][íú]|[íú][aeoáéó]/.test(target))return 'hiato';
+  const info=stressInfo(target);
+  if(info.n>1&&info.fe===1)return 'aguda';
+  if(info.fe===2)return 'llana';
+  if(info.fe>=3)return 'esdrujula';
+  return 'diac'; // monosílabo con tilde que no está en DIAC: por descarte, solo puede ser diacrítica
+}
 /* teoría breve de cada categoría (sin ejemplos), para el modo Estudio: al pasar el ratón por el
    botón de una categoría aparece esta explicación debajo. En modo Examen no se muestra nada. */
 /* redactadas como frase que empieza por verbo (nunca "Palabra que...") para que encajen tanto
@@ -4068,12 +4468,12 @@ const MORFO_MORF_THEORY={
    (ver morfoWhy): "Es un sustantivo, porque nombra personas, animales...". */
 const MORFO_THEORY={
   sustantivo:'Nombra personas, animales, objetos, lugares o ideas.',
-  verbo:'Expresa una acción, un estado o un proceso, y se conjuga (cambia según la persona y el tiempo).',
+  verbo:'Expresa una acción, un estado o un proceso, y se conjuga según la persona y el tiempo.',
   adjetivo:'Acompaña a un sustantivo y expresa una cualidad o característica suya.',
   adverbio:'Modifica a un verbo, a un adjetivo o a otro adverbio, indicando cómo, cuándo, dónde o cuánto.',
   articulo:'Acompaña al sustantivo y señala su género y número, sin aportar significado propio.',
   pronombre:'Sustituye a un sustantivo para no repetirlo.',
-  preposicion:'Une elementos de la oración y expresa una relación entre ellos (lugar, tiempo, modo…), y es invariable.',
+  preposicion:'Une elementos de la oración, expresa una relación entre ellos y es invariable.',
   conjuncion:'Une palabras, frases u oraciones, y es invariable.'
 };
 /* subtipos de pronombre, adverbio y adjetivo: la IA, además de la categoría, decide uno de estos
@@ -4245,7 +4645,7 @@ async function morfoGenText(){
    no cada vez que Julia (o el tutor) lo abre. Si el tutor edita el texto, saveDict/saveMorfo
    borran esta caché para que se vuelva a analizar como la primera vez. */
 function morfoStart(text,title,backScreen,rec){
-  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,morf:{},i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',nivel:1,writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,extra:null,back:backScreen||'list',start:Date.now()};
+  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,morf:{},i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',nivel:1,writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,extra:null,tilde:null,back:backScreen||'list',start:Date.now()};
   ui.screen='morfo';render();
   const tokens=getWords(text).slice(0,220);
   if(rec&&Array.isArray(rec.morfoCats)&&rec.morfoCats.length===tokens.length){
@@ -4264,7 +4664,7 @@ function morfoStart(text,title,backScreen,rec){
 function morfoFinish(){
   const st=ui.morfo;
   const secs=Math.round((Date.now()-(st.start||Date.now()))/1000);
-  const res={n:st.tokens.length,ok:st.ok};
+  const res={n:st.tokens.length,ok:st.ok};earnScreenTime(res.ok);
   if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='morfo'){const [s,r]=recItem(it);r.secs=(r.secs||0)+secs;r.end=Date.now();r.done=true;r.res=res;touchSes(s);return;}}
   const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;
   s.extra.push({id:uid(),kind:'morfo',title:'Análisis morfológico: '+st.title,start:Date.now()-secs*1000,end:Date.now(),secs,done:true,res});
@@ -4280,7 +4680,9 @@ function morfoTextHTML(st){
   st.tokens.forEach((w,k)=>{
     out+=esc(st.text.slice(pos,w.i));
     const r=st.results[k];
-    if(k===st.i&&st.stage==='answer')out+=`<span style="background:#ece9fb;color:var(--pri2);font-weight:800;border-radius:6px;padding:0 4px">${esc(w.t)}</span>`;
+    /* pedido por David (2026-10-22): que se destaque MÁS la palabra que toca analizar ahora mismo,
+       para que se vea de un vistazo entre el resto del texto (antes solo tenía un fondo suave). */
+    if(k===st.i&&st.stage==='answer')out+=`<span style="background:#ece9fb;color:var(--pri2);font-weight:900;border-radius:8px;padding:2px 9px;border:2px solid var(--pri);box-shadow:0 2px 8px rgba(108,92,231,.45);font-size:1.08em">${esc(w.t)}</span>`;
     else if(r&&reveal)out+=`<span class="${r.ok?'fixed':'miss'}" title="${esc(MORFO_LABEL[r.correct])}">${esc(w.t)}</span>`;
     else if(r)out+=`<span style="opacity:.55">${esc(w.t)}</span>`;
     else out+=esc(w.t);
@@ -4375,6 +4777,22 @@ function morfoSkipHTML(st){
     </div>`;
   return `<div class="row" style="margin-top:10px"><button class="link" data-act="morfoSkipAsk">🔑 ¿Sigue sin dejarte seguir? Pide a tu tutor que la salte</button></div>`;
 }
+/* pedido por David (2026-10-22): cada palabra del texto que lleve tilde pregunta, en formato de
+   elegir una opción, por qué la lleva (ver MORFO_TILDE_RULES/morfoTildeRule más arriba). Igual que
+   el "análisis extra" (morfoExtraHTML): un solo intento, se revela la respuesta correcta si falla,
+   y basta con haberlo intentado (no con acertar) para poder seguir -- no hace falta PIN para
+   saltarla, es solo una pregunta de elegir, no de escribir. */
+function morfoTildeHTML(st){
+  const t=st.tilde;if(!t)return '';
+  const word=st.tokens[st.i].t,correct=morfoTildeRule(word);
+  let body=`<p style="margin:6px 0 10px">¿Por qué lleva tilde «${esc(word)}»?</p>
+  <div class="row" style="gap:8px;flex-wrap:wrap">${MORFO_TILDE_ORDER.map(k=>`<button class="btn ${t.pick?(t.pick===k?(t.ok?'success':'danger'):''):''}" data-act="morfoTildePick" data-k="${k}" ${t.pick?'disabled':''}>${esc(MORFO_TILDE_RULES[k].l)}</button>`).join('')}</div>`;
+  if(t.pick)body+=`<div class="msg ${t.ok?'right':'wrong'}" style="margin-top:8px">${t.ok?'✅ ¡Correcto!':`La respuesta correcta es: ${esc(MORFO_TILDE_RULES[correct].l)}.`} ${esc(MORFO_TILDE_RULES[correct].t)}</div>`;
+  return `<div class="panel" style="border-color:var(--pri);background:#fff3da;margin-top:10px">
+  <b>🔎 ¿Por qué lleva tilde?</b>
+  ${body}
+  </div>`;
+}
 function morfoWriteGateHTML(st,cat,sub){
   /* en Modo Examen no se corrige nada hasta el final (como el resto de Exámenes de la app), así
      que aquí no se le pide a Julia que escriba la respuesta correcta tras fallar -- eso revelaría
@@ -4388,10 +4806,11 @@ function morfoWriteGateHTML(st,cat,sub){
     </div>`;
   }
   let html=(st.level!=='examen'&&st.stage==='wrong')?`<div class="msg right" style="margin-top:10px">${st.writeSkipped?'➡️ Palabra saltada con el PIN del tutor.':'✅ ¡Muy bien escrito!'}</div>`:'';
-  /* el "análisis extra" (cada 5 palabras) también hay que terminarlo antes de poder seguir --
-     mientras no esté en stage 'done', morfoExtraHTML ya está mostrando su propio paso pendiente
-     justo encima, así que aquí todavía no se añade el botón "Siguiente". */
-  if(st.extra&&st.extra.stage!=='done')return html;
+  /* el "análisis extra" (cada 5 palabras) y la pregunta de la tilde (si la palabra lleva una)
+     también hay que terminarlos antes de poder seguir -- mientras no estén resueltos, morfoExtraHTML
+     y morfoTildeHTML ya están mostrando su propio paso pendiente justo encima, así que aquí todavía
+     no se añade el botón "Siguiente". */
+  if((st.extra&&st.extra.stage!=='done')||(st.tilde&&!st.tilde.pick))return html;
   return html+`<div class="row" style="margin-top:10px"><button class="btn success big" data-act="morfoNext">Siguiente ➜</button></div>`;
 }
 /* en Modo Estudio, al pasar el ratón por una opción de respuesta, en vez de un texto plano con la
@@ -4448,8 +4867,8 @@ function morfoBody(){
       :`<span class="wrule" style="display:block"><button class="wrule-btn" data-act="morfoPick" data-k="${o.cat}" data-sub="${esc(o.sub)}">${esc(o.l)}</button><span class="wrule-tip" style="max-width:300px;width:280px;background:none;border:none;box-shadow:none;padding:0">${morfoOptionCardHTML(o)}</span></span>`;
   }).join('')}</div>`
    :(st.level==='examen'
-      ? `${morfoExtraHTML(st)}${morfoWriteGateHTML(st,cat,sub)}`
-      : `<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?`✅ ¡Correcto! Es ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`:`❌ La respuesta correcta es: ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`}</div>${morfoExtraHTML(st)}${morfoWriteGateHTML(st,cat,sub)}`)}
+      ? `${morfoExtraHTML(st)}${morfoTildeHTML(st)}${morfoWriteGateHTML(st,cat,sub)}`
+      : `<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?`✅ ¡Correcto! Es ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`:`❌ La respuesta correcta es: ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`}</div>${morfoExtraHTML(st)}${morfoTildeHTML(st)}${morfoWriteGateHTML(st,cat,sub)}`)}
   <div class="row" style="margin-top:14px;justify-content:space-between">${st.i>0?`<button class="link" data-act="morfoPrev">← Anterior</button>`:'<span></span>'}<button class="link" data-act="morfoBack">← Salir</button></div>`;
 }
 function renderMorfo(){
@@ -4540,6 +4959,7 @@ const morfoActions={
     st.results[st.i]={ok,pick,pickSub,correct,correctSub,nivel:st.nivel};if(ok)st.ok++;
     st.stage=ok?'ok':'wrong';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;
     st.extra=morfoExtraNeeded(st)?morfoMakeExtra():null;
+    st.tilde=(st.tokens&&st.tokens[st.i]&&morfoTildeRule(st.tokens[st.i].t))?{pick:null,ok:null}:null;
     chime(ok);
     const y=scrollY;render();scrollTo(0,y);
   },
@@ -4552,6 +4972,15 @@ const morfoActions={
     const cat=st.cats[st.i],variable=MORFO_VARIABLE[cat],v=b.dataset.v;
     st.extra.varPick=v;st.extra.varOk=(v==='variable')===variable;
     chime(st.extra.varOk);
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  /* pregunta de "¿por qué lleva tilde?" (ver morfoTildeHTML más arriba): un solo intento, igual
+     que el resto del "análisis extra". */
+  morfoTildePick(b){
+    const st=ui.morfo;if(!st||!st.tilde||st.tilde.pick)return;
+    const correct=morfoTildeRule(st.tokens[st.i].t),v=b.dataset.k;
+    st.tilde.pick=v;st.tilde.ok=(v===correct);
+    chime(st.tilde.ok);
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoExtraRaizCheck(){
@@ -4636,9 +5065,10 @@ const morfoActions={
     const st=ui.morfo;if(!st)return;
     if(st.level!=='examen'&&st.stage==='wrong'&&!st.writeOk)return toast('Escribe primero la respuesta correcta');
     if(st.extra&&st.extra.stage!=='done')return toast('Termina primero el análisis extra');
+    if(st.tilde&&!st.tilde.pick)return toast('Responde primero por qué lleva tilde');
     st.i++;
     if(st.i>=st.tokens.length){st.stage='done';morfoFinish();const y=scrollY;render();scrollTo(0,y);return;}
-    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.extra=null;st.skipPinAsk=false;st.writeSkipped=false;
+    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.extra=null;st.tilde=null;st.skipPinAsk=false;st.writeSkipped=false;
     /* igual que en mates/exámenes/estudio: cada X palabras (la frecuencia de Ajustes) aparece un
        minijuego de descanso. Se comprueba YA con la siguiente palabra lista (stage 'answer'),
        para que al volver del minijuego se pueda seguir directamente. */
@@ -4654,7 +5084,7 @@ const morfoActions={
     st.i--;
     const prev=st.results[st.i];
     if(prev){if(prev.ok)st.ok=Math.max(0,st.ok-1);st.results[st.i]=null;}
-    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.extra=null;st.skipPinAsk=false;st.writeSkipped=false;
+    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.extra=null;st.tilde=null;st.skipPinAsk=false;st.writeSkipped=false;
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoBack(){const back=(ui.morfo&&ui.morfo.back)||'list';ui.morfo=null;ui.screen=back;render();},
@@ -4769,7 +5199,7 @@ function prepStart(backScreen){
 function prepRecordResult(n,ok){
   const st=ui.prep;
   const secs=Math.round((Date.now()-(st.start||Date.now()))/1000);
-  const res={n,ok};
+  const res={n,ok};earnScreenTime(ok);
   const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;
   s.extra.push({id:uid(),kind:'prep',title:'Preposiciones',start:Date.now()-secs*1000,end:Date.now(),secs,done:true,res});
   touchSes(s);
@@ -4806,6 +5236,7 @@ function prepBody(){
   }
   const sent=st.sentences[st.i],picked=st.picked,ok=picked!==null?picked===sent.idx:null;
   return `<p class="mute" style="margin:4px 0 10px">Frase ${st.i+1} de ${st.sentences.length}</p>
+  <div class="row" style="margin:0 0 8px"><button class="btn" data-act="prepPrev" ${st.i?'':'disabled'}>⬅ Anterior</button></div>
   <p class="mute" style="margin:0 0 6px">Pulsa la palabra de la frase que es la <b>preposición</b>:</p>
   <div class="panel" style="line-height:2.4;font-size:1.15rem">${prepSentHTML(st)}</div>
   ${picked!==null?`<div class="msg ${ok?'right':'wrong'}" style="margin-top:10px">${ok?'✅ ¡Correcto!':`❌ La preposición era: «${esc(sent.tokens[sent.idx].t)}»`}</div>
@@ -4863,6 +5294,25 @@ const prepActions={
     const st=ui.prep;if(!st||st.picked===null)return;
     st.i++;st.picked=null;
     if(st.i>=st.sentences.length){st.stage='done';prepFinish();const y=scrollY;render();scrollTo(0,y);return;}
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  /* pedido por David (2026-10-22): botón "Anterior" también en Preposiciones (Modo Estudio), igual
+     que ya tienen Mates/Teoría/Morfología/Exámenes/Spelling. Aquí no hace falta PIN para saltar
+     hacia delante: fallar una frase ya deja seguir directamente con "Siguiente" (no hay ningún
+     paso obligatorio del que atascarse). Al volver se descarta el resultado guardado de esa frase
+     (y se resta del contador de aciertos si era correcta), para poder repetirla.
+     OJO (arreglado tras revisión adversarial, mismo motivo que spDictPrev/spSentPrev): pulsar una
+     palabra (prepPick) y pasar a la siguiente frase son dos pasos separados -- st.i no avanza hasta
+     prepNext -- así que si se pulsa "Anterior" justo después de contestar pero antes de "Siguiente"
+     (st.picked!==null todavía), primero hay que descartar ESE resultado recién guardado de la frase
+     actual (restando el acierto si lo era), y solo entonces retroceder y descartar, aparte, el
+     resultado anterior de la frase de destino. */
+  prepPrev(){
+    const st=ui.prep;if(!st||st.i<=0)return;
+    if(st.picked!==null&&st.results.length>st.i){const cur=st.results.pop();if(cur.ok)st.ok--;}
+    st.i--;
+    if(st.results.length>st.i){const last=st.results.pop();if(last.ok)st.ok--;}
+    st.picked=null;
     const y=scrollY;render();scrollTo(0,y);
   },
   prepLevel(b){
@@ -5318,6 +5768,16 @@ function renderSpellList(){
   app.innerHTML=`<button class="link" data-act="${filterId?'goToday':'goHome'}">← ${filterId?'Deberes de hoy':'Inicio'}</button><h2>🔤 Spelling</h2>`+
   (list.length?list.map(row).join(''):'<div class="panel">Todavía no hay listas de spelling. Tu tutor las añadirá aquí.</div>');
 }
+/* mismo patrón que morfoSkipHTML/studySkipHTML: solo aparece tras un primer intento fallido de
+   reescritura (r.retypeTried). */
+function spDictSkipHTML(r){
+  if(r.skipPinAsk)return `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:nowrap;align-items:center;justify-content:center">
+    <input type="password" inputmode="numeric" id="spDictSkipPin" data-enter="spDictSkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
+    <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="spDictSkipGo">Saltar</button>
+    <button class="btn" style="min-height:36px;padding:4px 10px" data-act="spDictSkipNo">✕</button>
+    </div>`;
+  return `<div class="row" style="margin-top:10px;justify-content:center"><button class="link" data-act="spDictSkipAsk">🔑 ¿Sigue sin dejarte seguir? Pide a tu tutor que la salte</button></div>`;
+}
 function renderSpellDict(){
   const r=ui.spRun;if(!r){ui.screen='spelllist';return render();}
   const l=spGet(r.listId);if(!l){ui.spRun=null;ui.screen='spelllist';return render();}
@@ -5350,12 +5810,13 @@ function renderSpellDict(){
   const w=words[r.i];
   app.innerHTML=`<button class="link" data-act="spDictQuit">← Salir</button><h2 style="margin:0">🔊 ${esc(l.title)}</h2>
   <p class="mute">Palabra ${r.i+1} de ${words.length}</p>
+  <div class="row" style="margin:6px 0"><button class="btn" data-act="spDictPrev" ${r.i?'':'disabled'}>⬅ Anterior</button></div>
   <div class="panel">
   <div class="row" style="justify-content:center;margin-bottom:12px"><button class="btn primary big" data-act="spDictPlay">🔊 Escuchar</button></div>
   <input type="text" id="spDictAns" data-enter="spDictAns" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Escribe la palabra…" value="${esc(r.given)}" ${r.stage==='checked'?'disabled':''} style="font-size:1.2rem;text-align:center;width:100%">
   ${r.stage==='typing'?`<div class="row" style="justify-content:center;margin-top:12px"><button class="btn primary big" data-act="spDictCheck">✔ Comprobar</button></div>`:''}
   ${r.stage==='checked'?`<div class="msg ${r.ok?'right':'wrong'}" style="margin-top:12px;text-align:center;font-size:1.1rem">${r.ok?'✅ ¡Correcto!':`❌ Era: <b>${esc(w.w)}</b>`}</div>
-  ${(r.ok||r.retypeOk)?`<label class="f" style="margin-top:12px">¿Qué significa <b>${esc(w.w)}</b> en español?<input type="text" id="spDictMeaning" data-enter="spDictMeaning" autocomplete="off" value="${esc(r.meaning||'')}" placeholder="Escribe el significado…" ${r.meaningOk!==undefined?'disabled':''} style="font-size:1.05rem;text-align:center;width:100%"></label>
+  ${(r.ok||r.retypeOk)?`${r.retypeSkipped?'<div class="msg right" style="margin-top:8px;text-align:center">➡️ Palabra saltada con el PIN del tutor.</div>':''}<label class="f" style="margin-top:12px">¿Qué significa <b>${esc(w.w)}</b> en español?<input type="text" id="spDictMeaning" data-enter="spDictMeaning" autocomplete="off" value="${esc(r.meaning||'')}" placeholder="Escribe el significado…" ${r.meaningOk!==undefined?'disabled':''} style="font-size:1.05rem;text-align:center;width:100%"></label>
   ${r.meaningOk===undefined?`<div class="row" style="justify-content:center;margin-top:12px"><button class="btn primary big" data-act="spDictCheckMeaning" ${r.meaningBusy?'disabled':''}>${r.meaningBusy?'⏳ Comprobando…':'✔ Comprobar significado'}</button></div>`
   :`<div class="msg ${r.meaningOk===true?'right':r.meaningOk===false?'wrong':''}" style="margin-top:10px;text-align:center">${r.meaningOk===true?'✅ ¡Significado correcto!':r.meaningOk===false?`❌ No es correcto. ${r.meaningCorrect?'Significa: <b>'+esc(r.meaningCorrect)+'</b>':''}`:'⚠️ No se ha podido comprobar el significado ahora mismo.'}</div>
   <div class="row" style="justify-content:center;margin-top:12px"><button class="btn success big" data-act="spDictNext">${r.i+1<words.length?'Siguiente ➜':'Ver resultado ➜'}</button></div>`}`
@@ -5363,15 +5824,23 @@ function renderSpellDict(){
   <b>✍️ Antes de seguir, vuelve a escribir la palabra bien:</b>
   <input type="text" id="spDictRetype" data-enter="spDictRetype" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Escribe la palabra…" value="${esc(r.retypeGiven||'')}" style="font-size:1.1rem;text-align:center;width:100%;margin-top:8px">
   <div class="row" style="justify-content:center;margin-top:10px"><button class="btn primary big" data-act="spDictRetypeCheck">✔ Comprobar</button></div>
+  ${r.retypeTried?spDictSkipHTML(r):''}
   </div>`}`:''}
   </div>`+spHwQuitOverlay();
-  const fsel=r.stage!=='checked'?'#spDictAns':(r.ok||r.retypeOk)?'#spDictMeaning':'#spDictRetype';
+  const fsel=r.skipPinAsk?'#spDictSkipPin':r.stage!=='checked'?'#spDictAns':(r.ok||r.retypeOk)?'#spDictMeaning':'#spDictRetype';
   const inpF=$(fsel);if(inpF)inpF.focus();
 }
 function renderSpellPhotoUpload(l,r){
+  /* mientras se está leyendo una foto ya elegida (r.photoBusy, puesta por spDictPhotoUpload
+     mientras espera a la IA), se oculta el selector de foto -- si no, Julia podía pulsar "Elegir
+     foto" una segunda vez antes de que acabara la primera lectura (p.ej. por impaciencia, si
+     tardaba o le salía mal a la primera) y eso disparaba una SEGUNDA llamada a spellFinish() para
+     la misma ronda, dando tiempo de pantalla por duplicado y, si era parte de los deberes del
+     día, también duplicando la ronda en ui.spHw.rounds. Hallazgo real de la revisión adversarial
+     (2026-10-23). */
   app.innerHTML=`<button class="link" data-act="spDictQuit">← Salir</button><h2>📷 Sube la foto de tu hoja</h2>
   <p class="mute">Haz una foto de todas las palabras que has escrito, en el mismo orden en que las has oído.</p>
-  <div class="panel"><label class="btn primary big" style="display:inline-flex;align-items:center;gap:8px">📷 Elegir foto<input type="file" accept="image/*" id="spDictPhoto" hidden></label>
+  <div class="panel">${r.photoBusy?'<span class="btn primary big" style="display:inline-flex;align-items:center;gap:8px;opacity:.7">⏳ Leyendo tu foto…</span>':'<label class="btn primary big" style="display:inline-flex;align-items:center;gap:8px">📷 Elegir foto<input type="file" accept="image/*" id="spDictPhoto" hidden></label>'}
   <div id="spDictPhotoSt" class="mute" style="margin-top:8px">${r.photoErr?'⚠️ '+esc(r.photoErr):''}</div></div>`+spHwQuitOverlay();
 }
 function renderSpellSent(){
@@ -5384,6 +5853,7 @@ function renderSpellSent(){
   const parts=s.text.split('___');
   app.innerHTML=`<button class="link" data-act="spSentQuit">← Salir</button><h2 style="margin:0">📝 ${esc(l.title)}</h2>
   <p class="mute">Frase ${r.i+1} de ${r.order.length}</p>
+  <div class="row" style="margin:6px 0"><button class="btn" data-act="spSentPrev" ${r.i?'':'disabled'}>⬅ Anterior</button></div>
   <div class="panel" style="margin-bottom:10px"><b class="mute" style="font-size:.85rem">📋 Palabras de la lista</b><div class="row" style="flex-wrap:wrap;gap:6px;margin-top:6px">${l.words.map(w=>`<span class="mute" style="border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:.92rem">${esc(w.w)}</span>`).join('')}</div></div>
   <div class="panel">
   <div style="font-size:1.15rem;line-height:1.6;margin-bottom:12px">${esc(parts[0]||'')}<b style="border-bottom:2px solid var(--pri);padding:0 4px">${r.stage==='checked'?esc(r.given||'___'):'_____'}</b>${esc(parts[1]||'')}</div>
@@ -5442,6 +5912,7 @@ function spellFinish(l,r,kind){
   const n=r.results.length,okN=r.results.filter(x=>x.ok).length;
   const secs=Math.round((Date.now()-(ui.t0||Date.now()))/1000);
   const res={n,ok:okN,kind,wrong:r.results.filter(x=>!x.ok).map(x=>({word:x.word,given:x.given,meaning:x.meaning||'',meaningOk:x.meaningOk}))};
+  earnScreenTime(okN);
   /* si esta ronda es parte de los deberes del día (2 de escuchar + 1 de frases), no se registra
      todavía: se acumula en ui.spHw y el deber se cierra una sola vez, al terminar la última
      ronda (ver spHwFinishAll). Hallazgo real de la revisión adversarial, ya corregido: antes esta
@@ -5490,7 +5961,7 @@ function spHwRunStep(){
   if(kind==='sent'&&!l.sentences.length)return spHwFinishAll();
   spellHwSave();
   if(kind==='dict'){
-    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
+    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
     ui.screen='spelldict';
   }else{
     ui.spRun={listId:l.id,order:shuffleArr(l.sentences.map(s=>s.id)),i:0,given:'',stage:'answer',ok:null,results:[]};
@@ -5528,7 +5999,7 @@ const spellRunActions={
   spDictStart(b){
     const l=spGet(b.dataset.id);if(!l||l.status!=='ready')return toast('Esta lista no está disponible');
     if(!l.words.length)return toast('Esta lista no tiene palabras');
-    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
+    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
     ui.t0=Date.now();ui.screen='spelldict';render();
   },
   spHwStart(b){
@@ -5579,7 +6050,7 @@ const spellRunActions={
     const words=spWordObjs(l,r.order);const w=words[r.i];
     const v=($('#spDictAns')&&$('#spDictAns').value||'').trim();r.given=v;
     if(!v)return toast('Escribe la palabra primero');
-    r.ok=spGrade(v,w.w);r.stage='checked';r.retypeGiven='';r.retypeOk=false;
+    r.ok=spGrade(v,w.w);r.stage='checked';r.retypeGiven='';r.retypeOk=false;r.retypeTried=false;r.skipPinAsk=false;r.retypeSkipped=false;
     r.results.push({wordId:w.id,word:w.w,given:v,ok:r.ok});
     chime(r.ok);
     const y=scrollY;render();scrollTo(0,y);
@@ -5593,8 +6064,22 @@ const spellRunActions={
     const v=($('#spDictRetype')&&$('#spDictRetype').value||'').trim();r.retypeGiven=v;
     if(!v)return toast('Escribe la palabra primero');
     if(spGrade(v,w.w))r.retypeOk=true;
-    else toast('Todavía no está bien escrita, mira arriba e inténtalo otra vez');
+    else{r.retypeTried=true;toast('Todavía no está bien escrita, mira arriba e inténtalo otra vez');}
     const y=scrollY;render();scrollTo(0,y);
+  },
+  /* pedido por David (2026-10-22): igual que ya existía en Análisis Morfológico y Teoría, si Julia
+     se queda atascada aquí (no consigue volver a escribir bien la palabra) que pueda saltarla
+     pidiendo el PIN del tutor. Solo aparece tras un primer intento fallido de reescritura
+     (r.retypeTried). Saltar no regala el acierto: la palabra ya contaba como fallo desde el primer
+     intento (r.ok===false); solo quita la obligación de reescribirla bien para poder seguir. */
+  spDictSkipAsk(){const r=ui.spRun;if(!r)return;r.skipPinAsk=true;render();const i=$('#spDictSkipPin');if(i)i.focus();},
+  spDictSkipNo(){const r=ui.spRun;if(!r)return;r.skipPinAsk=false;render();},
+  spDictSkipGo(){
+    const r=ui.spRun;if(!r)return;
+    const i=$('#spDictSkipPin');
+    if(state.pin&&!(i&&i.value===state.pin)){toast('PIN incorrecto');if(i){i.value='';i.focus();}return;}
+    r.skipPinAsk=false;r.retypeOk=true;r.retypeSkipped=true;
+    render();scrollQCenter();
   },
   /* comprueba con la IA si el significado que ha escrito Julia es correcto (solo en "escuchar",
      en cualquiera de los dos modos: escribiendo en el ordenador -stage 'checked'- o en papel
@@ -5629,12 +6114,33 @@ const spellRunActions={
        "✔ Comprobar significado" (solo en el dictado de spelling, no en las frases). */
     if(r.ok===false&&!r.retypeOk)return toast('Primero vuelve a escribir la palabra correctamente');
     if(r.meaningOk===undefined)return toast('Comprueba primero el significado');
-    r.i++;r.given='';r.ok=null;r.meaning='';r.meaningOk=undefined;r.meaningCorrect='';r.retypeGiven='';r.retypeOk=false;r.stage='typing';
+    r.i++;r.given='';r.ok=null;r.meaning='';r.meaningOk=undefined;r.meaningCorrect='';r.retypeGiven='';r.retypeOk=false;r.retypeTried=false;r.skipPinAsk=false;r.retypeSkipped=false;r.stage='typing';
     /* igual que en mates/exámenes/estudio de temas/análisis morfológico: un minijuego cada X
        palabras según la frecuencia de Ajustes (miniGameEvery), nunca garantizado al terminar la
        ronda (ver miniGameDue, p5d.js). */
     if(r.i>=words.length){r.stage='done';spellFinish(l,r,'dict');return render();}
     if(miniGameDue(r.i,words.length))return startMiniGame('spelldict');
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  /* pedido por David (2026-10-22): botón "Anterior" también en el dictado de spelling (escribiendo
+     en el ordenador), igual que ya tienen Mates/Teoría/Morfología/Exámenes. Solo tiene sentido en
+     modo "escribiendo en el ordenador" (stage typing/checked); en modo foto no hay nada que
+     retroceder, se corrige todo junto al final con la foto.
+     OJO (arreglado tras revisión adversarial): aquí comprobar y pasar a la siguiente palabra son
+     DOS pasos separados (spDictCheck guarda el resultado al momento; r.i no avanza hasta
+     spDictNext) -- a diferencia de Mates, donde ambos pasan juntos en el mismo clic. Eso significa
+     que, si se pulsa "Anterior" DESPUÉS de comprobar la palabra actual pero ANTES de pulsar
+     "Siguiente", ya hay un resultado de la palabra actual guardado sin haber avanzado -- por eso
+     primero se descarta ESE resultado (si lo hay) y solo entonces se retrocede y se descarta,
+     aparte, el resultado anterior de la palabra de destino (si lo tenía, por haber estado ya
+     respondida antes). Comparar solo por posición (en vez de por wordId, como se intentó al
+     principio) es lo que hace esto fiable en los dos casos. */
+  spDictPrev(){
+    const r=ui.spRun;if(!r||r.i<=0)return;
+    if(r.stage==='checked'&&r.results.length>r.i)r.results.pop();
+    r.i--;
+    if(r.results.length>r.i)r.results.pop();
+    r.given='';r.ok=null;r.meaning='';r.meaningOk=undefined;r.meaningCorrect='';r.retypeGiven='';r.retypeOk=false;r.retypeTried=false;r.skipPinAsk=false;r.retypeSkipped=false;r.stage='typing';
     const y=scrollY;render();scrollTo(0,y);
   },
   spDictPhoneNext(){
@@ -5651,21 +6157,44 @@ const spellRunActions={
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
     if(!state.ai.photoOn)return toast('Activa la IA de fotos en Ajustes para leer fotos');
     if(!file)return;
+    /* candado anti-doble-envío: ver el comentario en renderSpellPhotoUpload. Sin esto, elegir una
+       segunda foto mientras la primera todavía se está leyendo disparaba una segunda llamada a
+       spellFinish() para la misma ronda (tiempo de pantalla por duplicado, y ronda duplicada en
+       los deberes del día). */
+    if(r.photoBusy)return;
+    r.photoBusy=true;r.photoErr='';render();
     const st=$('#spDictPhotoSt');if(st)st.textContent='🔎 Leyendo tu foto…';
     const words=spWordObjs(l,r.order);
     try{
       const txt=await readSpellingAnswerPhoto(file);
+      /* si, mientras se leía la foto, Julia abandonó o reinició esta ronda (p.ej. "Salir" ->
+         descartar, u "Otra vez"), ui.spRun ya es OTRO objeto distinto de "r" (y puede que ya esté
+         en mitad de una ronda nueva de deberes). Sin esto, el resultado "fantasma" de esta
+         lectura ya abandonada se coló igualmente: se llamaba a spellFinish() (dando tiempo de
+         pantalla por una ronda que Julia ya había dejado) y, si entretanto había otra ronda de
+         deberes en curso, hasta se mezclaba con ui.spHw de esa ronda nueva. Hallazgo real de la
+         revisión adversarial (2026-10-23, 3ª ronda).
+         OJO: "Salir"/"Otra vez" no son la única forma de abandonar la ronda sin tocar ui.spRun --
+         la cabecera fija de arriba ("📚 Deberes de Julia"/cambiar de rol) está siempre accesible,
+         en cualquier pantalla, y lleva a goHome()/setRole() SIN pasar por spDictQuit ni tocar
+         ui.spRun ni ui.spHw para nada. Si Julia pulsa eso mientras la foto se está leyendo,
+         ui.spRun seguiría siendo "r" (la comparación de arriba no bastaría), pero ui.screen ya
+         no sería 'spelldict' -- por eso se comprueba también eso. Hallazgo real de la revisión
+         adversarial (2026-10-23, 4ª ronda). */
+      if(ui.spRun!==r||ui.screen!=='spelldict')return;
       const lines=txt.split('\n').map(x=>x.trim()).filter(Boolean);
       r.results=words.map((w,i)=>{const given=lines[i]||'';return {wordId:w.id,word:w.w,given,ok:spGrade(given,w.w),meaning:(r.photoMeanings&&r.photoMeanings[i])||'',meaningOk:(r.photoMeaningOk&&r.photoMeaningOk[i])};});
-      r.stage='done';spellFinish(l,r,'dict');render();
+      r.stage='done';r.photoBusy=false;spellFinish(l,r,'dict');render();
     }catch(e){
+      if(ui.spRun!==r||ui.screen!=='spelldict')return;
+      r.photoBusy=false;
       r.photoErr=e.message;
-      const st2=$('#spDictPhotoSt');if(st2)st2.innerHTML=`⚠️ ${esc(e.message)}`;
+      render();
     }
   },
   spDictRepeat(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
-    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
+    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
     ui.t0=Date.now();render();
   },
   spDictQuit(){if(ui.spHw){ui.spHwQuitAsk=true;return render();}ui.spRun=null;ui.spHw=null;ui.screen='spelllist';render();},
@@ -5695,6 +6224,25 @@ const spellRunActions={
     if(miniGameDue(r.i,r.order.length))return startMiniGame('spellsent');
     const y=scrollY;render();scrollTo(0,y);
   },
+  /* pedido por David (2026-10-22): botón "Anterior" también en las frases de spelling, igual que
+     ya tienen Mates/Teoría/Morfología/Exámenes/Dictado de spelling. Aquí no hace falta pedir PIN
+     para saltar hacia delante (no hay ningún paso obligatorio del que atascarse: fallar una frase
+     ya deja seguir directamente con "Siguiente"), así que solo hacía falta el botón de volver.
+     OJO (arreglado tras revisión adversarial, mismo motivo que spDictPrev): comprobar la frase y
+     pasar a la siguiente son dos pasos separados (spSentCheck guarda el resultado al momento; r.i
+     no avanza hasta spSentNext), así que si se pulsa "Anterior" justo después de comprobar pero
+     antes de pulsar "Siguiente", primero hay que descartar ESE resultado recién guardado de la
+     frase actual, y solo entonces retroceder y descartar, aparte, el resultado anterior de la
+     frase de destino (por posición: la misma palabra puede repetirse en varias frases distintas,
+     así que comparar por palabra no serviría). */
+  spSentPrev(){
+    const r=ui.spRun;if(!r||r.i<=0)return;
+    if(r.stage==='checked'&&r.results.length>r.i)r.results.pop();
+    r.i--;
+    if(r.results.length>r.i)r.results.pop();
+    r.given='';r.ok=null;r.stage='answer';
+    const y=scrollY;render();scrollTo(0,y);
+  },
   spSentRepeat(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
     ui.spRun={listId:l.id,order:shuffleArr(l.sentences.map(s=>s.id)),i:0,given:'',stage:'answer',ok:null,results:[]};
@@ -5715,10 +6263,10 @@ function renderTutor(){
      de Dictado (palabras falladas, reglas, tendencia). Se unen en una sola pestaña: Actividad
      primero (el día a día) y, debajo, la sección de estadísticas de Dictado que antes era
      Historial (ver tabActividad). */
-  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad e Historial'],['examenes','📚 Teoría y exámenes'],['spelling','🔤 Spelling'],['morfologia','🔎 Morfología'],['reglas','📘 Reglas propias'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
+  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad e Historial'],['examenes','📚 Teoría y exámenes'],['spelling','🔤 Spelling'],['morfologia','🔎 Morfología'],['reglas','📘 Reglas propias'],['pruebas','🧪 Zona de pruebas'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
   app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><span class="row" style="gap:6px"><button class="btn" data-act="deshacer" ${undoStack.length?'':'disabled'} title="Deshace la última acción: guardar/borrar/copiar un dictado o un texto de morfología, reglas propias, asignaturas/temas, borrar un examen o sus preguntas, borrar una lista de spelling, borrar un deber, borrar una nota, o vaciar el historial. NO deshace crear una nota, una lista de spelling o un examen nuevos, ni nada de fotos de apuntes (subir/rotar/borrar).">↩️ Deshacer</button><button class="btn" data-act="lock">🔒 Bloquear</button></span></div>
   <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>${taskAddOverlay()}`;
-  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,spelling:tabSpelling,morfologia:tabMorfologia,reglas:tabReglas,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
+  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,spelling:tabSpelling,morfologia:tabMorfologia,reglas:tabReglas,pruebas:tabPruebas,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
 }
 function tabNotas(){
   const list=(state.notas||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
@@ -5777,6 +6325,22 @@ function tabReglas(){
   <table>${rs.map((r,i)=>`<tr><td style="width:32%"><input type="text" data-cr="word" data-i="${i}" value="${esc(r.word)}" placeholder="palabra" autocapitalize="off" autocorrect="off"></td><td><textarea class="short" data-cr="rule" data-i="${i}" placeholder="Regla…">${esc(r.rule)}</textarea></td><td><button class="btn danger" data-act="delRule" data-i="${i}">🗑</button></td></tr>`).join('')}</table>
   <button class="btn primary" data-act="addRule">＋ Añadir regla</button></div>`;
 }
+/* "Zona de pruebas": deja al tutor probar cualquier ejercicio tal y como lo vería Julia, con
+   ejemplos al azar entre lo que ya hay cargado, sin que nada de lo que se haga aquí toque los
+   datos reales de Julia (estadísticas, progreso, deberes...). Al pulsar un botón se guarda una
+   copia de "state" (pruebaStart), se entra en el ejercicio como si fuera la alumna, y al salir
+   (banner "🧪 Modo de pruebas", pruebaExit) se restaura esa copia entera, deshaciendo cualquier
+   cambio que el ejercicio de prueba haya podido guardar mientras tanto. */
+const PRUEBA_KINDS=[
+  ['mates','🧮 Matemáticas'],['examen','📝 Examen (test)'],['teoria','📚 Tarjeta de teoría'],
+  ['dictado','✏️ Dictado'],['morfologia','🔎 Análisis morfológico'],['preposiciones','🔗 Preposiciones'],
+  ['spelling_escuchar','🔤 Spelling: escuchar'],['spelling_frases','🔤 Spelling: frases'],
+  ['ingles','🇬🇧 Inglés (dictado)'],['minijuego','🎮 Minijuego']
+];
+function tabPruebas(){
+  $('#tab').innerHTML=`<div class="panel"><p class="mute" style="margin-top:0">Prueba aquí cualquier ejercicio tal y como lo ve Julia, con ejemplos al azar entre lo que ya tengas cargado. Nada de lo que hagas aquí se guarda en las estadísticas ni el progreso reales de Julia.</p>
+  <div class="list">${PRUEBA_KINDS.map(k=>`<button class="item" data-act="pruebaStart" data-kind="${k[0]}"><span><b>${esc(k[1])}</b></span><span style="font-size:1.6rem">▶️</span></button>`).join('')}</div></div>`;
+}
 /* estadísticas de Dictado (antes la pestaña "Historial" aparte, ahora una sección dentro de
    "Actividad e Historial", ver tabActividad). Devuelve el HTML en vez de pintarlo directamente,
    para poder componerlo junto con el día a día de Actividad. */
@@ -5825,6 +6389,12 @@ function tabAjustes(){
   <label class="f">Pausa después de cada signo<select data-set="ppause"><option value="0.6" ${s.ppause==0.6?'selected':''}>Corta</option><option value="1" ${s.ppause==1?'selected':''}>Normal</option><option value="1.6" ${s.ppause==1.6?'selected':''}>Larga</option><option value="2.2" ${s.ppause==2.2?'selected':''}>Muy larga</option></select></label>
   ${Dict.voices().length?`<label class="f">Voz<select data-set="voice">${Dict.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.voice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en español en este dispositivo.</p>'}</div>
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
+  <div class="panel"><h3>🎬 Tiempo de pantalla por aciertos</h3>
+  <p class="mute" style="margin-top:0">Julia se gana minutos de móvil o TV según las respuestas que acierte en cualquier ejercicio (Mates, Teoría, Dictado, Spelling, Análisis Morfológico, Preposiciones), con un tope diario para que un día con muchos deberes no le dé horas de pantalla sin querer. Ella ve el contador de hoy arriba de su pantalla en todo momento mientras hace deberes.</p>
+  <div class="grid2">
+  <label class="f">Segundos por respuesta correcta <span class="v" id="v_screenSecPerOk">${s.screenSecPerOk||26} s</span><input type="range" min="5" max="120" step="1" value="${s.screenSecPerOk||26}" data-set="screenSecPerOk"></label>
+  <label class="f">Tope diario <span class="v" id="v_screenCapMin">${s.screenCapMin||45} min</span><input type="range" min="5" max="120" step="5" value="${s.screenCapMin||45}" data-set="screenCapMin"></label>
+  </div></div>
   <div class="panel"><h3>🔤 Voz del Spelling (inglés)</h3>
   <p class="mute" style="margin-top:0">La voz que usa la IA para dictar las palabras de Spelling (voz del dispositivo, en inglés). Si el acento suena demasiado cerrado, prueba otra voz de la lista (las de ⭐ se entienden mejor) y pulsa "Probar voz".</p>
   ${EnVoice.voices().length?`<label class="f">Voz<select data-set="spVoice"><option value="">(automática: la de mejor calidad disponible)</option>${EnVoice.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.spVoice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testSpVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en inglés en este dispositivo.</p>'}
@@ -5980,7 +6550,18 @@ const studentActions={
   repeat(){Dict.repeat();},skip(){Dict.skip();},prev(){Dict.prev();},stop(){Dict.stop();updateRun();},
   correct:goCorrect,
   again(){ui.t0=Date.now();ui.answer='';ui.photo=null;ui.fix=null;ui.screen='run';render();},
-  setRole(b){const r=b.dataset.role;if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();},
+  setRole(b){
+    const r=b.dataset.role;
+    /* si se está en medio de una prueba de la Zona de pruebas (ver pruebaActions), el botón de
+       arriba "Tutor/Alumna" queda siempre visible y pulsable por encima de cualquier pantalla --
+       si se usara para "escapar" de la prueba (pasar a rol distinto) sin pasar por pruebaExit(),
+       el banner de salida desaparecería pero el "state" real seguiría sin restaurar (hallazgo de
+       la revisión adversarial del 2026-10-22). Si de verdad se está cambiando de rol (no un clic
+       sin efecto sobre el mismo rol que ya está activo), se sale primero de la prueba, como si se
+       hubiera pulsado "✕ Salir" (que ya deja ui.role en 'tutor' y renderiza), y no se hace nada más. */
+    if(ui.testZoneBackup&&r!==ui.role)return pruebaActions.pruebaExit();
+    if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();
+  },
   showVersion(){const l=state.sync.last?new Date(state.sync.last).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'nunca';toast(`Versión v${APP_VERSION} · última sincronización: ${l}`);},
   goNotesAlumna(){ui.screen='notasAlumna';render();},
   goMorfoList(){ui.screen='morfolist';render();},
@@ -5996,7 +6577,70 @@ const studentActions={
     save();render();
   }
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,prepActions,engDictActions,spellActions,spellRunActions);
+const pickRand=arr=>arr&&arr.length?arr[Math.floor(Math.random()*arr.length)]:null;
+const pruebaActions={
+  pruebaStart(b){
+    if(ui.testZoneBackup)return toast('Primero sal de la prueba anterior (✕ Salir) antes de empezar otra');
+    const kind=b.dataset.kind;
+    const enter=()=>{ui.testZoneBackup=JSON.parse(JSON.stringify(state));ui.role='alumna';};
+    if(kind==='mates'){enter();taskActions.mstart({dataset:{g:'mix'}});return;}
+    if(kind==='examen'){
+      const pick=pickRand(state.examenes.filter(e=>e.status==='ready'&&e.isExam));
+      if(!pick)return toast('Todavía no hay ningún examen publicado para probar');
+      enter();startExam(pick.id,null);return;
+    }
+    if(kind==='teoria'){
+      const pool=state.examenes.filter(e=>e.status==='ready'&&!e.isExam);
+      /* si el tutor tiene abierta en edición una tarjeta de teoría YA publicada, se prueba esa
+         misma (por ejemplo para ver de verdad el vídeo que le acaba de poner), en vez de una al
+         azar -- pedido tras la revisión adversarial del 2026-10-23, que detectó que el aviso de
+         "previsualízalo aquí" en exEditView() no se cumplía si había más de una tarjeta publicada. */
+      const current=pool.find(e=>e.id===ui.exId);
+      const pick=current||pickRand(pool);
+      if(!pick)return toast('Todavía no hay ninguna tarjeta de teoría publicada para probar');
+      enter();studyOpen(pick.id);return;
+    }
+    if(kind==='dictado'){
+      const pick=pickRand(state.dictados);
+      if(!pick)return toast('Todavía no hay ningún dictado para probar');
+      enter();studentActions.openDict({dataset:{id:pick.id}});return;
+    }
+    if(kind==='morfologia'){
+      const cached=pickRand(state.morfos.filter(m=>m.morfoCats&&m.morfoCats.length))||pickRand(state.dictados.filter(d=>d.morfoCats&&d.morfoCats.length));
+      const pick=cached||pickRand(state.morfos)||pickRand(state.dictados);
+      if(!pick)return toast('Todavía no hay ningún texto para probar el análisis morfológico');
+      if(!cached&&!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar el análisis morfológico');
+      enter();morfoStart(pick.text,pick.title,'home',pick);return;
+    }
+    if(kind==='preposiciones'){
+      if(!state.ai.photoOn)return toast('Activa la IA de fotos y preguntas en Ajustes para usar las Preposiciones');
+      enter();prepStart('home');return;
+    }
+    if(kind==='spelling_escuchar'){
+      const pick=pickRand(state.spelling.filter(l=>l.status==='ready'&&l.words.length));
+      if(!pick)return toast('Todavía no hay ninguna lista de spelling con palabras para probar');
+      enter();spellRunActions.spDictStart({dataset:{id:pick.id}});return;
+    }
+    if(kind==='spelling_frases'){
+      const pick=pickRand(state.spelling.filter(l=>l.status==='ready'&&l.sentences.length));
+      if(!pick)return toast('Todavía no hay ninguna lista de spelling con frases para probar');
+      enter();spellRunActions.spSentStart({dataset:{id:pick.id}});return;
+    }
+    if(kind==='ingles'){enter();engDictActions.goDict();return;}
+    if(kind==='minijuego'){enter();startMiniGame('home',MINI_KINDS[Math.floor(Math.random()*MINI_KINDS.length)]);return;}
+  },
+  pruebaExit(){
+    if(!ui.testZoneBackup)return;
+    state=ui.testZoneBackup;ui.testZoneBackup=null;
+    try{Dict.stop();}catch(e){}
+    ui.role='tutor';ui.tab='pruebas';ui.unlocked=true;
+    ui.mrun=null;ui.study=null;ui.ex=null;ui.exres=null;ui.dict=null;ui.item=null;ui.morfo=null;
+    ui.prep=null;ui.spRun=null;ui.mgame=null;ui.engdict=null;ui.answer='';ui.photo=null;ui.fix=null;
+    ui.studyVideoOpen=false;
+    save();render();
+  }
+};
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,prepActions,engDictActions,spellActions,spellRunActions,pruebaActions);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;
   /* "despierta" el audio del sonido de acierto/fallo en el primer click de lo que sea: en iOS/
      Safari un AudioContext solo se puede crear/reanudar dentro de un gesto del usuario, y algunas
@@ -6012,7 +6656,7 @@ document.addEventListener('input',e=>{const t=e.target;
   if(exInput(t)||tfInput(t)||spInput(t)||taInput(t))return;
   if(t.dataset.set){const k=t.dataset.set;state.settings[k]=t.type==='checkbox'?t.checked:(t.type==='range'||k==='ppause')?+t.value:t.value;save();
     if(k==='repeat'){const gb=$('#gapBox');if(gb)gb.style.display=state.settings.repeat>1?'':'none';}
-    const lab=$('#v_'+k);if(lab)lab.textContent=k==='rate'?rateLabel(state.settings.rate):k==='pause'||k==='gap'?state.settings[k]+' s':k==='repeat'?state.settings.repeat+(state.settings.repeat>1?' veces':' vez'):state.settings[k];}
+    const lab=$('#v_'+k);if(lab)lab.textContent=k==='rate'?rateLabel(state.settings.rate):k==='pause'||k==='gap'||k==='screenSecPerOk'?state.settings[k]+' s':k==='screenCapMin'?state.settings[k]+' min':k==='repeat'?state.settings.repeat+(state.settings.repeat>1?' veces':' vez'):state.settings[k];}
   if(t.dataset.ai){const k=t.dataset.ai;state.ai[k]=t.type==='checkbox'?t.checked:k==='speed'?+t.value:t.value;save();if(k==='speed'){const l=$('#v_aispeed');if(l)l.textContent=state.ai.speed+'×';}}
   if(t.dataset.set2==='miniGameEvery'){state.miniGameEvery=+t.value;save();const l=$('#v_miniGameEvery');if(l)l.textContent='cada '+state.miniGameEvery+' ejercicios';}
   if(t.dataset.cr){state.customRules[+t.dataset.i][t.dataset.cr]=t.value;save();}
@@ -6064,6 +6708,7 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
   _fxAudioCtx();
   if(t.dataset.enter==='word')fixActions.word({dataset:{i:t.dataset.i}});
   if(t.dataset.enter==='mans')taskActions.mcheck();
+  if(t.dataset.enter==='mRevealPin')taskActions.mRevealGo();
   if(t.dataset.enter==='opin')fixActions.origGo();
   if(t.dataset.enter==='pin')tutorActions.pinEnter();
   if(t.dataset.enter==='studyAns')studyActions.studyCheck();
@@ -6080,6 +6725,8 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
   if(t.dataset.enter==='studyWriteAns')studyActions.studyWriteCheck();
   if(t.dataset.enter==='morfoWriteAns')morfoActions.morfoWriteCheck();
   if(t.dataset.enter==='morfoSkipPin')morfoActions.morfoSkipGo();
+  if(t.dataset.enter==='studySkipPin')studyActions.studySkipGo();
+  if(t.dataset.enter==='spDictSkipPin')spellRunActions.spDictSkipGo();
   if(t.dataset.enter==='morfoExtraRaiz')morfoActions.morfoExtraRaizCheck();
   if(t.dataset.enter==='prepWriteAll')prepActions.prepExamCheck();});
 render();
