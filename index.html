@@ -1106,7 +1106,104 @@ function dictadoPreviewHTML(text){
    solución"/"Entrar"/"Guardar PIN", que sigue leyendo i.value exactamente igual que antes).
    Cubierto por: suite completa en verde (ningún test comprobaba antes el HTML exacto de estos
    inputs de forma que se rompiera con este cambio). */
-const APP_VERSION='2026.10.23-5';
+/* v2026.10.24-1 -- 2 bugs reales avisados por David (2026-10-24):
+   66. "Si en la zona de pruebass le doy atras me saca del tutor y melleva al alumno". Cada tipo de
+   ejercicio tiene su propio botón de "← Salir"/"← Volver" (mexit en Mates, exQuit en Exámenes,
+   studyQuit/studyQuitOk en Teoría, morfoBack, prepBack, backList en Dictado, spDictQuit/spSentQuit
+   en Spelling, dictBack en el Diccionario inglés, y goHome/goToday/goMlist/goExams/goList en las
+   pantallas de "¿qué hacer ahora?" al terminar) y NINGUNO comprobaba si se estaba dentro de la
+   Zona de Pruebas (ui.testZoneBackup) -- así que, en vez de devolver al tutor (como sí hace "✕
+   Salir" del banner morado), llevaban a Julia de verdad (ui.role ya está en 'alumna' para simular
+   la prueba), dando la sensación de "me lleva al alumno". Arreglado centralizando el arreglo en el
+   listener de clicks que despacha TODAS las acciones (ver TEST_EXIT_ACTIONS más abajo): mientras
+   se está en una prueba, cualquiera de estos botones equivale a "✕ Salir" (pruebaExit()).
+   3 hallazgos reales de 5 rondas de revisión adversarial, todos corregidos:
+   - ALTO: "miniDone" ("Saltar este juego") no podía meterse en ese grupo genérico sin más, porque
+     esa misma acción también cierra los minijuegos-descanso que aparecen A MITAD de otro ejercicio
+     (Mates, Examen, Teoría, Dictado, Morfología, Spelling insertan uno cada 15 preguntas, o antes
+     si la ronda es corta) -- meterlo ahí hacía que probar casi cualquier ejercicio en la Zona de
+     Pruebas terminara de golpe la prueba entera en cuanto salía el primer descanso. Se trata
+     aparte: solo equivale a "✕ Salir" cuando el propio minijuego ES el ejercicio probado
+     (ui.mgame.returnScreen==='home', el único caso real, confirmado por grep).
+   - MEDIO: ese atajo de "miniDone" saltaba a pruebaExit() sin limpiar antes el setInterval de los
+     minijuegos "caza"/"puzzle" (g.timer), dejándolo huérfano corriendo para siempre -- como esos
+     dos minijuegos leen ui.mgame "en caliente" en cada tick, el intervalo fantasma se sumaba al de
+     cualquier partida real posterior de caza/puzzle, bajando la cuenta atrás al doble de velocidad
+     sin ningún aviso. Arreglado llamando a miniClearTimer(ui.mgame) antes de salir.
+   67. Bug relacionado, encontrado por la propia revisión adversarial (no avisado directamente por
+   David, pero con el mismo síntoma): ui.spHw/ui.spHwQuitAsk (el seguimiento de un deber de
+   Spelling REAL en curso) vive en "ui", no en "state", así que pruebaEnter()/pruebaExit() (que
+   solo hacían backup/restore de "state") lo dejaban intacto durante toda una prueba. Si el tutor
+   cambiaba a su rol a mitad de un deber real de Spelling de Julia (el botón de cabecera "Tutor/
+   Alumna" está siempre visible) y probaba "Spelling: escuchar/frases" en la Zona de Pruebas, la
+   ronda de PRUEBA se colaba en el deber REAL (spellFinish() solo mira "si existe ui.spHw", no si
+   es la misma lista), pudiendo cerrarlo con datos falsos y dejar al tutor en la pantalla real de
+   deberes sin pasar por pruebaExit(). Arreglado guardando ui.spHw/ui.spHwQuitAsk en pruebaEnter()
+   (vaciándolos mientras dura la prueba) y restaurándolos tal cual en pruebaExit().
+   Cubierto por tests nuevos: verify_prueba_exit_nav.js, verify_prueba_minigame_timer_leak.js,
+   verify_prueba_sphw_leak.js. Suite completa en verde salvo los 2 hallazgos pre-existentes ya
+   documentados (4º y 7º bloque de versiones anteriores), sin relación con este cambio.
+
+   68. Investigando por qué a David no le aparecen las fotos originales de los apuntes ni en su
+   propia vista de tutor ni en estudio (descartado ya que sea por mirar desde otro dispositivo --
+   confirma que usa un solo ordenador): se encontró que persist() (guarda TODO el estado, incluidas
+   las fotos en base64, en localStorage) atrapaba cualquier error con un catch vacío. Cada foto de
+   apuntes ocupa cientos de KB de base64 dentro del MISMO JSON que se guarda entero, y los
+   navegadores suelen limitar localStorage a unos 5-10MB por sitio -- si se llenaba, el guardado
+   fallaba en SILENCIO: el cambio de ese momento (texto, una foto nueva, lo que fuera) se perdía sin
+   ningún aviso en cuanto se cerraba o recargaba la pestaña, aunque un segundo antes se viera
+   perfectamente en pantalla. Esto explicaría justo el síntoma que describió David (el texto
+   extraído de la foto sí aparece -probablemente se guardó en un momento en que aún cabía- pero la
+   foto en sí, mucho más pesada, no). ARREGLADO de forma defensiva (no es la migración completa a
+   un almacenamiento más amplio -IndexedDB-, que es un cambio mayor, pendiente de valorar si hace
+   falta): ahora, si un guardado falla, se avisa (toast) la primera vez de esa racha de fallos (no
+   se repite en cada fallo consecutivo), con un mensaje distinto según el rol activo -- al tutor le
+   dice el motivo probable (sin espacio, demasiadas fotos) y qué hacer; a la alumna un aviso simple
+   pidiendo avisar al tutor. Vuelve a avisar tras un guardado bueno seguido de un fallo nuevo.
+   Revisión adversarial: 1 hallazgo real menor (latente, no disparable hoy) -- el aviso construía su
+   mensaje fuera del try/catch que protege la llamada a toast(), así que si algún día se llamara a
+   persist() antes de que "ui" exista de verdad en ese scope, un `typeof ui` sobre una variable en
+   zona muerta temporal (TDZ) podría lanzar ReferenceError sin capturar. Corregido metiendo también
+   esa parte dentro del try/catch. No se tocó ui.spHw, Cloud.mark()/Cloud.sync() ni ninguna de las 5
+   llamadas existentes a persist() (ninguna usa su valor de retorno, confirmado por la revisión).
+   Cubierto por tests nuevos: verify_persist_quota_warning.js. Suite completa en verde salvo los 2
+   hallazgos pre-existentes ya documentados, sin relación con este cambio.
+
+   69. Pedido por David: "déjame la opción de poder volver a subir las fotos en las que no hay
+   foto". Dos cambios en las vistas del tutor (ninguno en lo que ve Julia, que ya mostraba la foto
+   siempre que existiera -- ver 10º/20º bloque de versiones anteriores):
+   - exCompactView ("✅ Publicado", minimizada): antes, una tarjeta SIN ninguna foto guardada no
+     decía nada al respecto -- había que entrar en "✏️ Ver/editar" y fijarse. Ahora avisa ahí mismo
+     ("📷 Sin fotos de apuntes guardadas") con un botón directo ("📷 Subir foto", reutiliza la
+     acción exExpand ya existente) para ir a subir una sin tener que buscarlo. Aplica a cualquier
+     tipo de tarjeta, incluidos exámenes combinados.
+   - exEditView: el aviso ya existente solo saltaba si faltaban el texto Y la foto a la vez. El
+     caso real de David (el texto SÍ está guardado -se extrajo bien con la IA- pero la foto
+     original no, posiblemente por el guardado silencioso fallido que se arregló en el punto 68 de
+     arriba) no avisaba de nada. Nuevo aviso específico para ese caso ("A esta tarjeta le queda el
+     texto... pero no le queda ninguna foto ORIGINAL guardada"), solo para tarjetas de teoría
+     (mismo criterio que el aviso viejo, no aplica a exámenes combinados).
+   Revisión adversarial (2 rondas): 2 hallazgos reales en la 1ª ronda, ambos corregidos --
+   - ALTO: al aviso nuevo le faltaba exigir e.pool.length (igual que el viejo), así que saltaba
+     también en una tarjeta RECIÉN CREADA con solo texto pegado a mano, sin fotos ni preguntas
+     todavía -- un flujo normal de la app, no una foto perdida. Corregido añadiendo esa condición.
+   - MEDIO: e.notes.trim() sin proteger ante e.notes undefined/null podía romper el render entero.
+     Corregido con (e.notes||'').trim(), misma defensa que ya usa studyTheoryOrWarn.
+   La 2ª ronda, centrada solo en estos 2 arreglos, salió limpia -- encontró una inconsistencia de UX
+   de severidad baja, aceptada a propósito (si se publica una tarjeta y luego se borran TODAS sus
+   preguntas, exCompactView sigue avisando de "sin fotos" pero exEditView ya no explica nada al
+   entrar, porque el aviso nuevo exige pool.length>0 para no dar falsos positivos en tarjetas
+   recién creadas) -- caso raro (publicar y luego borrar todo el banco), no bloqueante, documentado
+   en el backlog por si se quiere pulir más adelante.
+   Cubierto por tests nuevos: verify_exphoto_missing_hint.js (14 comprobaciones: aviso nuevo en
+   Publicado con botón que apunta al id correcto, sin galería fantasma, no contradice la galería
+   real cuando sí hay fotos, aplica también a exámenes combinados; en editar, los 2 avisos nunca se
+   solapan, el nuevo cubre justo el caso de "texto sí, foto no", ninguno salta con foto presente,
+   ninguno aplica a exámenes combinados, y los 2 casos límite de la revisión -tarjeta recién
+   creada sin preguntas, y tarjeta con notes undefined- no disparan falsos positivos ni rompen el
+   render). Suite completa en verde salvo los 2 hallazgos pre-existentes ya documentados, sin
+   relación con este cambio. */
+const APP_VERSION='2026.10.24-3';
 /* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
    1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
       hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
@@ -1472,7 +1569,42 @@ function loadState(){
   return s;
 }
 let state=loadState();
-const persist=()=>{try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}};
+/* AVISO si falla el guardado en el navegador (2026-10-24, investigando por qué a David no le
+   aparecían fotos de apuntes): antes, si localStorage se quedaba sin espacio (algo real y fácil de
+   alcanzar -- cada foto de apuntes ocupa cientos de KB en base64 dentro del MISMO JSON que se
+   guarda aquí entero, y los navegadores suelen limitar esto a unos 5-10MB por sitio), este guardado
+   fallaba en SILENCIO: el cambio de ese momento (una foto nueva, texto editado, cualquier cosa) se
+   quedaba solo en memoria y se perdía sin ningún aviso en cuanto se cerraba o recargaba la pestaña,
+   aunque un segundo antes se viera perfectamente en pantalla -- el motivo por el que "el texto sí
+   aparece pero la foto no" sería justo que el texto cupiera en un guardado anterior más pequeño y
+   la foto (mucho más pesada) fuera la que hiciera que un guardado posterior ya no cupiera entero.
+   Ahora, si el guardado falla, se avisa una vez (no se repite en cada guardado fallido seguido,
+   para no inundar de avisos; se vuelve a avisar si hay un guardado bueno de por medio y luego
+   vuelve a fallar) con el motivo más probable y qué hacer. */
+let persistFailShown=false;
+const persist=()=>{
+  try{
+    localStorage.setItem(KEY,JSON.stringify(state));
+    persistFailShown=false;
+    return true;
+  }catch(e){
+    if(!persistFailShown){
+      persistFailShown=true;
+      /* todo este bloque dentro del mismo try/catch (revisión adversarial, 2026-10-24): si algún
+         día una edición llamara a persist()/save() antes de que "ui" exista de verdad en este
+         scope (hoy no pasa), "typeof ui" en una variable declarada más abajo con const/let lanza
+         ReferenceError (zona muerta temporal) en vez de dar 'undefined' -- justo el tipo de fallo
+         silencioso que este aviso pretende evitar, así que lo capturamos aquí también por si acaso. */
+      try{
+        const msg=(typeof ui!=='undefined'&&ui.role==='alumna')
+          ?'⚠️ No se ha podido guardar bien. Avisa a tu tutor o tutora.'
+          :'⚠️ No se ha podido guardar el último cambio: el navegador se ha quedado sin espacio (probablemente por demasiadas fotos de apuntes guardadas). Borra alguna foto antigua que ya no haga falta e inténtalo de nuevo.';
+        toast(msg);
+      }catch(e2){}
+    }
+    return false;
+  }
+};
 /* mientras la "Zona de pruebas" está activa (ui.testZoneBackup puesto, ver pruebaActions más
    abajo), CUALQUIER guardado se bloquea aquí -- no solo en disco (persist), sino también el aviso
    a la sincronización en la nube (Cloud.mark) -- para que nada de lo que se grabe de pega durante
@@ -3369,6 +3501,10 @@ function qCard(q,i){
   body+=`<label class="f" style="margin-top:6px"><small class="mute">Explicación (opcional)</small><input type="text" data-exq="e" data-i="${i}" value="${esc(q.e||'')}"></label>`;
   return `<div class="panel" style="${on?'':'opacity:.5'}"><div class="row" style="justify-content:space-between;margin-bottom:6px"><span><b>#${i+1}</b> <small class="mute">${q.t==='test'?'Test':'Redactada'}${q.fact?' · '+esc(q.fact):''}</small></span><span class="row"><label class="f" style="margin:0"><input type="checkbox" data-exq="on" data-i="${i}" ${on?'checked':''}> Incluir</label><button class="btn danger" data-act="exQDel" data-i="${i}">🗑</button></span></div>${body}</div>`;
 }
+/* pedido por David (2026-10-24, investigando el problema de fotos invisibles): antes, en la vista
+   minimizada ("✅ Publicado"), si una tarjeta no tenía ninguna foto guardada simplemente no se
+   decía nada -- había que entrar en "✏️ Ver/editar" y fijarse para darse cuenta. Ahora se avisa
+   aquí mismo, con un botón directo para subir una foto sin tener que ir a buscarlo. */
 function exCompactView(t,e){
   const act=e.pool.filter(q=>!q.off).length;
   const nph=(state.examFotos[e.id]||[]).length;
@@ -3383,7 +3519,7 @@ function exCompactView(t,e){
   <button class="btn danger" data-act="exDel" data-id="${esc(e.id)}">🗑</button>
   </span></div>
   <p class="mute" style="margin:8px 0 0">✅ Publicado: Julia ya puede ${e.isExam?'hacer este examen':'estudiar esta tarjeta de teoría'}. Minimizado para no llenar la pantalla si tienes varios a la vez.</p>
-  ${nph?`<div style="margin-top:8px">${examPhotosHTML(e.id)}</div>`:''}
+  ${nph?`<div style="margin-top:8px">${examPhotosHTML(e.id)}</div>`:`<p class="mute" style="margin:8px 0 0">📷 Sin fotos de apuntes guardadas · <button class="link" data-act="exExpand" data-id="${esc(e.id)}">📷 Subir foto</button></p>`}
   </div>${exPhotoOverlay(e.id)}`;
 }
 function exEditView(t,e){
@@ -3398,7 +3534,21 @@ function exEditView(t,e){
   <label class="f">Idioma<select data-exf="lang"><option value="auto" ${e.lang==='auto'?'selected':''}>El de los apuntes</option><option value="es" ${e.lang==='es'?'selected':''}>Español</option><option value="en" ${e.lang==='en'?'selected':''}>English</option></select></label></div>
   ${!e.isExam?`<label class="f">🎬 Vídeo explicando esta teoría (opcional — enlace de YouTube, Google Drive, Vimeo, etc.)<input type="text" data-exf="video" value="${esc(e.video||'')}" placeholder="Pega aquí el enlace del vídeo"></label>
   <small class="mute">Julia tendrá un botón para verlo cuando quiera mientras estudia esta tarjeta.${e.status==='ready'?' Puedes previsualizarlo exactamente como lo verá ella desde la 🧪 Zona de pruebas → Tarjeta de teoría (al estar ya publicada, se probará esta misma tarjeta).':' Publícala y luego podrás previsualizarlo exactamente como lo verá ella desde la 🧪 Zona de pruebas → Tarjeta de teoría.'}</small>`:''}
-  ${(!e.isExam&&e.pool.length&&!e.notes.trim()&&!(state.examFotos[e.id]||[]).length)?'<p class="msg wrong" style="margin-top:0">⚠️ Este tema ya tiene preguntas generadas pero no le queda ninguna foto ni texto de apuntes guardado (puede que se borrara una foto y se borrase también su texto). Julia no verá nada que estudiar antes de las preguntas hasta que vuelvas a subir la foto, el PDF o la presentación, o pegues el texto aquí abajo.</p>':''}
+  ${(!e.isExam&&e.pool.length&&!(e.notes||'').trim()&&!(state.examFotos[e.id]||[]).length)?'<p class="msg wrong" style="margin-top:0">⚠️ Este tema ya tiene preguntas generadas pero no le queda ninguna foto ni texto de apuntes guardado (puede que se borrara una foto y se borrase también su texto). Julia no verá nada que estudiar antes de las preguntas hasta que vuelvas a subir la foto, el PDF o la presentación, o pegues el texto aquí abajo.</p>'
+  /* pedido por David (2026-10-24): hasta ahora, si el TEXTO de los apuntes sí se había guardado
+     pero la foto original no (el caso real que estaba teniendo -- ver el arreglo de persist() en
+     el changelog), no se avisaba de nada aquí (el aviso de arriba solo salta si faltan las DOS
+     cosas). Julia podía seguir estudiando con el texto, pero sin la foto original -- este aviso
+     nuevo lo deja claro y recuerda que se puede volver a subir.
+     Revisión adversarial (2026-10-24), 2 hallazgos reales corregidos:
+     - ALTO: faltaba exigir e.pool.length (igual que el aviso de arriba) -- sin eso, saltaba
+       también en una tarjeta RECIÉN CREADA pegando solo texto a mano (sin subir foto nunca, sin
+       preguntas generadas todavía), que es un flujo normal y válido de la app, no una foto
+       perdida. Añadido e.pool.length a la condición, igual que el aviso viejo.
+     - MEDIO: `e.notes.trim()` sin proteger ante `e.notes` undefined/null (dato legado) podía
+       lanzar un TypeError y romper el render entero. Arreglado con `(e.notes||'').trim()`, misma
+       defensa que ya usa studyTheoryOrWarn para lo mismo. */
+  :(!e.isExam&&e.pool.length&&!(state.examFotos[e.id]||[]).length&&(e.notes||'').trim())?'<p class="msg wrong" style="margin-top:0">📷 A esta tarjeta le queda el texto de los apuntes, pero no le queda ninguna foto ORIGINAL guardada. Si quieres que Julia también pueda verla mientras estudia, vuelve a subirla aquí abajo.</p>':''}
   <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap">
   <label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Subir fotos de los apuntes<input type="file" accept="image/*" id="exPhotos" multiple hidden></label>
   <label class="btn" style="display:inline-flex;align-items:center;gap:6px">📄 Subir un PDF<input type="file" accept="application/pdf,.pdf" id="exPdf" multiple hidden></label>
@@ -6802,9 +6952,21 @@ const pickRand=arr=>arr&&arr.length?arr[Math.floor(Math.random()*arr.length)]:nu
    tarjeta de teoría, ver examActions.exProbar3). Compartida por los dos puntos de entrada: es la
    MISMA garantía de seguridad en los dos casos, nunca un camino paralelo. */
 function pruebaEnter(){
-  ui.testZoneReturn={tab:ui.tab,exId:ui.exId,exTemaId:ui.exTemaId,exAsigId:ui.exAsigId};
+  ui.testZoneReturn={tab:ui.tab,exId:ui.exId,exTemaId:ui.exTemaId,exAsigId:ui.exAsigId,spHw:ui.spHw,spHwQuitAsk:ui.spHwQuitAsk};
   ui.testZoneBackup=JSON.parse(JSON.stringify(state));
   ui.role='alumna';
+  /* hallazgo real de una 3ª ronda de revisión adversarial (2026-10-24): ui.spHw (el seguimiento
+     de un deber de Spelling REAL en curso -- a qué ronda va, etc.) vive en "ui", no en "state", así
+     que no se guardaba ni se vaciaba al entrar aquí. Si el tutor cambiaba a su rol a mitad de un
+     deber de Spelling real de Julia (el botón "Tutor/Alumna" de la cabecera está siempre visible,
+     incluso a mitad de un ejercicio) y luego probaba "Spelling: escuchar/frases" en la Zona de
+     Pruebas, spellFinish() colaba la ronda de PRUEBA dentro del deber real (solo mira "si existe
+     ui.spHw", no si es la misma lista) -- pudiendo acabar cerrando el deber real de Julia con datos
+     de la prueba, y mostrando sus botones reales (spHwNext/spHwFinishAll, fuera del control de
+     TEST_EXIT_ACTIONS por no ser ellos mismos botones de "salir de la prueba"). Se guarda aquí
+     (para restaurarlo en pruebaExit) y se vacía mientras dura la prueba, igual que ya se hace con
+     el resto de estados de ejercicio en curso. */
+  ui.spHw=null;ui.spHwQuitAsk=false;
 }
 const pruebaActions={
   pruebaStart(b){
@@ -6866,8 +7028,8 @@ const pruebaActions={
     /* vuelve a donde estaba el tutor al entrar (ver pruebaEnter); si por lo que sea no se guardó
        nada (p.ej. un "state" antiguo restaurado de un punto intermedio raro), se cae al mismo
        sitio de siempre (pestaña "🧪 Zona de pruebas") como ya hacía esta función. */
-    if(ret){ui.tab=ret.tab;ui.exId=ret.exId;ui.exTemaId=ret.exTemaId;ui.exAsigId=ret.exAsigId;}
-    else ui.tab='pruebas';
+    if(ret){ui.tab=ret.tab;ui.exId=ret.exId;ui.exTemaId=ret.exTemaId;ui.exAsigId=ret.exAsigId;ui.spHw=ret.spHw||null;ui.spHwQuitAsk=ret.spHwQuitAsk||false;}
+    else{ui.tab='pruebas';ui.spHw=null;ui.spHwQuitAsk=false;}
     ui.mrun=null;ui.study=null;ui.ex=null;ui.exres=null;ui.dict=null;ui.item=null;ui.morfo=null;
     ui.prep=null;ui.spRun=null;ui.mgame=null;ui.engdict=null;ui.answer='';ui.photo=null;ui.fix=null;
     ui.studyVideoOpen=false;
@@ -6875,6 +7037,37 @@ const pruebaActions={
   }
 };
 const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,prepActions,engDictActions,spellActions,spellRunActions,pruebaActions);
+/* bug real avisado por David (2026-10-24): "Si en la zona de pruebas le doy atrás me saca del
+   tutor y melleva al alumno". Causa: cada tipo de ejercicio tiene su propio botón de "← Salir"/
+   "← Volver"/"Atrás" (mexit en Mates, exQuit en Exámenes, studyQuit/studyQuitOk en Teoría,
+   morfoBack, prepBack, backList en Dictado, spDictQuit/spSentQuit en Spelling, dictBack en el
+   Diccionario inglés, y goHome/goToday/goMlist/goExams/goList en las pantallas de "¿qué hacer
+   ahora?" al terminar) y NINGUNO de ellos comprobaba si se estaba dentro de la Zona de Pruebas
+   (ui.testZoneBackup) -- así que, en vez de devolver al tutor (como sí hace el botón "✕ Salir"
+   del banner morado), estos botones llevaban a Julia de verdad: a la pantalla de inicio, al
+   listado de Matemáticas, a "Teoría y exámenes", etc., con el rol ya puesto en 'alumna' (así es
+   como simula la prueba), dando la sensación de "me lleva al alumno". Arreglado centralizando el
+   arreglo aquí, en el mismo sitio donde se despachan TODAS las acciones: mientras se está en una
+   prueba, cualquiera de estos botones de salir/volver hace exactamente lo mismo que "✕ Salir"
+   (pruebaExit(), que restaura el estado real y devuelve al tutor a la pantalla exacta de la que
+   entró) en vez de su comportamiento normal -- incluyendo saltarse el aviso nativo de "¿Seguro?
+   Perderás..." de mexit/exQuit, innecesario aquí porque pruebaExit() ya descarta sin preguntar
+   cualquier cosa hecha durante la prueba. ui.testZoneBackup NUNCA está puesto fuera de la Zona de
+   Pruebas, así que esto no cambia nada del comportamiento normal de Julia ni del tutor. NO se
+   incluyen aquí los botones de "cancelar, seguir" (studyQuitCancel, spHwQuitCancel) ni los de
+   "repetir/otra vez" (again, studyRepeat, mstart, spDictRepeat, spSentRepeat...), que deben seguir
+   funcionando con normalidad dentro de la prueba.
+   "miniDone" ("Saltar este juego ➜") se trata APARTE, no en este Set, porque esa misma acción es
+   también el botón para cerrar un minijuego-descanso que aparece A MITAD de otro ejercicio (Mates,
+   Examen, Teoría, Dictado, Morfología, Spelling todos insertan uno cada 15 preguntas, o siempre si
+   la ronda es más corta -- ver miniGameDue()) -- en ese caso endMiniGame() debe seguir devolviendo
+   a la pantalla del ejercicio en curso (returnScreen), NO salir de la prueba entera. Solo cuando el
+   minijuego ES el ejercicio que se está probando (kind "minijuego" de la Zona de Pruebas, lanzado
+   con returnScreen='home') debe equivaler a "✕ Salir" (hallazgo real de la revisión adversarial:
+   la primera versión de este arreglo metía "miniDone" en el Set genérico sin distinguir los dos
+   casos, y eso hacía que probar casi cualquier ejercicio en la Zona de Pruebas terminara de golpe
+   la prueba entera en cuanto aparecía el primer descanso de minijuego). */
+const TEST_EXIT_ACTIONS=new Set(['goHome','goToday','goMlist','goExams','goList','backList','mexit','exQuit','studyQuit','studyQuitOk','studyQuitResume','studyQuitDiscard','morfoBack','prepBack','spDictQuit','spSentQuit','spHwQuitResume','spHwQuitDiscard','dictBack']);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;
   /* "despierta" el audio del sonido de acierto/fallo en el primer click de lo que sea: en iOS/
      Safari un AudioContext solo se puede crear/reanudar dentro de un gesto del usuario, y algunas
@@ -6883,7 +7076,19 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(
      listener que despacha TODAS las acciones (synchronous, antes de cualquier await), se evita
      que el primer sonido se pierda por llegar tarde a crear el audio. */
   _fxAudioCtx();
-  const f=ALL[b.dataset.act];if(f)f(b,e);});
+  const act=b.dataset.act;
+  if(ui.testZoneBackup){
+    if(TEST_EXIT_ACTIONS.has(act))return pruebaActions.pruebaExit();
+    /* hallazgo real de una 2ª ronda de revisión adversarial: "caza" y "puzzle" usan setInterval
+       (g.timer) para su cuenta atrás, y leen ui.mgame "en caliente" en cada tick en vez de guardar
+       una referencia fija al juego. Saltar directo a pruebaExit() sin limpiar ese intervalo (como
+       sí hace endMiniGame() en el camino normal, vía miniClearTimer) lo deja huérfano y corriendo
+       para siempre -- en cuanto Julia (o otra prueba) tenga más adelante una partida real de
+       caza/puzzle, los dos intervalos corren a la vez y la cuenta atrás baja al doble de velocidad.
+       Se limpia aquí mismo antes de salir, igual que hace endMiniGame(). */
+    if(act==='miniDone'&&ui.mgame&&ui.mgame.returnScreen==='home'){miniClearTimer(ui.mgame);return pruebaActions.pruebaExit();}
+  }
+  const f=ALL[act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
   if(t.id==='exans'&&ui.ex){ui.ex.ans[ui.ex.i]=t.value;return;}
