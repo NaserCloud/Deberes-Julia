@@ -172,7 +172,10 @@ details summary{font-weight:800;cursor:pointer;min-height:44px;display:flex;alig
 <body>
 <header class="top">
   <button class="brand" data-act="goHome">📚 Deberes de Julia</button>
-  <nav class="role"><button data-act="setRole" data-role="alumna" class="on">👧 Alumna</button><button data-act="setRole" data-role="tutor">🧑‍🏫 Tutor</button></nav>
+  <div class="row" style="gap:10px;flex-wrap:nowrap">
+    <nav class="role"><button data-act="setRole" data-role="alumna" class="on">👧 Alumna</button><button data-act="setRole" data-role="tutor">🧑‍🏫 Tutor</button></nav>
+    <button class="btn" data-act="logout" title="Cerrar sesión" style="padding:8px 12px;min-height:40px">🚪</button>
+  </div>
 </header>
 <main id="app"></main>
 <div id="toast"></div>
@@ -1519,8 +1522,106 @@ function dictadoPreviewHTML(text){
    Cubierto por test nuevo: verify_sp_probar.js (botón/alta en Zona de Pruebas) y
    verify_no_entendido.js (otra voz + no entendido en Spelling y Dictado + joinChunks + el hallazgo
    de la ronda 1, con test de regresión dedicado). Suite completa (45 archivos verify_*.js) en
-   verde, salvo las exclusiones pre-existentes ya documentadas. */
-const APP_VERSION='2026.11.02-2';
+   verde, salvo las exclusiones pre-existentes ya documentadas.
+
+   79. (2026-11-02) Pedido por David: "hay que poner seguridad, necesito que pongas user y pass en
+   la app, que se dan de alta desde el tutor. Para Julia el user sera Julia y el pass 2026, para el
+   tutor David y la contraseña que ya tiene". Nueva pantalla de login (renderLogin), AHORA LA
+   PRIMERA pantalla de toda la app (render() se corta en seco con "if(!ui.authUid)return
+   renderLogin();" antes que nada más, incluida la cabecera -- confirmado con David: "la primera
+   pantalla para entrar sera la de user y pass, y despues de entrar en esta pantalla que todo siga
+   igual"). Cuentas en state.users (IK, sincronizado entre dispositivos): la de tutor NUNCA guarda
+   contraseña propia -- su contraseña sigue siendo state.pin, el PIN de tutor de toda la vida, tal
+   cual pidió David; las de alumno/a sí llevan su propia contraseña numérica (4-8 dígitos),
+   gestionable desde el nuevo panel "🔐 Usuarios y contraseñas" de Ajustes (añadir/cambiar usuario/
+   cambiar contraseña/borrar, con el candado de no poder borrar la última cuenta de alumno/a que
+   quede -- confirmado con David: pantalla de gestión en Ajustes). La sesión se recuerda en el
+   dispositivo (AUTH_KEY, una clave de localStorage DISTINTA de la de "state", a propósito: no se
+   sincroniza entre dispositivos, cada uno recuerda SU PROPIA sesión) hasta pulsar el nuevo botón
+   "🚪" de la cabecera -- confirmado con David: recordar sesión en el dispositivo. El botón de
+   logout respeta el mismo candado que ya tenía el toggle Alumna/Tutor con la Zona de Pruebas
+   (sale de la prueba primero, cierra sesión de verdad al 2º toque).
+   Revisión adversarial -- 5 rondas, 4 con hallazgo real (todos en el mismo sitio, Cloud.
+   repairUsers(), la función que repara state.users justo después de que la fusión genérica por id
+   la combine entre dispositivos -- "users" es nuevo en la lista IK y necesitaba invariantes que
+   esa fusión genérica no garantiza por sí sola), la 5ª limpia:
+   - Ronda 1 (ALTO): un borrado concurrente de 2 cuentas de alumna DISTINTAS en 2 dispositivos
+     (cada borrado válido en su momento, porque en cada uno quedaba otra) podía, al fusionar las 2
+     tumbas, dejar 0 cuentas de alumna -- Julia se habría quedado sin forma de entrar. (MEDIO, en
+     la misma ronda) un renombrado concurrente de 2 cuentas DISTINTAS al mismo nombre nuevo podía
+     dejar 2 cuentas con el mismo usuario, una inalcanzable por login (que busca por nombre,
+     primera coincidencia). Arreglado reinyectando una alumna de fábrica si no queda ninguna, y
+     deduplicando por nombre (gana el "upd" más reciente).
+   - Ronda 2 (ALTO): el chequeo "¿queda alguna alumna?" se hacía ANTES de deduplicar por nombre, así
+     que una colisión de nombre CRUZADA entre el tutor y la única alumna (el tutor se renombra a sí
+     mismo igual que ella, en un dispositivo sin sincronizar con otro que la tenía con ese nombre)
+     podía dejar a la deduplicación llevarse esa alumna por delante sin que nadie lo revisara
+     después. Arreglado moviendo ese chequeo a DESPUÉS de deduplicar.
+   - Ronda 3 (CRÍTICO): la alumna reinyectada usaba siempre el nombre fijo "Julia" sin comprobar si
+     ya lo tenía otro superviviente (p.ej. el tutor, recién ganador de la colisión de la ronda 2) --
+     quedaban 2 "Julia" a la vez, y como la reinyectada siempre llevaba un "upd" recién hecho, EN LA
+     SIGUIENTE sincronización ella ganaba esa colisión y tumbaba al tutor, dejando a David sin
+     ninguna cuenta. Arreglado calculando un nombre libre antes de reinyectar ("Julia", o "Julia
+     (2)", "Julia (3)"... si choca), para que la reinyección nunca pueda desalojar a nadie.
+   - Ronda 4 (CRÍTICO): el desempate de nombres duplicados por "upd más alto" a secas (sin mirar el
+     rol) seguía dejando al tutor expuesto a perder una colisión de nombre con una alumna si el
+     "upd" le caía en contra -- sin red de seguridad propia (solo la alumna tenía la de "siempre
+     debe quedar alguna"). Arreglado dando prioridad ABSOLUTA al rol de tutor en el desempate: el
+     tutor nunca puede ser el lado entumbado de una colisión de nombre, gane o pierda por "upd".
+   - Ronda 5: limpia, sin hallazgos reales partiendo de un estado alcanzable por uso normal de la
+     app (dos cuentas de tutor a la vez, por ejemplo, no es alcanzable desde la UI actual -- no hay
+     forma de crear una 2ª).
+   Cubierto por test nuevo: verify_login.js (19 bloques): migración de cuentas (incluida la
+   autocuración si llega sin ninguna alumna por cualquier otro camino, en loadState()), login en
+   todas sus variantes (éxito, fallo, usuario insensible a mayúsculas, primer uso sin PIN de
+   tutor), persistencia de sesión entre recargas simuladas (incluida una sesión ya inválida por
+   cuenta borrada/rol cambiado), logout (incluido el candado de la Zona de Pruebas), gestión de
+   cuentas desde Ajustes (añadir/renombrar/cambiar contraseña/borrar, con el candado de la última
+   alumna), y los 5 escenarios de carrera multi-dispositivo de las 4 rondas con hallazgo real,
+   ejecutando el código real de Cloud.merge()/repairUsers() (no solo teóricos). Suite completa (44
+   archivos verify_*.js) en verde, salvo las exclusiones pre-existentes ya documentadas.
+   80. (2026-11-02) Pedido por David: "y sigue sin sonar el sonido de que lo ha hecho mal o bien la
+   alumna. Me puedes tambien dar un lista de sonidos en la app que lo pueda elegir para si falla o
+   si acierta???". Dos partes:
+   1) Investigación del "no suena nada": repasado otra vez chime()/playApplause()/playSadTrombone()/
+   _fxAudioCtx() (sin encontrar ninguna condición nueva que los silencie, igual que en la
+   investigación anterior del 2026-10-25) y, esta vez, probado también en un Chromium real headless
+   (no solo en los tests simulados con stubs): login, navegación a Ajustes y pulsar el botón de
+   prueba -- el AudioContext se crea en estado "running" y las 16 ráfagas de ruido del aplauso más
+   los 4 osciladores del trombón se programan sin ningún error. No se ha encontrado ningún bug de
+   código que explique un silencio total en TODAS partes; dado el historial de esta sesión (riesgo
+   de sincronización de Google Drive revirtiendo el archivo a versiones antiguas, documentado más
+   arriba), lo más probable es una pestaña con el código viejo cargado sin recargar del todo, o algo
+   fuera del alcance del código (volumen del sistema, silencio físico, salida por Bluetooth).
+   2) HECHO -- lista de sonidos seleccionables: FX_SOUND_PACKS/FX_SOUND_PACK_ORDER, 4 packs
+   elegibles desde Ajustes (nuevo <select data-set="fxSoundPack">, guardado en
+   state.settings.fxSoundPack): "👏 Aplauso y trombón" (el actual, sigue siendo el valor por
+   defecto -- DEF_SETTINGS.fxSoundPack -- para no cambiarle el sonido a nadie que no toque nada en
+   Ajustes), "🎵 Dos notas suaves y tono grave" (reconstrucción del diseño original, v2026.10.21-5),
+   "🎶 Acorde ascendente y doble golpe" (reconstrucción del diseño intermedio, v2026.10.22-4) y
+   "🔔 Campanita y zumbido" (nuevo). chime(ok) elige el pack guardado vía fxPack() (con fallback al
+   pack "aplauso" si el valor guardado falta o no es ninguno de los 4 -- cubre datos antiguos de
+   antes de este cambio). El antiguo botón único "▶️ Probar sonido de acierto/fallo" se divide en
+   dos ("▶️ Probar acierto"/"▶️ Probar fallo", tutorActions.testFxOk/testFxFail) para poder oír cada
+   sonido del pack elegido por separado sin esperar al otro; siguen sonando SIEMPRE, sin mirar el
+   interruptor "🔊 Sonido de acierto/fallo" (son una herramienta de prueba), y avisan con un mensaje
+   claro si el navegador no soporta Web Audio.
+   Revisión adversarial: ejecutada con un agente independiente, sin hallazgos reales confirmados
+   (comprobado con código real, no solo en teoría): state.settings undefined/null, fxSoundPack con
+   valores raros (null/''/0/un id inexistente/ausente por completo en datos antiguos), un pack de
+   varias notas fallando a mitad de sonar (los try/catch ya existentes de playTone/playSweep/
+   playNoiseBurst más el try/catch nuevo de chime() lo cubren sin propagar nada), la Zona de Pruebas
+   (el cambio de pack durante una prueba se descarta al salir, igual que el resto de
+   state.settings, sin necesitar tratamiento especial), la sincronización entre dispositivos
+   (fxSoundPack viaja dentro de la clave "settings", ya sincronizada como objeto completo, sin
+   fusión especial necesaria) y que no quedara ninguna llamada a la antigua testFxSound() ni a
+   playApplause()/playSadTrombone() fuera de la definición del propio pack "aplauso".
+   Cubierto por tests: verify_test_fxsound_button.js (reescrito: los 4 packs sonando lo que deben,
+   tanto en los botones de prueba como en chime(), el interruptor de Ajustes respetado solo por
+   chime() y nunca por los botones de prueba, y el valor por defecto) y verify_fxpack_edge_cases.js
+   (nuevo, de la revisión adversarial: los casos límite de arriba). Suite completa (49 archivos
+   verify_*.js) en verde, salvo las exclusiones pre-existentes ya documentadas. */
+const APP_VERSION='2026.11.02-4';
 /* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
    1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
       hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
@@ -1856,13 +1957,30 @@ const APP_VERSION='2026.11.02-2';
    aun así sale un minijuego una vez, a mitad de ronda, para que ninguna ronda se quede sin
    ninguno. */
 const KEY='deberesJulia.v1';
+/* pedido por David (2026-11-02): "hay que poner seguridad, necesito que pongas user y pass en la
+   app, que se dan de alta desde el tutor". AUTH_KEY guarda, en SU PROPIA clave de localStorage
+   (nunca dentro de "state", que es lo único que se sincroniza entre dispositivos vía Cloud), qué
+   cuenta ha iniciado sesión en ESTE dispositivo concreto -- a propósito así: si Julia inicia sesión
+   en el iPad y el tutor en su Mac, cada dispositivo recuerda SU PROPIA sesión sin pisar la del
+   otro (si viviera dentro de "state", la sincronización haría que iniciar sesión en un sitio
+   cerrara sin querer la sesión del otro). No hay contraseñas por separado para iniciar sesión: la
+   cuenta de tutor usa siempre el PIN de tutor ya existente (state.pin, el mismo de toda la vida,
+   el que ya se usa en todos los "pide el PIN del tutor" de la app) como su contraseña -- así
+   "David" entra con el PIN que ya tenía, tal cual pidió David, sin tener que cambiar nada ni crear
+   una contraseña nueva. Las cuentas de alumno/a (Julia y cualquiera que se añada después) sí
+   llevan su propia contraseña guardada en state.users (ver loadState/migración), porque no existe
+   ningún "PIN de alumna" compartido como el de tutor. */
+const AUTH_KEY='deberesJulia.session.v1';
+function loadAuth(){try{const a=JSON.parse(localStorage.getItem(AUTH_KEY)||'null');return(a&&a.uid&&a.role)?a:null;}catch(e){return null;}}
+function saveAuth(a){try{localStorage.setItem(AUTH_KEY,JSON.stringify(a));}catch(e){}}
+function clearAuth(){try{localStorage.removeItem(AUTH_KEY);}catch(e){}}
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
-const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,fxSound:true,voice:'',spVoice:'',screenSecPerOk:26,screenCapMin:45};
+const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,fxSound:true,fxSoundPack:'aplauso',voice:'',spVoice:'',screenSecPerOk:26,screenCapMin:45};
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
-  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},exEjemplos:{},studyProgress:{},studyHist:{},tutorNotes:'',notas:[],notasAlumna:[],asignaturas:[],temas:[],spelling:[],morfos:[],miniGameEvery:15,engDictCache:{},prepPool:{},spellProgress:{}};
+  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},exEjemplos:{},studyProgress:{},studyHist:{},tutorNotes:'',notas:[],notasAlumna:[],asignaturas:[],temas:[],spelling:[],morfos:[],miniGameEvery:15,engDictCache:{},prepPool:{},spellProgress:{},users:null};
   s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-6.1-sol'},s.ai||{});
   if(s.ai.visionModel==='gpt-4o'||s.ai.visionModel==='gpt-5-chat-latest')s.ai.visionModel='gpt-6.1-sol'; // migración automática: OpenAI retiró gpt-5-chat-latest, pasamos a todo el mundo a gpt-6.1-sol sin tener que tocar nada
   s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
@@ -1883,6 +2001,40 @@ function loadState(){
      pueden guardar y borrar una a una. */
   if(!Array.isArray(s.notas))s.notas=[];
   if(!s.notas.length&&s.tutorNotes&&String(s.tutorNotes).trim())s.notas=[{id:'n0'+Date.now().toString(36),text:String(s.tutorNotes).trim(),date:new Date().toISOString()}];
+  /* migración: usuario y contraseña (pedido por David, 2026-11-02). Si todavía no hay NINGUNA
+     cuenta creada, se dan de alta las 2 que pidió, tal cual: "Julia"/"2026" (alumna) y "David"
+     (tutor -- sin contraseña propia guardada aquí: la suya sigue siendo s.pin, el PIN que ya
+     tuviera de antes, para no obligarle a crear una contraseña nueva ni duplicarla en dos sitios
+     distintos que luego pudieran desincronizarse). Ids FIJOS a propósito (mismo motivo que
+     asignaturas/temas arriba): si esto corre en dos dispositivos sin haber sincronizado todavía
+     (p.ej. el Mac de David y el iPad de Julia, los dos actualizándose a la vez a esta versión),
+     los dos crean EXACTAMENTE los mismos 2 registros en vez de 4 duplicados que luego habría que
+     fusionar a mano. No se puede usar uid() aquí (todavía no está definido en este punto del
+     script -- loadState() se ejecuta antes). */
+  if(!Array.isArray(s.users)||!s.users.length){
+    s.users=[{id:'u-tutor',user:'David',role:'tutor'},{id:'u-alumna',user:'Julia',pass:'2026',role:'alumna'}];
+  }
+  /* autocuración (hallazgo REAL de la revisión adversarial, 2026-11-02, ver también
+     Cloud.repairUsers()): el chequeo de arriba (!s.users.length) solo cubre el caso de un array
+     vacío o inexistente, pero NO cubre el caso de un array con cosas pero SIN NINGUNA cuenta de
+     alumno/a -- algo que sí puede pasar de verdad: dos dispositivos que borran cuentas de alumna
+     DISTINTAS casi a la vez (cada borrado válido en su propio dispositivo, porque en cada uno
+     queda al menos otra) pueden, al fusionar sus borrados, dejar 0 cuentas de alumna entre los
+     dos. Cloud.repairUsers() ya corrige esto en cuanto se sincroniza con otro dispositivo, pero
+     este chequeo aquí es la misma red de seguridad para CUALQUIER otro camino por el que state
+     pudiera llegar sin ninguna alumna (una copia de seguridad antigua restaurada a mano, datos
+     tocados directamente en localStorage, etc.) -- mismo id fijo 'u-alumna' que la migración de
+     arriba, para que si pasa a la vez en dos dispositivos sin haber sincronizado, ambos creen
+     exactamente el mismo registro en vez de duplicados. */
+  if(!s.users.some(u=>u.role==='alumna')){
+    // mismo cuidado que Cloud.repairUsers() (ver su comentario, 3ª ronda de revisión adversarial):
+    // nunca reinyectar con un nombre que ya esté en uso por otra cuenta existente, para no crear
+    // una colisión de nombre nueva aquí mismo.
+    const takenNames=new Set(s.users.map(u=>(u.user||'').toLowerCase()));
+    let defName='Julia',dn=2;
+    while(takenNames.has(defName.toLowerCase())){defName='Julia ('+dn+')';dn++;}
+    s.users.push({id:'u-alumna',user:defName,pass:'2026',role:'alumna'});
+  }
   return s;
 }
 let state=loadState();
@@ -1954,7 +2106,14 @@ function undoLast(){
   ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;
   render();toast('↩️ Última acción deshecha');
 }
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,spCheckedText:null,spOrigWords:null,spHwQuitAsk:false,morfoEditId:null,morfoDraft:null,morfoGenBusy:false,taskAdd:null,testZoneBackup:null};
+const ui={authUid:null,role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,spCheckedText:null,spOrigWords:null,spHwQuitAsk:false,morfoEditId:null,morfoDraft:null,morfoGenBusy:false,taskAdd:null,testZoneBackup:null};
+/* pedido por David (2026-11-02): "hay que poner seguridad... que se dan de alta desde el tutor".
+   ui.authUid guarda el id de la cuenta (state.users) que ha iniciado sesión en ESTE arranque de la
+   app -- null significa "nadie ha iniciado sesión todavía en esta carga de la página" y hace que
+   render() muestre la pantalla de login en vez de la app (ver render()/renderLogin() más abajo).
+   Se recupera de AUTH_KEY (ver más arriba) al arrancar, para no pedir usuario/contraseña en cada
+   recarga (ver restoreAuth(), cerca del final del script, llamada justo antes del render() inicial
+   -- tiene que ir DESPUÉS de que "state" y "ui" ya existan). */
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -2047,9 +2206,28 @@ function playSadTrombone(){
   playSweep(265,195,0.17,0.4,'sawtooth',0.24);
   playSweep(235,130,0.55,0.62,'sawtooth',0.28);
 }
+/* Pedido por David (2026-11-02): "dame tambien una lista de sonidos en la app que lo pueda
+   elegir para si falla o si acierta". FX_SOUND_PACKS: un "pack" por cada diseño de sonido
+   seleccionable desde Ajustes. A propósito, los 3 primeros son los 3 diseños de sonido que la
+   app ya ha tenido en algún momento de esta sesión (reconstruidos a partir de su descripción en
+   el changelog, ya que el código de las versiones anteriores a la actual se sustituyó por
+   completo cada vez): el original -v2026.10.21-5, "dos notas agudas suaves"/"un tono grave
+   largo"-, el de en medio -v2026.10.22-4, "acorde ascendente de 4 notas"/"doble golpe grave"- y
+   el actual -v2026.10.23-4, aplauso/trombón-, que sigue siendo el valor por defecto
+   (DEF_SETTINGS.fxSoundPack) para no cambiarle el sonido a nadie que no haya tocado nada en
+   Ajustes. Se añade un 4º pack nuevo (campana/zumbido) para dar algo más de variedad. Cada pack
+   define ok()/fail(); chime(ok) elige el pack guardado en state.settings.fxSoundPack. */
+const FX_SOUND_PACKS={
+  aplauso:{label:'👏 Aplauso y trombón (el actual)',ok:()=>playApplause(),fail:()=>playSadTrombone()},
+  suave:{label:'🎵 Dos notas suaves y tono grave',ok:()=>{playTone(880,0.12,0,'sine',0.2);playTone(1175,0.16,0.1,'sine',0.2);},fail:()=>{playTone(180,0.5,0,'sine',0.24);}},
+  acorde:{label:'🎶 Acorde ascendente y doble golpe',ok:()=>{playTone(440,0.18,0,'triangle',0.26);playTone(554,0.18,0.09,'triangle',0.26);playTone(659,0.18,0.18,'triangle',0.26);playTone(880,0.3,0.27,'triangle',0.3);},fail:()=>{playTone(140,0.22,0,'square',0.28);playTone(110,0.32,0.18,'square',0.3);}},
+  campana:{label:'🔔 Campanita y zumbido',ok:()=>{playTone(1046.5,0.14,0,'sine',0.24);playTone(1318.5,0.24,0.09,'sine',0.24);},fail:()=>{playTone(92,0.13,0,'square',0.26);playTone(86,0.13,0.08,'square',0.26);playTone(80,0.2,0.16,'square',0.26);}}
+};
+const FX_SOUND_PACK_ORDER=['aplauso','suave','acorde','campana'];
+function fxPack(){const id=state.settings&&state.settings.fxSoundPack;return FX_SOUND_PACKS[id]||FX_SOUND_PACKS.aplauso;}
 function chime(ok){
   if(!state.settings||state.settings.fxSound===false)return;
-  if(ok)playApplause();else playSadTrombone();
+  try{const p=fxPack();(ok?p.ok:p.fail)();}catch(e){}
 }
 /* contador del día de "tiempo de pantalla ganado" (pedido por David, 2026-10-23): un simple nº de
    aciertos de hoy, SIN tope aplicado aquí -- el tope (state.settings.screenCapMin) se aplica solo
@@ -2276,7 +2454,7 @@ const Cloud=(()=>{
      conjunto. Los borrados se recuerdan aparte (itomb, un pequeño registro de "id borrado en tal
      momento") para que un elemento borrado en un dispositivo no reaparezca al sincronizar con otro
      que todavía lo tenía. */
-  const IK=['examenes','tareas','asignaturas','temas','notas','notasAlumna','spelling','morfos'];
+  const IK=['examenes','tareas','asignaturas','temas','notas','notasAlumna','spelling','morfos','users'];
   const hdr={apikey:SB_KEY,'Content-Type':'application/json'};
   const part=k=>{if(k==='ai'){const o=Object.assign({},state.ai);delete o.key;return o;}if(k==='settings'){const o=Object.assign({},state.settings);delete o.voice;delete o.spVoice;return o;}return state[k];};
   const js=k=>JSON.stringify(part(k)===undefined?null:part(k));
@@ -2443,6 +2621,98 @@ const Cloud=(()=>{
       out.ses=SS;
       return changed;
     },
+    /* arreglo de invariantes de "users" tras la fusión genérica de mergeItems (hallazgo REAL de la
+       revisión adversarial antes de entregar el login, 2026-11-02): mergeItems fusiona por "unión
+       de ids + tumbas" (ver comentario de arriba), lo cual es correcto para exámenes/temas/etc,
+       pero "users" tiene 2 invariantes que esa unión genérica NO garantiza por sí sola:
+       1) SIEMPRE tiene que quedar al menos 1 cuenta de alumno/a -- userDelAlumna() solo lo
+          comprueba contra EL ESTADO LOCAL de cada dispositivo por separado, así que dos
+          dispositivos que borran cuentas de alumna DISTINTAS casi a la vez (cada borrado, válido
+          en su propio dispositivo en ese momento, porque en cada uno queda al menos otra) pueden
+          acabar, tras fusionar las dos tumbas, con CERO cuentas de alumna -- Julia se quedaría sin
+          forma de entrar. Reproducido y confirmado por la revisión con el código real.
+       2) Dos cuentas nunca deberían compartir el mismo usuario (sin distinguir mayúsculas) --
+          userSetUser() también comprueba solo contra el estado local, así que renombrar DOS
+          cuentas distintas al mismo nombre nuevo en dos dispositivos a la vez también pasa el
+          chequeo en cada uno por separado, y tras fusionar quedan 2 cuentas con el mismo usuario
+          (login() se queda con la primera que encuentra, la otra queda inalcanzable por nombre).
+       Se repara aquí, justo después de que mergeItems ya haya fusionado "users", de forma
+       DETERMINISTA e IDÉNTICA en los dos dispositivos (mismo resultado en ambos lados, para que la
+       próxima sincronización converja en vez de "pelear" entre reparaciones distintas):
+       - cuenta de alumna reinyectada: SIEMPRE con el mismo id fijo 'u-alumna' (igual que la
+         migración de loadState()) -- si los dos dispositivos reparan esto a la vez, usan el mismo
+         id y no se duplican entre sí al volver a sincronizar.
+       - duplicados por nombre: se queda con el "upd" más alto (el cambio más reciente de verdad);
+         en empate exacto, con el id que ordene antes alfabéticamente (mismo criterio en los dos
+         dispositivos, nunca Math.random ni Date.now, que darían resultados distintos en cada uno).
+         Los descartados se "entumban" (igual que un borrado normal) para que no puedan resucitar
+         en una fusión posterior con un 3er dispositivo que todavía los tuviera. */
+    repairUsers(out){
+      const arr=(state.users||[]).slice();
+      let repaired=false;
+      const byName={};
+      arr.forEach(u=>{const k=(u.user||'').toLowerCase();(byName[k]=byName[k]||[]).push(u);});
+      const s=state.sync;s.itomb=s.itomb||{};const tomb=s.itomb.users=s.itomb.users||{};
+      const keep=[];
+      Object.values(byName).forEach(list=>{
+        if(list.length<2){keep.push(list[0]);return;}
+        /* HALLAZGO REAL de una 4ª ronda de revisión adversarial (2026-11-02), la misma gravedad que
+           la 3ª: el desempate por "upd" más alto a secas, SIN mirar el rol, significa que en una
+           colisión de nombre entre el tutor y una alumna, quien gane depende solo de qué
+           dispositivo sincronizó más tarde -- así que en la mitad de los casos (según cómo caigan
+           los "upd" de cada lado) el TUTOR podía ser el que se entumbara, quedando SIN NINGUNA
+           cuenta utilizable (al contrario que una alumna, que si pierde siempre tiene la red de
+           seguridad de abajo que reinyecta una de fábrica -- el tutor nunca tuvo esa red, porque
+           solo existe uno y no tiene sentido "reinyectar" uno de fábrica con una contraseña que no
+           sería la real). Arreglado dándole SIEMPRE prioridad absoluta al rol "tutor" en el
+           desempate, pase lo que pase con los "upd": el tutor nunca puede perder una colisión de
+           nombre y quedar entumbado, solo puede "ganarle" el nombre a quien choque con él (que,
+           si es una alumna, dispara la red de seguridad de abajo igual que cualquier otro caso de
+           "ya no queda ninguna alumna"). Determinista e idéntico en los dos dispositivos (el rol no
+           cambia según quién mire, al revés que el reloj de cada uno). */
+        list.sort((a,b)=>{
+          if((a.role==='tutor')!==(b.role==='tutor'))return a.role==='tutor'?-1:1;
+          return (b.upd||0)-(a.upd||0)||(a.id<b.id?-1:1);
+        });
+        keep.push(list[0]);
+        list.slice(1).forEach(dupe=>{tomb[dupe.id]=Math.max(tomb[dupe.id]||0,Date.now());repaired=true;});
+      });
+      /* HALLAZGO REAL de una 2ª ronda de revisión adversarial (2026-11-02): la 1ª versión de esta
+         función comprobaba "¿queda alguna alumna?" ANTES de deduplicar por nombre -- así que si la
+         deduplicación se llevaba por delante justo la ÚNICA cuenta de alumna que quedaba (p.ej. el
+         tutor se renombra a sí mismo con el mismo nombre que la alumna en un dispositivo, sin haber
+         sincronizado con otro que todavía tenía a la alumna con ese mismo nombre; `usersPanelHTML`
+         deja renombrar al tutor sin ninguna restricción de que no coincida con una alumna de OTRO
+         dispositivo), nadie volvía a comprobarlo después y la app podía quedarse sin ninguna cuenta
+         de alumna igualmente -- el mismo síntoma que esta función pretendía arreglar. Por eso el
+         chequeo va aquí, DESPUÉS de "keep" ya resuelto, nunca antes. */
+      if(!keep.some(u=>u.role==='alumna')){
+        /* HALLAZGO REAL de una 3ª ronda de revisión adversarial (2026-11-02), más grave todavía
+           que el de la 2ª: reinyectar siempre con el nombre fijo "Julia" podía CHOCAR con un
+           superviviente que ya se hubiera quedado ese mismo nombre en "keep" de arriba (p.ej. el
+           tutor, que acaba de "ganar" esa colisión de nombre en este mismo repaso -- ver el
+           comentario de la 2ª ronda). Como esa colisión nueva no se resolvía aquí mismo, quedaban
+           2 cuentas con el mismo nombre ("Julia" del tutor + "Julia" reinyectada) hasta la
+           SIGUIENTE sincronización -- y como la reinyectada siempre lleva un upd "recién hecho"
+           (Date.now()), en esa siguiente pasada SIEMPRE ganaba ella la colisión, tumbando a quien
+           chocara con ella... incluido el TUTOR, dejando a David sin ninguna cuenta. Se arregla
+           eligiendo para la reinyección un nombre que NUNCA pueda chocar con nadie que ya
+           sobreviva en "keep" en este mismo repaso (normalmente "Julia" tal cual, sin tocar nada;
+           solo si eso colisiona, se prueba "Julia (2)", "Julia (3)"... hasta encontrar uno libre) --
+           así la cuenta reinyectada nunca puede desalojar a NADIE, ni ahora ni en una pasada
+           futura, resolviendo la colisión en el momento en vez de dejársela a la siguiente ronda. */
+        const taken=new Set(keep.map(u=>(u.user||'').toLowerCase()));
+        let name='Julia',n=2;
+        while(taken.has(name.toLowerCase())){name='Julia ('+n+')';n++;}
+        keep.push({id:'u-alumna',user:name,pass:'2026',role:'alumna',upd:Date.now()});
+        repaired=true;
+      }
+      if(repaired){
+        state.users=keep.slice().sort(byIdAsc);
+        out.iarr.users=state.users;out.itomb.users=tomb;
+      }
+      return repaired;
+    },
     merge(rv){
       const s=state.sync,first=!s.init,out={v:1,t:{},d:{},history:[],hclear:0,ses:[],iarr:{},itomb:{}};let changed=false;
       const localD=state.dictados.slice();let adoptedD=false;
@@ -2474,7 +2744,15 @@ const Cloud=(()=>{
       s.sj=state.sesiones.map(x=>x.id+':'+x.upd).join(',');
       s.hclear=hc;s.hj=H.map(h=>h.id).join(',');out.history=H;out.hclear=hc;
       IK.forEach(key=>{if(C.mergeItems(key,rv,out))changed=true;});
-      const allP=K.every(k=>pristine(k,part(k)))&&!state.history.length&&!state.sesiones.length&&IK.every(k=>!state[k].length);
+      if(C.repairUsers(out))changed=true;
+      /* "users" (cuentas de usuario/contraseña, ver loadState) SIEMPRE tiene al menos 2 elementos
+         de fábrica (David/Julia, ver migración) -- a diferencia del resto de IK, nunca está
+         realmente "vacío", así que no cuenta para decidir si el dispositivo está "limpio, sin nada
+         real todavía" (si contara, allP sería SIEMPRE false, incluso en una instalación recién
+         estrenada sin ni un dictado, y se perdería el "skip" que evita sincronizar de más en ese
+         caso). Se excluye aquí a propósito, igual que "pin" tiene su propia regla aparte en
+         pristine() en vez de usar la genérica. */
+      const allP=K.every(k=>pristine(k,part(k)))&&!state.history.length&&!state.sesiones.length&&IK.every(k=>k==='users'||!state[k].length);
       const rvCmp=rv?{v:rv.v,t:rv.t,d:rv.d,history:rv.history||[],hclear:rv.hclear||0,ses:(rv.ses||[]).slice().sort((a,b)=>a.id<b.id?-1:1),
         iarr:IK.reduce((o,k)=>{o[k]=((rv.iarr&&rv.iarr[k])||[]).slice().sort(byIdAsc);return o;},{}),
         itomb:IK.reduce((o,k)=>{o[k]=(rv.itomb&&rv.itomb[k])||{};return o;},{})}:null;
@@ -2534,6 +2812,18 @@ function pruebaBannerHTML(){
   return `<div class="panel" style="background:#2b2140;color:#fff;border:none;margin-bottom:10px;position:sticky;top:0;z-index:5"><div class="row" style="justify-content:space-between;align-items:center;gap:8px"><b>🧪 Modo de pruebas — esto no toca los datos reales de Julia</b><button class="btn" style="min-height:34px" data-act="pruebaExit">✕ Salir</button></div></div>`;
 }
 function render(){
+  /* pedido por David (2026-11-02): pantalla de usuario/contraseña delante de TODO lo demás --
+     "ahora la primera pantalla para entrar sera la de user y pass, y despues de entrar en esta
+     pantalla que todo siga igual" (su respuesta literal al aclarar el diseño): la cabecera de
+     arriba (el botón "📚 Deberes de Julia" y el selector "👧 Alumna / 🧑‍🏫 Tutor") se oculta del
+     todo mientras no haya iniciado sesión nadie -- entre otras cosas, porque ese selector cambia
+     ui.role DIRECTAMENTE sin pasar por ningún login, así que dejarlo visible antes de iniciar
+     sesión sería una forma de saltarse por completo la pantalla de login para entrar como Alumna.
+     En cuanto se inicia sesión (ui.authUid puesto), la cabecera reaparece y se comporta EXACTAMENTE
+     igual que siempre (nada más cambia ahí), tal y como pidió David. */
+  const hdr=document.querySelector('header.top');
+  if(hdr)hdr.style.display=ui.authUid?'':'none';
+  if(!ui.authUid)return renderLogin();
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
@@ -2543,6 +2833,23 @@ function render(){
      cuánto tiempo de pantalla lleva ganado hoy -- se queda fuera a propósito durante la Zona de
      Pruebas (ui.testZoneBackup), donde ui.role también vale 'alumna' pero no son datos reales. */
   else if(ui.role==='alumna')app.innerHTML=screenTimeBadgeHTML()+app.innerHTML;
+}
+/* pantalla de login (ver render()): usuario + contraseña. Si el usuario es de una cuenta de tutor
+   que TODAVÍA no tiene PIN puesto (state.pin vacío -- solo pasa la primera vez que se usa la app,
+   antes de que exista cualquier PIN), se deja entrar directamente SIN comprobar nada: es el mismo
+   comportamiento de siempre (antes de este cambio, cualquiera que pulsara "🧑‍🏫 Tutor" sin que
+   hubiera PIN puesto todavía veía "Crea tu PIN de tutor" sin que hiciera falta ningún PIN para
+   llegar ahí) -- no es una regresión de seguridad, solo se mantiene el mismo punto de partida.
+   authActions.login (más abajo) hace la comprobación real. */
+function renderLogin(){
+  app.innerHTML=`<div class="panel" style="max-width:420px;margin:60px auto">
+    <h2 style="margin-top:0">🔐 Entrar</h2>
+    <p class="mute">Usuario y contraseña para entrar en "📚 Deberes de Julia".</p>
+    <label class="f">Usuario<input type="text" id="loginUser" autocomplete="username" placeholder="Usuario" data-enter="login"></label>
+    <label class="f" style="margin-top:10px">Contraseña<input type="password" id="loginPass" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" placeholder="Contraseña" data-enter="login"></label>
+    <button class="btn primary big" style="margin-top:14px;width:100%" data-act="login">Entrar</button>
+  </div>`;
+  const i=$('#loginUser');if(i)i.focus();
 }
 function renderList(){
   const L=state.dictados;
@@ -7810,6 +8117,36 @@ const spellRunActions={
   spHwQuitResume(){ui.spHwQuitAsk=false;ui.spRun=null;ui.spHw=null;ui.screen='today';render();},
   spHwQuitDiscard(){const hw=ui.spHw;if(hw)spellClearProgress(hw.listId);ui.spHwQuitAsk=false;ui.spRun=null;ui.spHw=null;ui.screen='today';render();}
 };
+/* panel "🔐 Usuarios y contraseñas" de Ajustes (pedido por David, 2026-11-02, ver userActions y
+   authActions más abajo). La cuenta de tutor no lleva contraseña propia aquí (usa el PIN de
+   siempre, state.pin, ver authActions.login) -- su botón de cambiar contraseña sigue siendo
+   "Cambiar tu contraseña" (tutorActions.changePin, sin tocar); aquí solo se puede cambiar su
+   nombre de usuario. Las cuentas de alumno/a sí tienen su propia contraseña y se pueden añadir o
+   borrar (salvo que sea la última -- tiene que quedar siempre al menos una, para que Julia nunca
+   se quede sin forma de entrar). */
+function usersPanelHTML(){
+  const users=state.users||[];
+  const tutor=users.find(x=>x.role==='tutor');
+  const alumnas=users.filter(x=>x.role==='alumna');
+  return `<div class="panel"><h3>🔐 Usuarios y contraseñas</h3>
+  <p class="mute" style="margin-top:0">Para entrar en la app hace falta un usuario y una contraseña. Las cuentas se dan de alta aquí.</p>
+  <div class="row" style="justify-content:space-between;align-items:center">
+    <span>🧑‍🏫 <b>${esc(tutor?tutor.user:'David')}</b> <small class="mute">(tutor — entra con la contraseña de abajo)</small></span>
+    ${tutor?`<button class="btn" data-act="userSetUser" data-id="${esc(tutor.id)}">Cambiar usuario</button>`:''}
+  </div>
+  <div class="row" style="margin-top:8px"><button class="btn" data-act="changePin">Cambiar tu contraseña</button></div>
+  <hr style="margin:16px 0;border:none;border-top:2px solid var(--line)">
+  ${alumnas.map(a=>`<div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap">
+    <span>👧 <b>${esc(a.user)}</b></span>
+    <span class="row" style="gap:6px">
+      <button class="btn" data-act="userSetUser" data-id="${esc(a.id)}">Usuario</button>
+      <button class="btn" data-act="userSetPass" data-id="${esc(a.id)}">Contraseña</button>
+      <button class="btn danger" data-act="userDelAlumna" data-id="${esc(a.id)}" ${alumnas.length<=1?'disabled title="Tiene que quedar al menos una cuenta de alumno/a"':''}>🗑</button>
+    </span>
+  </div>`).join('')}
+  <button class="btn" style="margin-top:6px" data-act="userAddAlumna">➕ Añadir cuenta de alumno/a</button>
+  </div>`;
+}
 /* ================= área tutor ================= */
 function renderTutor(){
   if(!state.pin){app.innerHTML=`<h2>🔐 Crea tu PIN de tutor</h2><p class="mute">Sirve para que solo tú entres en esta zona (4 a 8 números).</p><div class="panel" style="max-width:420px"><input type="password" autocomplete="new-password" inputmode="numeric" pattern="[0-9]*" id="pin1" placeholder="Nuevo PIN"><br><br><input type="password" autocomplete="new-password" inputmode="numeric" pattern="[0-9]*" id="pin2" placeholder="Repite el PIN"><br><br><button class="btn primary big" data-act="pinSet">Guardar PIN</button></div>`;return;}
@@ -7943,7 +8280,8 @@ function tabAjustes(){
   <label class="f"><input type="checkbox" data-set="punct" ${s.punct?'checked':''}> Dictar los signos de puntuación</label><br>
   <label class="f"><input type="checkbox" data-set="showOrig" ${s.showOrig!==false?'checked':''}> Al corregir, permitir ver el texto original del dictado (Julia necesita el PIN de tutor)</label><br>
   <label class="f"><input type="checkbox" data-set="fxSound" ${s.fxSound!==false?'checked':''}> 🔊 Sonido de acierto/fallo (al corregir cada pregunta o palabra en dictado, Spelling, Teoría y Análisis Morfológico)</label>
-  <button class="btn" style="margin:4px 0" data-act="testFxSound">▶️ Probar sonido de acierto/fallo</button><br>
+  <label class="f">Elige el sonido<select data-set="fxSoundPack">${FX_SOUND_PACK_ORDER.map(id=>`<option value="${id}" ${(s.fxSoundPack||'aplauso')===id?'selected':''}>${FX_SOUND_PACKS[id].label}</option>`).join('')}</select></label>
+  <span class="row" style="gap:8px;flex-wrap:nowrap"><button class="btn" style="margin:4px 0" data-act="testFxOk">▶️ Probar acierto</button><button class="btn" style="margin:4px 0" data-act="testFxFail">▶️ Probar fallo</button></span><br>
   <label class="f">Pausa después de cada signo<select data-set="ppause"><option value="0.6" ${s.ppause==0.6?'selected':''}>Corta</option><option value="1" ${s.ppause==1?'selected':''}>Normal</option><option value="1.6" ${s.ppause==1.6?'selected':''}>Larga</option><option value="2.2" ${s.ppause==2.2?'selected':''}>Muy larga</option></select></label>
   ${Dict.voices().length?`<label class="f">Voz<select data-set="voice">${Dict.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.voice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en español en este dispositivo.</p>'}</div>
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
@@ -7971,7 +8309,7 @@ function tabAjustes(){
    <label class="f">Velocidad de la voz IA <span class="v" id="v_aispeed">${state.ai.speed}×</span><input type="range" min="0.7" max="1.2" step="0.05" value="${state.ai.speed}" data-ai="speed"></label></div>
   <div class="row" style="margin-top:12px"><button class="btn primary" data-act="testAI">🔊 Probar voz IA</button></div>
   <p class="mute" style="margin-bottom:0">Si cambias la voz, el modelo o el largo de las frases, hay que pulsar «Generar voz» en cada dictado (o se genera sola la primera vez que Julia lo empieza). Si falla algo, la app usa la voz del iPad.</p></div>
-  <div class="panel"><h3>PIN</h3><button class="btn" data-act="changePin">Cambiar PIN</button></div>
+  ${usersPanelHTML()}
   <div class="panel"><h3>🎮 Minijuegos</h3><p class="mute" style="margin-top:0">Cada cuántos ejercicios seguidos (mates, exámenes, estudio de temas, análisis morfológico, Spelling) aparece un minijuego de descanso. También sale uno, siempre, justo después de corregir cada dictado.</p>
   <label class="f">Frecuencia <span class="v" id="v_miniGameEvery">cada ${state.miniGameEvery||15} ejercicios</span><input type="range" min="5" max="30" step="1" value="${state.miniGameEvery||15}" data-set2="miniGameEvery"></label>
   <p class="mute" style="margin:12px 0 6px">Prueba aquí cada juego, tal cual lo verá Julia:</p>
@@ -8076,20 +8414,33 @@ const tutorActions={
   syncNow(){Cloud.sync(true);},
   changePin(){const p=prompt('Nuevo PIN (4 a 8 números):');if(p===null)return;if(!/^\d{4,8}$/.test(p))return toast('PIN no válido');state.pin=p;save();toast('PIN cambiado');},
   testVoice(){Dict.test(state.settings);},
-  /* pedido por David (2026-10-25): "no van los sonidos de bien y mal en ninguna parte" (ni en
+  /* Pedido por David (2026-10-25): "no van los sonidos de bien y mal en ninguna parte" (ni en
      Julia ni en la Zona de Pruebas). Revisando el código, chime()/playApplause()/playSadTrombone()
-     no tienen ninguna condición de rol ni de Zona de Pruebas que pudiera silenciarlos a propósito
-     -- así que, sin poder ver ni oír su navegador desde aquí, el paso más útil es darle un botón
-     de prueba directo (igual que ya existen "🔊 Probar voz" y "🔊 Probar voz IA" un poco más
-     arriba), que suena SIEMPRE al pulsarlo, sin importar si el interruptor de arriba está marcado
-     o no (para poder usarlo también para decidir si activarlo), y que avisa con un mensaje claro
-     si el motivo es que el propio navegador no soporta este tipo de sonido (Web Audio), en vez de
-     quedarse en silencio sin explicación. */
-  testFxSound(){
+     no tenían ninguna condición de rol ni de Zona de Pruebas que pudiera silenciarlos a propósito.
+     Repetida la investigación el 2026-11-02 (David confirmó "no suena nada, hay que arreglarlo"),
+     esta vez probando también en un navegador real (no solo en los tests simulados): el
+     AudioContext se crea, se reanuda y programa sus notas/ráfagas de ruido exactamente como se
+     espera, sin ningún error -- no se ha encontrado ningún fallo de código nuevo que explique un
+     silencio total en TODAS partes. Lo más probable, dado el historial de esta sesión (ver nota
+     técnica de sincronización de Google Drive al principio de este documento/del estado del
+     proyecto), es que la pestaña del navegador llevara cargada una versión antigua del código sin
+     recargar la página del todo, o bien algo fuera del alcance del código (volumen del sistema,
+     interruptor físico de silencio, salida de audio desviada a unos auriculares Bluetooth
+     conectados pero no en uso). Como paso más útil dado que no hay ningún bug de código que
+     corregir, además de la lista de sonidos de abajo (pedida por David en el mismo aviso), estos
+     dos botones de prueba siguen sonando SIEMPRE (sin mirar el interruptor de arriba, para poder
+     decidir si activarlo) y avisan con un mensaje claro si el navegador no soporta Web Audio en
+     vez de quedarse mudos sin explicación -- ahora por separado (acierto/fallo), para poder
+     probar cada sonido del pack elegido sin tener que esperar al otro. */
+  testFxOk(){
     const ctx=_fxAudioCtx();
     if(!ctx)return toast('⚠️ Este navegador no admite este sonido (Web Audio no disponible). Prueba con Chrome o Safari actualizados.');
-    playApplause();
-    setTimeout(playSadTrombone,900);
+    fxPack().ok();
+  },
+  testFxFail(){
+    const ctx=_fxAudioCtx();
+    if(!ctx)return toast('⚠️ Este navegador no admite este sonido (Web Audio no disponible). Prueba con Chrome o Safari actualizados.');
+    fxPack().fail();
   },
   testSpVoice(){sayWordEN('beautiful',()=>{});},
   async genVoice(b){const id=b.dataset.id;await genVoiceFor(id,true);},
@@ -8271,7 +8622,97 @@ const pruebaActions={
     save();render();
   }
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,prepActions,engDictActions,spellActions,spellRunActions,pruebaActions);
+/* pedido por David (2026-11-02): "hay que poner seguridad, necesito que pongas user y pass en la
+   app, que se dan de alta desde el tutor. Para Julia el user sera Julia y el pass 2026, para el
+   tutor David y la contraseña que ya tiene". Ver también loadState() (migración de state.users),
+   el "ui" (ui.authUid), render()/renderLogin() y usersPanelHTML()/userActions más abajo (en
+   tutorActions, la gestión de cuentas desde Ajustes). */
+function loginFail(){toast('Usuario o contraseña incorrectos');const p=$('#loginPass');if(p){p.value='';p.focus();}}
+function doLogin(acc){
+  ui.authUid=acc.id;ui.role=acc.role;
+  /* si es la cuenta de tutor y YA hay un PIN puesto, entrar por el login ya cuenta como haber
+     tecleado ese mismo PIN (es literalmente la misma contraseña, ver authActions.login) -- así no
+     hace falta volver a pedirlo justo después de haber iniciado sesión. Si todavía NO hay PIN
+     puesto (primer uso), se deja ui.unlocked tal cual (false), para que renderTutor() siga
+     mostrando "Crea tu PIN de tutor" como hacía siempre. */
+  if(acc.role==='tutor'&&state.pin)ui.unlocked=true;
+  saveAuth({uid:acc.id,role:acc.role});
+  ui.screen='home';render();
+}
+const authActions={
+  login(){
+    const uI=$('#loginUser'),pI=$('#loginPass');
+    const u=(uI&&uI.value||'').trim();
+    if(!u)return toast('Escribe tu usuario');
+    const acc=(state.users||[]).find(x=>x.user&&x.user.toLowerCase()===u.toLowerCase());
+    if(!acc)return loginFail();
+    if(acc.role==='tutor'&&!state.pin)return doLogin(acc); // primer uso, ver doLogin()
+    const p=pI&&pI.value||'';
+    if(!p)return toast('Escribe tu contraseña');
+    const ok=acc.role==='tutor'?p===state.pin:p===(acc.pass||'');
+    if(!ok)return loginFail();
+    doLogin(acc);
+  },
+  logout(){
+    /* mismo candado que setRole() (ver pruebaActions, más arriba) para el botón de arriba de
+       "Tutor/Alumna": si se está en medio de una prueba de la Zona de pruebas, cerrar sesión
+       PRIMERO sale de la prueba (restaurando "state" de verdad) en vez de cerrar sesión con una
+       prueba todavía a medio camino -- hace falta pulsar "🚪" una 2ª vez para cerrar sesión de
+       verdad, igual que ya pasa hoy con "Tutor/Alumna" en ese mismo caso. */
+    if(ui.testZoneBackup)return pruebaActions.pruebaExit();
+    try{Dict.stop();}catch(e){}
+    ui.authUid=null;ui.unlocked=false;ui.editId=null;ui.role='alumna';ui.screen='home';
+    clearAuth();
+    render();
+  }
+};
+/* gestión de cuentas desde Ajustes del tutor (ver usersPanelHTML()): añadir/editar cuentas de
+   alumno/a, y cambiar el usuario de cualquier cuenta (incluida la de tutor -- su contraseña sigue
+   siendo el PIN de siempre, cambiarla se hace con el botón "Cambiar tu contraseña" que ya existía,
+   tutorActions.changePin, sin tocar). Las contraseñas, igual que el PIN de tutor de toda la vida,
+   se guardan tal cual (sin cifrar) en el mismo sitio donde ya se guarda todo lo demás -- mismo
+   nivel de seguridad que ya tenía la app hasta ahora, no es una caja fuerte, solo evita que
+   cualquiera entre sin saber nada. */
+const userActions={
+  userAddAlumna(){
+    const u=(prompt('Nombre de usuario para la cuenta nueva:')||'').trim();
+    if(!u)return;
+    if((state.users||[]).some(x=>x.user&&x.user.toLowerCase()===u.toLowerCase()))return toast('Ya existe una cuenta con ese usuario');
+    const p=prompt(`Contraseña para "${u}" (4 a 8 números):`);
+    if(p===null)return;
+    if(!/^\d{4,8}$/.test(p))return toast('La contraseña debe tener de 4 a 8 números');
+    snapUndo();
+    state.users=state.users||[];
+    state.users.push({id:'u'+uid(),user:u,pass:p,role:'alumna'});
+    save();render();toast('Cuenta creada');
+  },
+  userSetPass(b){
+    const acc=(state.users||[]).find(x=>x.id===b.dataset.id);if(!acc||acc.role!=='alumna')return;
+    const p=prompt(`Nueva contraseña para "${acc.user}" (4 a 8 números):`);
+    if(p===null)return;
+    if(!/^\d{4,8}$/.test(p))return toast('La contraseña debe tener de 4 a 8 números');
+    snapUndo();
+    acc.pass=p;save();toast('Contraseña cambiada');
+  },
+  userSetUser(b){
+    const acc=(state.users||[]).find(x=>x.id===b.dataset.id);if(!acc)return;
+    const u=(prompt('Nuevo nombre de usuario:',acc.user)||'').trim();
+    if(!u||u===acc.user)return;
+    if((state.users||[]).some(x=>x.id!==acc.id&&x.user&&x.user.toLowerCase()===u.toLowerCase()))return toast('Ya existe otra cuenta con ese usuario');
+    snapUndo();
+    acc.user=u;save();render();toast('Usuario cambiado');
+  },
+  userDelAlumna(b){
+    const acc=(state.users||[]).find(x=>x.id===b.dataset.id);if(!acc||acc.role!=='alumna')return;
+    const n=(state.users||[]).filter(x=>x.role==='alumna').length;
+    if(n<=1)return toast('Tiene que quedar al menos una cuenta de alumno/a -- no se puede borrar la última');
+    if(!confirm(`¿Borrar la cuenta "${acc.user}"? Ya no podrá entrar con ese usuario.`))return;
+    snapUndo();
+    state.users=state.users.filter(x=>x.id!==acc.id);
+    save();render();toast('Cuenta borrada');
+  }
+};
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,prepActions,engDictActions,spellActions,spellRunActions,pruebaActions,authActions,userActions);
 /* bug real avisado por David (2026-10-24): "Si en la zona de pruebas le doy atrás me saca del
    tutor y melleva al alumno". Causa: cada tipo de ejercicio tiene su propio botón de "← Salir"/
    "← Volver"/"Atrás" (mexit en Mates, exQuit en Exámenes, studyQuit/studyQuitOk en Teoría,
@@ -8397,7 +8838,11 @@ document.addEventListener('drop',e=>{
 function clipboardBlocked(e){
   if(ui.role!=='alumna')return false;
   const t=e.target;
-  if(t&&(t.id==='morfoTa'||t.type==='password'))return false;
+  /* #loginUser (ver renderLogin, 2026-11-02): ui.role vale 'alumna' por defecto (su valor inicial,
+     antes de que nadie haya iniciado sesión todavía) mientras se ve la pantalla de login, así que
+     sin esta excepción tampoco se podría pegar el usuario ahí -- igual que con los campos de PIN
+     (type=password), bloquear el pegado en un campo de login no protege nada, solo molesta. */
+  if(t&&(t.id==='morfoTa'||t.id==='loginUser'||t.type==='password'))return false;
   return true;
 }
 document.addEventListener('copy',e=>{if(clipboardBlocked(e))e.preventDefault();});
@@ -8432,7 +8877,26 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
   if(t.dataset.enter==='studySkipPin')studyActions.studySkipGo();
   if(t.dataset.enter==='spDictSkipPin')spellRunActions.spDictSkipGo();
   if(t.dataset.enter==='morfoExtraRaiz')morfoActions.morfoExtraRaizCheck();
-  if(t.dataset.enter==='prepWriteAll')prepActions.prepExamCheck();});
+  if(t.dataset.enter==='prepWriteAll')prepActions.prepExamCheck();
+  if(t.dataset.enter==='login')authActions.login();});
+/* recupera la sesión guardada en ESTE dispositivo (ver AUTH_KEY arriba) antes del render() inicial,
+   para no pedir usuario/contraseña en cada recarga si ya se había iniciado sesión antes aquí.
+   Comprueba que la cuenta siga existiendo y que su rol no haya cambiado (p.ej. si el tutor la borró
+   desde otro dispositivo y eso ya se sincronizó) -- si no, se descarta la sesión guardada y se
+   vuelve a pedir login, en vez de dejar a alguien "atascado" con un rol que ya no le corresponde. */
+function restoreAuth(){
+  const a=loadAuth();
+  if(a){
+    const acc=(state.users||[]).find(x=>x.id===a.uid);
+    if(acc&&acc.role===a.role){
+      ui.authUid=acc.id;ui.role=acc.role;
+      if(acc.role==='tutor'&&state.pin)ui.unlocked=true;
+      return;
+    }
+  }
+  clearAuth();
+}
+restoreAuth();
 render();
 async function readDictPhotos(files){
   const st=$('#dictPhotoSt');if(!state.ai.photoOn){if(st)st.textContent='';return toast('Activa la IA de fotos en Ajustes para leer fotos');}
