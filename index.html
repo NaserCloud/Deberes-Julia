@@ -1473,8 +1473,54 @@ function dictadoPreviewHTML(text){
    relleno, rotación de state.studyHist independiente por tipo a lo largo de varios días alternando
    tipos, y el aviso de studyRound sin grabar el deber real cuando se vacía el tipo filtrado a
    medias. Suite completa (43 archivos verify_*.js) en verde, salvo las exclusiones pre-existentes
-   ya documentadas. */
-const APP_VERSION='2026.11.02-1';
+   ya documentadas.
+   78. (2026-11-02) Tres pedidos seguidos de David:
+   a) Viendo la pestaña Spelling del tutor (sin el botón "🧪 Probar" que ya tenía Teoría): "Pon en
+      spelling el boton para hacer la prueba desde la parte del tutor". Se añade "🧪 Probar" junto a
+      "Agregar a deberes"/🗑 en cada lista de Spelling YA PUBLICADA y CON palabras (spHomeView),
+      reutilizando la Zona de Pruebas (spellActions.spProbar/pruebaEnter/pruebaExit): entra
+      directamente a ESA lista, en modo libre (elegir entre "🔊 Dictado de spelling" y "📝 Frases
+      para completar", renderSpellList con ui.spProbarId), no en modo "deberes" bloqueado.
+   b) "En el spelling y en el dictado en la parte del alumno hay que poner un boton que diga que
+      'no lo he entendido' [...] esto le dara la solución y le dejara pasar a la siguiente pero no
+      se lo contara como bueno ni como malo [y] nos comunicara a los tutores que no lo entendio".
+      Se añade en el dictado de palabras de Spelling (🤷 No lo he entendido, dime la solución ->
+      spDictUnclear/spDictUnclearNext: muestra la palabra correcta, pasa a la siguiente, resultado
+      marcado unclear:true/ok:null, excluido de aciertos/fallos/tiempo de pantalla en spellFinish/
+      spHwFinishAll/renderSpellDone, pero contado aparte para el tutor en sessionReport) y en el
+      Dictado del párrafo principal (🤷 No he entendido lo que ha dicho -> studentActions.
+      dictUnclear/dictUnclearNext: pausa, revela el trozo actual reemplazando los controles
+      normales, y al "Seguir con el siguiente trozo" avanza SIN puntuar ese trozo). Para Dictado,
+      el trozo revelado se excluye del TEXTO que se corrige (joinChunks() reconstruye el dictado
+      sin los trozos marcados, en vez de filtrar errores después), así que no puede contar ni bien
+      ni mal aunque Julia copie el texto revelado; cmpHTML() usa ese mismo texto reducido
+      (r.scoreText) para la columna "original", y sessionReport()/historialBodyHTML() avisan al
+      tutor de qué trozo(s)/palabra(s) no se entendieron. No se tocó "Frases para completar" de
+      Spelling (no tiene audio) ni ninguna otra actividad (Teoría/Morfología/Matemáticas quedan
+      fuera de este pedido).
+   c) "VAMOS A PONER UN BOTON EN SPELLING QUE PUEDA EL ALUMNO PEDIR QUE SE DIGA CON OTRA VOZ POR QUE
+      NO LO ENTIENDE Y PROBAR A VER SI CON OTRA VOZ SI LO ENTIENDE." Se añade "🔊 Probar con otra
+      voz" en el dictado de palabras de Spelling (spDictPlayOther, visible solo si hay 2+ voces en
+      inglés disponibles): evita a propósito la voz configurada en Ajustes en el primer intento, y
+      rota por el resto si se pulsa varias veces (r.voiceIdx). sayWordEN() acepta ahora un 3er
+      parámetro opcional (voiceOverride) sin afectar a ninguna llamada existente.
+   Revisión adversarial, 2 rondas (1ª con hallazgo real, 2ª limpia):
+   - Ronda 1 (MEDIO): "⏹ Parar" + "▶ Empezar dictado" otra vez SIN salir de la pantalla del Dictado
+     dejaba colgados ui.dictReveal/ui.dictUnclear del intento anterior -- el intento nuevo heredaba
+     en silencio la exclusión de un trozo que esta vez sí se escribía bien (y seguía avisando al
+     tutor de un "no entendido" que ya no aplicaba a lo que de verdad se corrigió). Arreglado
+     limpiando esos 2 campos al principio de startDictado(), antes de cualquier posible espera de
+     la voz con IA, para que cualquier "empezar" real arranque siempre limpio.
+   - Ronda 2: limpia. Se confirmó además que el modo foto de Spelling (photowait) no muestra "no
+     entendido" (gateado a stage 'typing', coherente con que ahí no hay corrección inmediata), que
+     reanudar de una pausa real (Dict.pause/resume) no pasa por startDictado() y por tanto conserva
+     bien el aviso si lo hubiera, y que Dictado en modo "deberes" (taskActions.openItem) reutiliza
+     la misma pantalla 'run' ya corregida, sin ruta alternativa sin resetear.
+   Cubierto por test nuevo: verify_sp_probar.js (botón/alta en Zona de Pruebas) y
+   verify_no_entendido.js (otra voz + no entendido en Spelling y Dictado + joinChunks + el hallazgo
+   de la ronda 1, con test de regresión dedicado). Suite completa (45 archivos verify_*.js) en
+   verde, salvo las exclusiones pre-existentes ya documentadas. */
+const APP_VERSION='2026.11.02-2';
 /* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
    1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
       hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
@@ -2517,11 +2563,13 @@ function renderRun(){
   app.innerHTML=`<button class="link" data-act="backList">${ui.item?'← Deberes de hoy':'← Dictados'}</button><h2>${esc(d.title)}</h2>
   ${ui.dictTheoryOpen?dictadoPreviewHTML(d.text):''}
   ${Dict.supported?'':'<div class="panel" style="border-color:var(--bad)">Este navegador no puede leer en voz alta. Prueba con Safari en el iPad.</div>'}
-  <div class="row"><button class="btn primary big" data-act="start" id="bStart">▶ Empezar dictado</button>
+  ${ui.dictReveal?`<div class="panel" style="border-color:var(--pri);background:#f1e9ff;text-align:center"><b>🤷 No pasa nada.</b><p style="margin:8px 0;font-size:1.15rem">Ponía: <b>${esc(ui.dictReveal)}</b></p><p class="mute" style="margin:4px 0">Puedes copiarlo si quieres, o seguir sin más. Esto no cuenta ni bien ni mal: tu tutor sabrá que no lo entendiste.</p><div class="row" style="justify-content:center;margin-top:8px"><button class="btn primary big" data-act="dictUnclearNext">➡️ Seguir con el siguiente trozo</button></div></div>`
+  :`<div class="row"><button class="btn primary big" data-act="start" id="bStart">▶ Empezar dictado</button>
   <button class="btn" data-act="pause" id="bPause">⏸ Pausa</button><button class="btn" data-act="repeat" id="bRepeat">🔁 Repetir</button>
   <button class="btn" data-act="prev" id="bPrev">⏮ Anterior</button><button class="btn" data-act="skip" id="bSkip">⏭ Siguiente</button><button class="btn danger" data-act="stop" id="bStop">⏹ Parar</button></div>
+  <div class="row" style="margin:4px 0 0"><button class="link" data-act="dictUnclear" id="bUnclear">🤷 No he entendido lo que ha dicho</button></div>
   <p class="mute" style="margin:6px 0;font-size:.85rem">🔈 ¿No oyes nada? Sube el volumen y desactiva el modo silencio del iPhone/iPad (interruptor lateral).</p>
-  <div class="status"><span class="ico" id="stIco">🎧</span><div style="flex:1"><div id="stTxt">Pulsa «Empezar dictado» cuando estés lista.</div><div class="bar"><i id="stBar"></i></div></div></div>
+  <div class="status"><span class="ico" id="stIco">🎧</span><div style="flex:1"><div id="stTxt">Pulsa «Empezar dictado» cuando estés lista.</div><div class="bar"><i id="stBar"></i></div></div></div>`}
   <textarea id="answer" placeholder="Escribe aquí lo que oigas…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-gramm="false">${esc(ui.answer)}</textarea>
   <div class="row" style="margin-top:10px"><label class="btn" style="display:inline-flex;align-items:center;gap:6px">📷 Lo he escrito en el cuaderno: subir foto<input type="file" accept="image/*" id="photoIn" hidden></label></div>
   <div id="photoBox">${photoHTML()}</div>
@@ -2542,6 +2590,9 @@ function updateRun(){
   else set('🎧','Pulsa «Empezar dictado» cuando estés lista.',0);
   const run=s&&!s.dead&&ph!=='done',b=id=>$(id);
   b('#bStart').disabled=!!run;b('#bPause').disabled=!run;b('#bRepeat').disabled=!run||ph==='paused'||ph==='starting';b('#bSkip').disabled=!run||ph==='paused';b('#bPrev').disabled=!run||ph==='paused'||ph==='starting';b('#bStop').disabled=!run;
+  /* "🤷 No he entendido": no tiene sentido en el trozo del título (s.i===0, ver dictUnclear) ni
+     cuando no hay nada sonando/pendiente de escribir todavía. */
+  const bu=b('#bUnclear');if(bu)bu.disabled=!run||ph==='paused'||(s&&s.i===0);
   b('#bPause').textContent=ph==='paused'?'▶ Reanudar':'⏸ Pausa';
 }
 function photoHTML(){
@@ -2566,12 +2617,49 @@ function dictChunks(d){
   const chunks=buildChunks(d.text,state.settings.phr);
   const tc=[];tc.say='Título. '+d.title.replace(/[.:;!?]+$/,'')+'.';chunks.unshift(tc);return chunks;
 }
+/* pedido por David (2026-11-02): botón "🤷 No lo he entendido" también en el dictado normal (el de
+   párrafos, no solo en Spelling) -- reconstruye el texto SOLO con los trozos (chunks) que NO se
+   marcaron como "no entendidos", uniendo sus palabras con un espacio (y un salto de línea donde el
+   trozo original terminaba párrafo, marcado con '¶'). Se usa para corregir SOLO cuando hay algún
+   trozo marcado (ver goCorrect): el resultado no es un calco byte a byte del texto original (los
+   espacios/saltos de línea exactos pueden variar un poco), pero eso no afecta a la corrección --
+   computeCorrection/getWords solo miran el CONTENIDO de las palabras (vía una expresión regular de
+   letras/números), nunca los espacios exactos entre ellas -- así que basta con que el CONTENIDO y
+   el ORDEN de las palabras no marcadas se conserven, que es justo lo que hace esta función. Esto
+   evita tener que calcular posiciones exactas dentro del texto original (frágil y mucho más
+   propenso a errores de desalineación) para conseguir la garantía real que pide David: un trozo
+   "no entendido" nunca puede aparecer en r.errors (ni como fallo, ni como acierto que suba el
+   total), porque sus palabras sencillamente no están en el texto que se corrige. */
+function joinChunks(chunks){
+  let out='';
+  chunks.forEach(c=>{
+    const words=c.filter(t=>t!=='¶');
+    if(words.length){
+      if(out&&!/\n$/.test(out))out+=' ';
+      out+=words.join(' ');
+    }
+    if(c.includes('¶'))out+='\n';
+  });
+  return out;
+}
 function voiceTexts(chunks){
   const t=[FIN];chunks.forEach(c=>{if(c.say)t.push(c.say);else spokenSegs(c,state.settings.punct).forEach(s=>t.push(s.t));});return [...new Set(t)];
 }
 async function startDictado(){
   const d=state.dictados.find(x=>x.id===ui.dict);if(!d||ui.preparing)return;
   const chunks=dictChunks(d);if(chunks.length<2)return toast('Este dictado está vacío');
+  // chunks[0] es el título sintético (ver dictChunks); el resto son los trozos reales del texto,
+  // en el mismo orden en que se van a leer -- se guardan aparte para poder reconstruir el texto a
+  // corregir SIN los trozos que Julia marque como "no entendidos" (ver dictUnclear/joinChunks).
+  // Hallazgo real de la revisión adversarial (2026-11-02): si Julia marca "no entendido" en algún
+  // trozo y luego pulsa "⏹ Parar" + "▶ Empezar dictado" otra vez SIN salir de la pantalla, estos 3
+  // campos no se limpiaban (solo se reseteaban al ENTRAR de nuevo a la pantalla, en openDict/again/
+  // taskActions.openItem/pruebaExit) -- así que el intento nuevo heredaba la marca del intento
+  // anterior y excluía ese trozo de la corrección aunque esta vez sí lo hubiera escrito bien. Se
+  // limpian aquí también, en cada "empezar" real (primera vez o reinicio), para que siempre arranque
+  // sin ningún aviso "no entendido" colgado de antes.
+  ui.dictReveal=null;ui.dictUnclear=null;
+  ui.dictBodyChunks=chunks.slice(1);
   if(ui.dictTheoryOpen){ui.dictTheoryOpen=false;render();}
   Voz.unlock();Dict.prime();
   const ai=Voz.ready(),st=Object.assign({},state.settings,{ai,aiSpeed:state.ai.speed});
@@ -2596,13 +2684,21 @@ function goCorrect(){
   const s=Dict.cur;if(s&&!s.dead&&s.phase!=='done'&&!confirm('El dictado aún no ha terminado. ¿Quieres corregir ya?'))return;
   Dict.stop();
   ui.answer=dropTitle(ui.answer,d.title);if(!ui.answer.trim())return toast('No hay texto para corregir');
-  const r=computeCorrection(d.text,ui.answer,state.customRules);
+  /* si Julia marcó algún trozo como "🤷 No lo he entendido" (ver dictUnclear), se corrige contra
+     un texto reconstruido SIN esos trozos (joinChunks), para que de verdad no cuenten ni bien ni
+     mal (ver el comentario de joinChunks). Si no marcó ninguno, el comportamiento es IDÉNTICO al
+     de siempre: scoreText es exactamente d.text. */
+  const uIdx=ui.dictUnclear&&ui.dictUnclear.idx;
+  const scoreText=(uIdx&&uIdx.size&&ui.dictBodyChunks)?joinChunks(ui.dictBodyChunks.filter((c,i)=>!uIdx.has(i))):d.text;
+  const r=computeCorrection(scoreText,ui.answer,state.customRules);
+  r.scoreText=scoreText;
+  r.unclearPhrases=(ui.dictUnclear&&ui.dictUnclear.texts)||[];
   r.errors.forEach(e=>{e.stage=e.type==='extra'?'ack':'word';e.fails=0;e.done=false;
     if(e.type==='sub'){e.opts=state.rulesMode==='test'?makeOptions(e.a):null;e.wrongPicks=[];e.manual=state.rulesMode!=='test';}});
   chime(r.wrong===0);
   earnScreenTime(Math.max(0,r.total-r.wrong));
   ui.fix=r;ui.origOK=false;ui.pinAsk=false;ui.screen='fix';
-  state.history.unshift({id:Date.now(),did:d.id,photo:!!ui.photo,date:new Date().toISOString(),title:d.title,total:r.total,wrong:r.wrong,punct:r.punct.length,errs:r.errors.map(e=>({type:e.type,typed:e.typed||'',correct:e.correct||'',rule:e.rule||''}))});
+  state.history.unshift({id:Date.now(),did:d.id,photo:!!ui.photo,date:new Date().toISOString(),title:d.title,total:r.total,wrong:r.wrong,punct:r.punct.length,unclear:r.unclearPhrases,errs:r.errors.map(e=>({type:e.type,typed:e.typed||'',correct:e.correct||'',rule:e.rule||''}))});
   state.history=state.history.slice(0,500);save();render();
 }
 /* ================= corrección ================= */
@@ -2636,7 +2732,14 @@ function origBar(){
 }
 function origRefresh(){const c=$('#cmp'),b=$('#origBar'),h=$('#cmpTitle');if(c){c.className='cmp'+(origOn()?'':' one');c.innerHTML=cmpHTML(ui.fix);}if(b)b.innerHTML=origBar();if(h)h.textContent=origOn()?'Compara tu texto con el original':'Tu texto';}
 function cmpHTML(r){
-  const ans=ui.answer,d=state.dictados.find(x=>x.id===ui.dict),orig=d?d.text:'',both=origOn();
+  /* IMPORTANTE: "orig" tiene que ser EXACTAMENTE el mismo texto que se pasó a computeCorrection en
+     goCorrect() (r.scoreText), no siempre d.text -- si Julia marcó algún trozo como "no
+     entendido", r.O (las palabras originales, con sus posiciones) está calculado sobre ese texto
+     reconstruido, y usar aquí d.text en su lugar desalinearía por completo toksOf(orig,r.O) (las
+     posiciones de r.O ya no coincidirían con las de d.text), rompiendo la columna "original" de la
+     comparación. r.scoreText vale d.text tal cual cuando no se marcó ningún trozo, así que para el
+     caso normal (sin usar esta función nueva) no cambia nada. */
+  const ans=ui.answer,d=state.dictados.find(x=>x.id===ui.dict),orig=r.scoreText!==undefined?r.scoreText:(d?d.text:''),both=origOn();
   const S=toksOf(ans,r.S),O=toksOf(orig,r.O),N=innerWidth<760?4:innerWidth<1000?5:6;
   const byMiss={},bySub={};r.errors.forEach((e,i)=>{if(e.type==='missing')byMiss[e.oi]=i;else if(e.type==='sub')bySub[e.oi]=i;});
   const fx=e=>e.done||e.stage==='rule';
@@ -2890,7 +2993,7 @@ function recItem(it){
 function recordDictado(){
   const f=ui.fix;if(!f||f.saved)return;f.saved=true;
   const secs=Math.round((Date.now()-(ui.t0||Date.now()))/1000),d=state.dictados.find(x=>x.id===ui.dict);
-  const res={total:f.total,wrong:f.wrong,punct:f.punct.length,errs:f.errors.filter(e=>e.type!=='extra').map(e=>({typed:e.typed||'',correct:e.correct||'',type:e.type})),photo:!!ui.photo};
+  const res={total:f.total,wrong:f.wrong,punct:f.punct.length,unclear:f.unclearPhrases||[],errs:f.errors.filter(e=>e.type!=='extra').map(e=>({typed:e.typed||'',correct:e.correct||'',type:e.type})),photo:!!ui.photo};
   if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it){const [s,r]=recItem(it);r.secs=(r.secs||0)+secs;r.end=Date.now();r.done=true;r.res=res;touchSes(s);return;}}
   const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;
   s.extra.push({id:uid(),kind:'dictado',title:'Dictado: '+(d?d.title:''),start:Date.now()-secs*1000,end:Date.now(),secs,res});touchSes(s);
@@ -2900,8 +3003,9 @@ function sessionReport(s){
   const rows=[];
   const one=(r,extra,it)=>{
     const o={title:r.title,done:!!r.done||extra,secs:r.secs||0,at:r.start,line:'',det:[],src:r};
-    if(r.kind==='dictado'&&r.res){const x=r.res;o.line=`${x.total-x.wrong} de ${x.total} palabras bien (${x.total?Math.round(100*(x.total-x.wrong)/x.total):100}%)`+(x.punct?` · ${x.punct} fallos de puntuación`:'')+(x.photo?' · con foto del cuaderno':'');
-      o.det=x.errs.map(e=>e.type==='sub'?`${e.typed} → ${e.correct}`:`falta «${e.correct}»`);}
+    if(r.kind==='dictado'&&r.res){const x=r.res;o.line=`${x.total-x.wrong} de ${x.total} palabras bien (${x.total?Math.round(100*(x.total-x.wrong)/x.total):100}%)`+(x.punct?` · ${x.punct} fallos de puntuación`:'')+(x.photo?' · con foto del cuaderno':'')+(x.unclear&&x.unclear.length?` · 🤷 ${x.unclear.length} trozo${x.unclear.length===1?'':'s'} sin entender`:'');
+      o.det=x.errs.map(e=>e.type==='sub'?`${e.typed} → ${e.correct}`:`falta «${e.correct}»`);
+      if(x.unclear&&x.unclear.length)o.det=o.det.concat(x.unclear.map(t=>`🤷 no entendió: «${t}»`));}
     else if(r.kind==='mates'&&r.res){const x=r.res;o.line=`${x.first} de ${x.n} a la primera · ${x.ok} de ${x.n} correctos`;
       o.det=x.wrong.map(w=>`${w.q.replace(/\s*=\s*$/,'')} = ${w.a}${w.given&&w.given.length?' (puso '+w.given.join(', ')+')':''}`);}
     else if(r.kind==='examen'&&r.res){const x=r.res;o.line=`${(Math.round(x.score*10)/10).toString().replace('.',',')} de ${x.n} puntos (${Math.round(100*x.score/x.n)}%)`;o.det=x.qa.filter(a=>exEff(a)<0.7).map(a=>`${a.q} → ${a.correct}`);}
@@ -2914,7 +3018,12 @@ function sessionReport(s){
         /* los deberes de Spelling del día son 2 rondas de escuchar + 1 de frases (x.kind==='hw',
            ver spHwFinishAll en p7b.js); la práctica suelta sigue siendo una sola ronda. */
         o.line=x.kind==='hw'&&x.rounds?`${x.ok} de ${x.n} palabras bien (${x.rounds.length} ronda${x.rounds.length===1?'':'s'}: ${x.rounds.map(rr=>rr.kind==='dict'?'escuchar':'frases').join(', ')})`:`${x.ok} de ${x.n} palabras bien (${x.kind==='dict'?'dictado':'frases'})`;
+        // pedido por David (2026-11-02): el botón "🤷 No lo he entendido" avisa aquí al tutor de
+        // cuántas palabras (y cuáles) dijo Julia que no entendió -- no cuentan ni bien ni mal (ver
+        // spellFinish/spHwFinishAll), así que se muestran aparte, nunca mezcladas con "wrong".
+        if(x.unclear&&x.unclear.length)o.line+=` · 🤷 ${x.unclear.length} sin entender`;
         o.det=(x.wrong||[]).map(w=>`${w.word}${w.given?' (puso '+w.given+')':''}${w.meaning?' · significado: '+w.meaning+(w.meaningOk===true?' ✅':w.meaningOk===false?' ❌':''):''}`);
+        if(x.unclear&&x.unclear.length)o.det=o.det.concat(x.unclear.map(w=>`🤷 ${w} (dijo que no la entendió)`));
       }else{
         /* pedido por David (2026-10-30): "en el spelling quiero que me diga cuantas preguntas ha
            hecho bien y mal y cuantas la quedan sin terminar" -- antes, un deber de Spelling
@@ -3101,7 +3210,7 @@ const taskActions={
   openItem(b){
     const it=itemsOf(todayStr()).find(x=>x.id===b.dataset.id);if(!it)return;
     const [s]=recItem(it);touchSes(s);ui.item=it.id;
-    if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.dictTheoryOpen=true;ui.dictRuleOpen=null;ui.screen='run';render();}
+    if(it.type==='dictado'){if(!state.dictados.find(d=>d.id===it.did))return toast('Ese dictado ya no existe');ui.dict=it.did;ui.answer='';ui.photo=null;ui.fix=null;ui.t0=Date.now();ui.dictTheoryOpen=true;ui.dictRuleOpen=null;ui.dictReveal=null;ui.dictUnclear=null;ui.dictBodyChunks=null;ui.screen='run';render();}
     else if(it.type==='examen')startExam(it.eid,it.id);
     else if(it.type==='teoria'){
       const e=exGet(it.tid);
@@ -6817,6 +6926,7 @@ function spHomeView(t){
   const row=l=>`<div class="panel row" style="justify-content:space-between">
   <button class="link" style="text-align:left;flex:1" data-act="spOpen" data-id="${esc(l.id)}"><b>🔤 ${esc(l.title||'(sin título)')}</b> ${l.status==='ready'?'<span style="color:var(--ok);font-weight:800">· publicada</span>':'<span class="mute">· borrador</span>'}<br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'} · ${l.sentences.length} ${l.sentences.length===1?'frase':'frases'} generadas</small></button>
   ${l.status==='ready'?`<button class="btn" data-act="taskAddOpen" data-type="spelling" data-id="${esc(l.id)}" data-title="${esc(l.title||'(sin título)')}">📅 Agregar a deberes</button>`:''}
+  ${l.status==='ready'&&l.words.length?`<button class="btn" data-act="spProbar" data-id="${esc(l.id)}" title="La pruebas tú, como la vería Julia -- no toca los datos reales de Julia">🧪 Probar</button>`:''}
   <button class="btn danger" data-act="spDel" data-id="${esc(l.id)}">🗑</button>
   </div>`;
   t.innerHTML=`<p class="mute" style="margin-top:0">Listas de palabras en inglés para practicar ortografía. Julia las dicta la IA palabra por palabra, y también practica completando frases con la palabra correcta. Nivel Year 6 de colegio británico.</p>
@@ -6900,6 +7010,23 @@ const spellActions={
     state.spelling=state.spelling.filter(l=>l.id!==b.dataset.id);
     if(ui.spId===b.dataset.id)ui.spId=null;
     save();render();
+  },
+  /* pedido por David (2026-11-02): poder probar una lista de Spelling CONCRETA desde la propia
+     pestaña de Spelling, igual que ya existe "🧪 Probar (3 preguntas)" para una tarjeta de teoría
+     concreta (exProbar3) -- reutiliza EXACTAMENTE la misma Zona de pruebas (pruebaEnter()/
+     pruebaExit(): copia de seguridad de "state" entera y role='alumna' temporal, con save()
+     bloqueado mientras tanto), no un camino nuevo. A diferencia de "spelling_escuchar"/
+     "spelling_frases" de la Zona de pruebas (que eligen una lista al azar), aquí se entra
+     directamente a ESTA lista y se deja elegir libremente entre "🔊 Dictado de spelling" y
+     "📝 Frases para completar", tal y como lo vería Julia practicando esta lista suelta. */
+  spProbar(b){
+    if(ui.testZoneBackup)return toast('Primero sal de la prueba anterior (✕ Salir) antes de empezar otra');
+    const l=spGet(b.dataset.id);
+    if(!l||l.status!=='ready')return toast('Esta lista todavía no está publicada');
+    if(!l.words.length)return toast('Esta lista no tiene palabras todavía');
+    pruebaEnter();
+    ui.spProbarId=l.id;
+    ui.screen='spelllist';render();
   },
   async spWordsAdd(){
     const l=spGet(ui.spId);if(!l)return;
@@ -7030,13 +7157,18 @@ const EnVoice=(()=>{
     pick(name){return (name&&voices.find(v=>v.name===name))||voices[0]||null;}
   };
 })();
-function sayWordEN(text,cb){
+/* pedido por David (2026-11-02): "poder pedir que se diga con otra voz, por si con otra la
+   entiende" -- voiceOverride (opcional) deja usar una voz CONCRETA en vez de la configurada por el
+   tutor en Ajustes (state.settings.spVoice), solo para ESTA reproducción puntual, sin tocar el
+   ajuste real -- ver spellRunActions.spDictPlayOther. Las llamadas de siempre (spDictPlay,
+   testSpVoice) no pasan este 3er parámetro, así que su comportamiento no cambia. */
+function sayWordEN(text,cb,voiceOverride){
   const synth=window.speechSynthesis;
   let done=false,g;const fin=()=>{if(done)return;done=true;clearTimeout(g);cb&&cb();};
   try{
     if(!synth)return fin();
     const u=new SpeechSynthesisUtterance(text);
-    const v=EnVoice.pick(state.settings&&state.settings.spVoice);
+    const v=voiceOverride||EnVoice.pick(state.settings&&state.settings.spVoice);
     if(v)u.voice=v;u.lang=v?v.lang:'en-GB';u.rate=0.85;
     u.onend=fin;u.onerror=fin;
     g=setTimeout(fin,4000+text.length*200);
@@ -7046,6 +7178,11 @@ function sayWordEN(text,cb){
 function renderSpellList(){
   let filterId=null,isHw=false,hwIt=null;
   if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling'){filterId=it.spid;isHw=true;hwIt=it;}}
+  // "🧪 Probar" del tutor en una lista concreta de Spelling (spProbar): muestra SOLO esa lista,
+  // pero sin el modo "deberes" (isHw sigue en false), para que el tutor pueda elegir libremente
+  // entre "🔊 Dictado de spelling" y "📝 Frases para completar", igual que Julia cuando practica
+  // esta lista suelta (no como deber del día).
+  else if(ui.spProbarId){filterId=ui.spProbarId;}
   /* ui.spHwCfg: guarda aquí mismo los nº de rondas que se van a mostrar, para que spHwStart use
      EXACTAMENTE estos mismos números al armar el plan (en vez de volver a buscar el item de
      deberes por su cuenta) y así nunca pueda mostrar un reparto distinto del que luego ejecuta,
@@ -7081,7 +7218,7 @@ function renderSpellList(){
     <button class="btn" data-act="spSentStart" data-id="${esc(l.id)}" ${nSent?'':'disabled'}>📝 Frases para completar${nSent?'':' (sin frases todavía)'}</button>
     </div></div>`;
   };
-  app.innerHTML=`<button class="link" data-act="${filterId?'goToday':'goHome'}">← ${filterId?'Deberes de hoy':'Inicio'}</button><h2>🔤 Spelling</h2>`+
+  app.innerHTML=`<button class="link" data-act="${isHw?'goToday':'goHome'}">← ${isHw?'Deberes de hoy':'Inicio'}</button><h2>🔤 Spelling</h2>`+
   (list.length?list.map(row).join(''):'<div class="panel">Todavía no hay listas de spelling. Tu tutor las añadirá aquí.</div>');
 }
 /* mismo patrón que morfoSkipHTML/studySkipHTML: solo aparece tras un primer intento fallido de
@@ -7115,6 +7252,7 @@ function renderSpellDict(){
     <p class="mute">Palabra ${r.i+1} de ${words.length} · escríbela en tu hoja</p>
     <div class="panel" style="text-align:center">
     <button class="btn primary big" data-act="spDictPlay">🔊 Escuchar la palabra</button>
+    ${EnVoice.voices().length>1?'<button class="btn" style="margin-left:8px" data-act="spDictPlayOther">🔊 Probar con otra voz</button>':''}
     <label class="f" style="margin-top:14px;text-align:left">¿Qué significa en español?<input type="text" id="spDictMeaning" data-enter="spDictMeaning" autocomplete="off" value="${esc((r.photoMeanings&&r.photoMeanings[r.i])||'')}" placeholder="Escribe el significado…" ${checked?'disabled':''} style="font-size:1.05rem;text-align:center;width:100%"></label>
     ${!checked?`<div class="row" style="justify-content:center;margin-top:14px"><button class="btn primary big" data-act="spDictCheckMeaning" ${r.meaningBusy?'disabled':''}>${r.meaningBusy?'⏳ Comprobando…':'✔ Comprobar significado'}</button></div>`
     :`<div class="msg ${mSt===true?'right':mSt===false?'wrong':''}" style="margin-top:10px;text-align:center">${mSt===true?'✅ ¡Significado correcto!':mSt===false?`❌ No es correcto. ${(r.photoMeaningCorrect&&r.photoMeaningCorrect[r.i])?'Significa: <b>'+esc(r.photoMeaningCorrect[r.i])+'</b>':''}`:'⚠️ No se ha podido comprobar el significado ahora mismo.'}</div>
@@ -7128,9 +7266,13 @@ function renderSpellDict(){
   <p class="mute">Palabra ${r.i+1} de ${words.length}</p>
   <div class="row" style="margin:6px 0"><button class="btn" data-act="spDictPrev" ${r.i?'':'disabled'}>⬅ Anterior</button></div>
   <div class="panel">
-  <div class="row" style="justify-content:center;margin-bottom:12px"><button class="btn primary big" data-act="spDictPlay">🔊 Escuchar</button></div>
-  <input type="text" id="spDictAns" data-enter="spDictAns" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Escribe la palabra…" value="${esc(r.given)}" ${r.stage==='checked'?'disabled':''} style="font-size:1.2rem;text-align:center;width:100%">
-  ${r.stage==='typing'?`<div class="row" style="justify-content:center;margin-top:12px"><button class="btn primary big" data-act="spDictCheck">✔ Comprobar</button></div>`:''}
+  <div class="row" style="justify-content:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><button class="btn primary big" data-act="spDictPlay">🔊 Escuchar</button>${EnVoice.voices().length>1?'<button class="btn" data-act="spDictPlayOther">🔊 Probar con otra voz</button>':''}</div>
+  <input type="text" id="spDictAns" data-enter="spDictAns" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Escribe la palabra…" value="${esc(r.given)}" ${(r.stage==='checked'||r.stage==='unclear')?'disabled':''} style="font-size:1.2rem;text-align:center;width:100%">
+  ${r.stage==='typing'?`<div class="row" style="justify-content:center;margin-top:12px"><button class="btn primary big" data-act="spDictCheck">✔ Comprobar</button></div>
+  <div class="row" style="justify-content:center;margin-top:6px"><button class="link" data-act="spDictUnclear">🤷 No lo he entendido, dime la solución</button></div>`:''}
+  ${r.stage==='unclear'?`<div class="msg" style="margin-top:12px;text-align:center;font-size:1.1rem">🤷 No pasa nada. La palabra era: <b>${esc(w.w)}</b></div>
+  <p class="mute" style="text-align:center;margin:6px 0">Esto no cuenta ni bien ni mal. Tu tutor sabrá que esta no la entendiste.</p>
+  <div class="row" style="justify-content:center;margin-top:12px"><button class="btn success big" data-act="spDictUnclearNext">${r.i+1<words.length?'Siguiente ➜':'Ver resultado ➜'}</button></div>`:''}
   ${r.stage==='checked'?`<div class="msg ${r.ok?'right':'wrong'}" style="margin-top:12px;text-align:center;font-size:1.1rem">${r.ok?'✅ ¡Correcto!':`❌ Era: <b>${esc(w.w)}</b>`}</div>
   ${(r.ok||r.retypeOk)?`${r.retypeSkipped?'<div class="msg right" style="margin-top:8px;text-align:center">➡️ Palabra saltada con el PIN del tutor.</div>':''}<label class="f" style="margin-top:12px">¿Qué significa <b>${esc(w.w)}</b> en español?<input type="text" id="spDictMeaning" data-enter="spDictMeaning" autocomplete="off" value="${esc(r.meaning||'')}" placeholder="Escribe el significado…" ${r.meaningOk!==undefined?'disabled':''} style="font-size:1.05rem;text-align:center;width:100%"></label>
   ${r.meaningOk===undefined?`<div class="row" style="justify-content:center;margin-top:12px"><button class="btn primary big" data-act="spDictCheckMeaning" ${r.meaningBusy?'disabled':''}>${r.meaningBusy?'⏳ Comprobando…':'✔ Comprobar significado'}</button></div>`
@@ -7143,8 +7285,8 @@ function renderSpellDict(){
   ${r.retypeTried?spDictSkipHTML(r):''}
   </div>`}`:''}
   </div>`+spHwQuitOverlay();
-  const fsel=r.skipPinAsk?'#spDictSkipPin':r.stage!=='checked'?'#spDictAns':(r.ok||r.retypeOk)?'#spDictMeaning':'#spDictRetype';
-  const inpF=$(fsel);if(inpF)inpF.focus();
+  const fsel=r.skipPinAsk?'#spDictSkipPin':r.stage==='unclear'?null:r.stage!=='checked'?'#spDictAns':(r.ok||r.retypeOk)?'#spDictMeaning':'#spDictRetype';
+  if(fsel){const inpF=$(fsel);if(inpF)inpF.focus();}
 }
 function renderSpellPhotoUpload(l,r){
   /* mientras se está leyendo una foto ya elegida (r.photoBusy, puesta por spDictPhotoUpload
@@ -7181,9 +7323,17 @@ function renderSpellSent(){
   const inp=$('#spSentAns');if(inp)inp.focus();
 }
 function renderSpellDone(l,r,kind){
-  const n=r.results.length,okN=r.results.filter(x=>x.ok).length;
+  /* las palabras marcadas "no lo he entendido" (spDictUnclear) se guardan en r.results con
+     unclear:true, pero NO cuentan ni como bien ni como mal (ver spellFinish) -- se excluyen aquí
+     también de "n"/"okN" para que el resumen (y el % de acierto) cuadren con lo que de verdad se
+     registra, y se muestran aparte en la lista, sin ✅/❌. */
+  const scored=r.results.filter(x=>!x.unclear);
+  const n=scored.length,okN=scored.filter(x=>x.ok).length;
   const pct=n?Math.round(100*okN/n):100;
-  const rows=r.results.map(x=>`<div class="panel row" style="justify-content:space-between"><span>${x.ok?'✅':'❌'} <b>${esc(x.word)}</b>${!x.ok?` <span class="mute">(escribiste: ${esc(x.given||'(nada)')})</span>`:''}${x.meaning?` <span class="mute">· significado: ${esc(x.meaning)}${x.meaningOk===true?' ✅':x.meaningOk===false?' ❌':''}</span>`:''}</span></div>`).join('');
+  const rows=r.results.map(x=>x.unclear
+    ?`<div class="panel row" style="justify-content:space-between"><span>🤷 <b>${esc(x.word)}</b> <span class="mute">(no la entendiste -- no cuenta)</span></span></div>`
+    :`<div class="panel row" style="justify-content:space-between"><span>${x.ok?'✅':'❌'} <b>${esc(x.word)}</b>${!x.ok?` <span class="mute">(escribiste: ${esc(x.given||'(nada)')})</span>`:''}${x.meaning?` <span class="mute">· significado: ${esc(x.meaning)}${x.meaningOk===true?' ✅':x.meaningOk===false?' ❌':''}</span>`:''}</span></div>`
+  ).join('');
   /* cuando esta ronda es parte de los deberes del día (ui.spHw: 2 rondas de escuchar + 1 de
      frases), en vez de "Repetir"/"Volver" se encadena directamente a la siguiente ronda, y solo
      al terminar la última se cierra el deber (spHwNext/spHwFinishAll). */
@@ -7225,9 +7375,14 @@ async function spGradeMeaning(word,given){
 /* ---- registrar resultados (igual que recordDictado/morfoFinish: si viene de los deberes del
    día (ui.item) se apunta en esa tarea; si no, se apunta como actividad suelta). ---- */
 function spellFinish(l,r,kind){
-  const n=r.results.length,okN=r.results.filter(x=>x.ok).length;
+  /* las palabras "no lo he entendido" (unclear:true) no cuentan ni bien ni mal (pedido de David,
+     2026-11-02): se excluyen de "scored" (y por tanto de n/okN/wrong), y se guardan aparte en
+     res.unclear para que el tutor sepa cuáles fueron, sin que afecten al marcador. */
+  const scored=r.results.filter(x=>!x.unclear);
+  const n=scored.length,okN=scored.filter(x=>x.ok).length;
+  const unclear=r.results.filter(x=>x.unclear).map(x=>x.word);
   const secs=Math.round((Date.now()-(ui.t0||Date.now()))/1000);
-  const res={n,ok:okN,kind,wrong:r.results.filter(x=>!x.ok).map(x=>({word:x.word,given:x.given,meaning:x.meaning||'',meaningOk:x.meaningOk}))};
+  const res={n,ok:okN,kind,wrong:scored.filter(x=>!x.ok).map(x=>({word:x.word,given:x.given,meaning:x.meaning||'',meaningOk:x.meaningOk})),unclear};
   earnScreenTime(okN);
   /* si esta ronda es parte de los deberes del día (2 de escuchar + 1 de frases), no se registra
      todavía: se acumula en ui.spHw y el deber se cierra una sola vez, al terminar la última
@@ -7277,7 +7432,7 @@ function spHwRunStep(){
   if(kind==='sent'&&!l.sentences.length)return spHwFinishAll();
   spellHwSave();
   if(kind==='dict'){
-    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
+    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,voiceIdx:0,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
     ui.screen='spelldict';
   }else{
     ui.spRun={listId:l.id,order:shuffleArr(l.sentences.map(s=>s.id)),i:0,given:'',stage:'answer',ok:null,results:[]};
@@ -7289,7 +7444,8 @@ function spHwFinishAll(){
   const hw=ui.spHw;if(!hw)return;
   const n=hw.rounds.reduce((a,r)=>a+r.n,0),ok=hw.rounds.reduce((a,r)=>a+r.ok,0);
   const wrong=hw.rounds.flatMap(r=>r.wrong||[]);
-  const res={n,ok,kind:'hw',rounds:hw.rounds,wrong};
+  const unclear=hw.rounds.flatMap(r=>r.unclear||[]);
+  const res={n,ok,kind:'hw',rounds:hw.rounds,wrong,unclear};
   const secs=hw.secs||0;
   if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling'){const [s,rr]=recItem(it);rr.secs=(rr.secs||0)+secs;rr.end=Date.now();rr.done=true;rr.res=res;touchSes(s);}}
   spellClearProgress(hw.listId);
@@ -7315,7 +7471,7 @@ const spellRunActions={
   spDictStart(b){
     const l=spGet(b.dataset.id);if(!l||l.status!=='ready')return toast('Esta lista no está disponible');
     if(!l.words.length)return toast('Esta lista no tiene palabras');
-    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
+    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,voiceIdx:0,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
     ui.t0=Date.now();ui.screen='spelldict';render();
   },
   spHwStart(b){
@@ -7395,6 +7551,28 @@ const spellRunActions={
       sayWordEN(w.w,()=>{const inp2=$('#spDictAns');if(inp2)inp2.focus();});
     },1000);
   },
+  /* pedido por David (2026-11-02): "poder pedir que se diga con otra voz por si con otra la
+     entiende". Usa EnVoice.voices() (el mismo catálogo de voces en inglés del dispositivo que ya
+     usa el selector de Ajustes) pero SOLO para esta reproducción puntual -- no toca
+     state.settings.spVoice, así que no cambia la voz real del resto del dictado ni la del tutor.
+     Se excluye a propósito la voz "normal" (la que ya se usó con "🔊 Escuchar": la elegida en
+     Ajustes, o la de mejor calidad si no hay ninguna elegida) del primer intento, para garantizar
+     que la primera pulsación suene DE VERDAD distinta -- si sigue sin entenderla, las pulsaciones
+     siguientes van rotando por el resto de voces disponibles, una a una. */
+  spDictPlayOther(){
+    const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
+    const voices=EnVoice.voices();if(voices.length<2)return;
+    const words=spWordObjs(l,r.order);const w=words[r.i];if(!w)return;
+    const current=EnVoice.pick(state.settings&&state.settings.spVoice);
+    const others=voices.filter(v=>!current||v.name!==current.name);
+    const pool=others.length?others:voices;
+    const idx=(r.voiceIdx||0)%pool.length,chosen=pool[idx];
+    r.voiceIdx=idx+1;
+    const inp=$('#spDictAns');if(inp)inp.focus();
+    setTimeout(()=>{
+      sayWordEN(w.w,()=>{const inp2=$('#spDictAns');if(inp2)inp2.focus();},chosen);
+    },300);
+  },
   spDictCheck(){
     const r=ui.spRun;if(!r||r.stage!=='typing')return;const l=spGet(r.listId);if(!l)return;
     const words=spWordObjs(l,r.order);const w=words[r.i];
@@ -7431,6 +7609,31 @@ const spellRunActions={
     r.skipPinAsk=false;r.retypeOk=true;r.retypeSkipped=true;
     render();scrollQCenter();
   },
+  /* pedido por David (2026-11-02): "un botón 'no lo he entendido' que el alumno pueda pulsar en
+     caso de que no entienda lo que dice la IA -- le dará la solución y le dejará pasar a la
+     siguiente, pero no se contará como bueno ni como malo, y avisará a los tutores". A diferencia
+     de spDictSkipAsk/Go (el salto con PIN del tutor, que SÍ cuenta como fallo: solo quita la
+     obligación de reescribir bien tras haber fallado), esto es un escape distinto, sin PIN,
+     disponible desde el primer momento (antes de intentar escribir nada), pensado para cuando el
+     problema es no entender el AUDIO, no la ortografía. Marca el resultado con unclear:true en vez
+     de empujar un ok:true/false -- spellFinish/renderSpellDone lo excluyen de "n"/"ok"/"wrong" (ver
+     ahí), así que de verdad no suma ni resta en el marcador, y queda aparte para que el tutor lo
+     vea (sessionReport). */
+  spDictUnclear(){
+    const r=ui.spRun;if(!r||r.stage!=='typing')return;const l=spGet(r.listId);if(!l)return;
+    const words=spWordObjs(l,r.order);const w=words[r.i];if(!w)return;
+    r.given='';r.stage='unclear';
+    r.results.push({wordId:w.id,word:w.w,given:'',ok:null,unclear:true});
+    const y=scrollY;render();scrollTo(0,y);
+  },
+  spDictUnclearNext(){
+    const r=ui.spRun;if(!r||r.stage!=='unclear')return;const l=spGet(r.listId);if(!l)return;
+    const words=spWordObjs(l,r.order);
+    r.i++;r.given='';r.ok=null;r.meaning='';r.meaningOk=undefined;r.meaningCorrect='';r.retypeGiven='';r.retypeOk=false;r.retypeTried=false;r.skipPinAsk=false;r.retypeSkipped=false;r.voiceIdx=0;r.stage='typing';
+    if(r.i>=words.length){r.stage='done';spellFinish(l,r,'dict');return render();}
+    if(miniGameDue(r.i,words.length))return startMiniGame('spelldict');
+    const y=scrollY;render();scrollTo(0,y);
+  },
   /* comprueba con la IA si el significado que ha escrito Julia es correcto (solo en "escuchar",
      en cualquiera de los dos modos: escribiendo en el ordenador -stage 'checked'- o en papel
      -stage 'photowait'-). Hay que comprobarlo antes de poder avanzar a la siguiente palabra: así
@@ -7464,7 +7667,7 @@ const spellRunActions={
        "✔ Comprobar significado" (solo en el dictado de spelling, no en las frases). */
     if(r.ok===false&&!r.retypeOk)return toast('Primero vuelve a escribir la palabra correctamente');
     if(r.meaningOk===undefined)return toast('Comprueba primero el significado');
-    r.i++;r.given='';r.ok=null;r.meaning='';r.meaningOk=undefined;r.meaningCorrect='';r.retypeGiven='';r.retypeOk=false;r.retypeTried=false;r.skipPinAsk=false;r.retypeSkipped=false;r.stage='typing';
+    r.i++;r.given='';r.ok=null;r.meaning='';r.meaningOk=undefined;r.meaningCorrect='';r.retypeGiven='';r.retypeOk=false;r.retypeTried=false;r.skipPinAsk=false;r.retypeSkipped=false;r.voiceIdx=0;r.stage='typing';
     /* igual que en mates/exámenes/estudio de temas/análisis morfológico: un minijuego cada X
        palabras según la frecuencia de Ajustes (miniGameEvery), nunca garantizado al terminar la
        ronda (ver miniGameDue, p5d.js). */
@@ -7487,10 +7690,14 @@ const spellRunActions={
      principio) es lo que hace esto fiable en los dos casos. */
   spDictPrev(){
     const r=ui.spRun;if(!r||r.i<=0)return;
-    if(r.stage==='checked'&&r.results.length>r.i)r.results.pop();
+    /* "No lo he entendido" (spDictUnclear) también deja un resultado guardado (unclear:true) SIN
+       haber pulsado "Siguiente" todavía -- mismo caso que "checked", así que Anterior debe
+       descartarlo igual (si no, se desalinea r.results frente a r.i, el mismo bug ya arreglado para
+       "checked" en la revisión adversarial original de este botón). */
+    if((r.stage==='checked'||r.stage==='unclear')&&r.results.length>r.i)r.results.pop();
     r.i--;
     if(r.results.length>r.i)r.results.pop();
-    r.given='';r.ok=null;r.meaning='';r.meaningOk=undefined;r.meaningCorrect='';r.retypeGiven='';r.retypeOk=false;r.retypeTried=false;r.skipPinAsk=false;r.retypeSkipped=false;r.stage='typing';
+    r.given='';r.ok=null;r.meaning='';r.meaningOk=undefined;r.meaningCorrect='';r.retypeGiven='';r.retypeOk=false;r.retypeTried=false;r.skipPinAsk=false;r.retypeSkipped=false;r.voiceIdx=0;r.stage='typing';
     const y=scrollY;render();scrollTo(0,y);
   },
   spDictPhoneNext(){
@@ -7544,7 +7751,7 @@ const spellRunActions={
   },
   spDictRepeat(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
-    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
+    ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,voiceIdx:0,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
     ui.t0=Date.now();render();
   },
   spDictQuit(){if(ui.spHw){ui.spHwQuitAsk=true;return render();}ui.spRun=null;ui.spHw=null;ui.screen='spelllist';render();},
@@ -7722,7 +7929,7 @@ function historialBodyHTML(){
   ${dicts.map(g=>{const l=g.list;return `<div class="panel"><b>${esc(g.t)}</b><br><small class="mute">${l.length} ${l.length===1?'vez':'veces'} · media ${avg(l)}% · mejor ${Math.max(...l.map(pct))}% · último ${pct(l[l.length-1])}% (${l[l.length-1].wrong} ${l[l.length-1].wrong===1?'fallo':'fallos'})</small><div style="margin-top:6px;height:50px;display:flex;align-items:flex-end">${spark(l)}</div></div>`;}).join('')}
   <h3>🕒 Cada intento</h3>
   <div class="list">${H.map(h=>{const w=h.errs.filter(e=>e.type!=='extra').map(e=>e.type==='sub'?`${esc(e.typed)} → <b>${esc(e.correct)}</b>`:`falta <b>${esc(e.correct)}</b>`);
-    return `<div class="panel"><b>${esc(h.title)}</b> <span class="mute">· ${fd(h.date)}${h.photo?' · 📷':''}</span><br>${h.total-h.wrong} de ${h.total} palabras bien (${pct(h)}%)${h.punct?` · ${h.punct} de puntuación`:''}${w.length?`<br><small>${w.join(' · ')}</small>`:''}</div>`;}).join('')}</div>
+    return `<div class="panel"><b>${esc(h.title)}</b> <span class="mute">· ${fd(h.date)}${h.photo?' · 📷':''}</span><br>${h.total-h.wrong} de ${h.total} palabras bien (${pct(h)}%)${h.punct?` · ${h.punct} de puntuación`:''}${h.unclear&&h.unclear.length?` · 🤷 ${h.unclear.length} sin entender`:''}${w.length?`<br><small>${w.join(' · ')}</small>`:''}${h.unclear&&h.unclear.length?`<br><small class="mute">🤷 no entendió: ${h.unclear.map(esc).join(' · ')}</small>`:''}</div>`;}).join('')}</div>
   <button class="btn danger" data-act="clearHist">Borrar historial</button>`;
 }
 function tabAjustes(){
@@ -7909,13 +8116,40 @@ const studentActions={
   goHome(){if(ui.role==='tutor'){ui.role='alumna';}Dict.stop();ui.item=null;ui.screen='home';render();},
   goList(){ui.screen='list';render();},
   backList(){Dict.stop();ui.screen=ui.item?'today':'list';render();},
-  openDict(b){ui.item=null;ui.t0=Date.now();ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.dictTheoryOpen=true;ui.dictRuleOpen=null;ui.screen='run';render();},
+  openDict(b){ui.item=null;ui.t0=Date.now();ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.dictTheoryOpen=true;ui.dictRuleOpen=null;ui.dictReveal=null;ui.dictUnclear=null;ui.dictBodyChunks=null;ui.screen='run';render();},
   dictRuleToggle(b){const k=b.dataset.k;ui.dictRuleOpen=ui.dictRuleOpen===k?null:k;const y=scrollY;render();scrollTo(0,y);},
   start:startDictado,
   pause(){Dict.cur&&Dict.cur.paused?Dict.resume():Dict.pause();},
   repeat(){Dict.repeat();},skip(){Dict.skip();},prev(){Dict.prev();},stop(){Dict.stop();updateRun();},
+  /* pedido por David (2026-11-02): "en el dictado... un botón 'no lo he entendido'... le dará la
+     solución y le dejará pasar a la siguiente, pero no se contará como bueno ni como malo, y
+     avisará a los tutores". Pausa el trozo actual (Dict.pause) y muestra su texto en un panel
+     dedicado (ui.dictReveal) que SUSTITUYE a los botones normales de control (ver renderRun), para
+     que no se pueda confundir con el botón genérico de pausa/reanudar. Marca el trozo (por su
+     índice dentro de ui.dictBodyChunks, ver startDictado) en ui.dictUnclear.idx -- goCorrect()
+     reconstruye el texto a corregir SIN esos trozos (joinChunks), así que de verdad no cuentan ni
+     bien ni mal. El trozo del título (s.i===0) no se puede marcar: no forma parte de lo que se
+     corrige (se descarta con dropTitle), así que no tiene sentido "no entenderlo" a estos efectos
+     -- el botón ya aparece deshabilitado ahí (ver updateRun), pero se repite la comprobación aquí
+     por si se llama a esta acción de otra forma. */
+  dictUnclear(){
+    const s=Dict.cur;if(!s||s.dead||s.phase==='starting'||s.phase==='done'||s.phase==='finishing'||s.i===0)return;
+    const ch=s.chunks[s.i];const words=ch.filter(t=>t!=='¶');if(!words.length)return;
+    const text=words.join(' '),bodyIdx=s.i-1;
+    ui.dictUnclear=ui.dictUnclear||{idx:new Set(),texts:[]};
+    if(!ui.dictUnclear.idx.has(bodyIdx)){ui.dictUnclear.idx.add(bodyIdx);ui.dictUnclear.texts.push(text);}
+    Dict.pause();
+    ui.dictReveal=text;
+    render();
+  },
+  dictUnclearNext(){
+    if(!ui.dictReveal)return;
+    ui.dictReveal=null;
+    Dict.skip();
+    render();
+  },
   correct:goCorrect,
-  again(){ui.t0=Date.now();ui.answer='';ui.photo=null;ui.fix=null;ui.screen='run';render();},
+  again(){ui.t0=Date.now();ui.answer='';ui.photo=null;ui.fix=null;ui.dictReveal=null;ui.dictUnclear=null;ui.dictBodyChunks=null;ui.screen='run';render();},
   setRole(b){
     const r=b.dataset.role;
     /* si se está en medio de una prueba de la Zona de pruebas (ver pruebaActions), el botón de
@@ -8033,7 +8267,7 @@ const pruebaActions={
     else{ui.tab='pruebas';ui.spHw=null;ui.spHwQuitAsk=false;}
     ui.mrun=null;ui.study=null;ui.ex=null;ui.exres=null;ui.dict=null;ui.item=null;ui.morfo=null;
     ui.prep=null;ui.spRun=null;ui.mgame=null;ui.engdict=null;ui.answer='';ui.photo=null;ui.fix=null;
-    ui.studyVideoOpen=false;
+    ui.studyVideoOpen=false;ui.spProbarId=null;ui.dictReveal=null;ui.dictUnclear=null;ui.dictBodyChunks=null;
     save();render();
   }
 };
