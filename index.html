@@ -1202,8 +1202,279 @@ function dictadoPreviewHTML(text){
    ninguno aplica a exámenes combinados, y los 2 casos límite de la revisión -tarjeta recién
    creada sin preguntas, y tarjeta con notes undefined- no disparan falsos positivos ni rompen el
    render). Suite completa en verde salvo los 2 hallazgos pre-existentes ya documentados, sin
-   relación con este cambio. */
-const APP_VERSION='2026.10.24-3';
+   relación con este cambio.
+
+   70. David avisó: "no van los sonidos de bien y mal en ninguna parte, ni en el alumno ni en
+   pruebas". Revisando chime()/playApplause()/playSadTrombone()/_fxAudioCtx() no se encontró
+   ninguna condición de rol ni de Zona de Pruebas que los silencie -- deberían sonar igual en
+   cualquier sitio. Sin poder ver ni oír su navegador desde aquí, se añade una herramienta de
+   diagnóstico: botón "▶️ Probar sonido de acierto/fallo" en Ajustes (mismo patrón que los ya
+   existentes "🔊 Probar voz"/"🔊 Probar voz IA"). Suena SIEMPRE al pulsarlo, sin mirar el
+   interruptor "🔊 Sonido de acierto/fallo" (sirve también para decidir si activarlo), y avisa con
+   un mensaje claro si el propio navegador no soporta Web Audio en vez de quedarse mudo sin
+   explicación. Revisión adversarial: sin hallazgos de código (ninguna excepción sin capturar,
+   sin fugas, sin interferir con sonidos reales, HTML correcto) -- sí señaló un límite real a
+   tener en cuenta: si la causa de que no se oiga nada es el volumen del sistema, un interruptor
+   de silencio, o la salida de audio desviada a otro sitio, el botón "sonará" sin ningún error de
+   JavaScript que detectar, así que no sirve para descartar esas causas, solo las de verdad
+   relacionadas con el navegador/código.
+   Cubierto por tests nuevos: verify_test_fxsound_button.js. Suite completa en verde salvo los 2
+   hallazgos pre-existentes ya documentados, sin relación con este cambio.
+
+   71. David pidió: "en la teoria ademas de las fotos con la teoria créame un apartado para subir
+   fotos de ejemplos de ejercicios para que la IA sepa mas o menos como generar los ejercicios".
+   Nueva sección "🧩 Ejemplos de ejercicios (opcional)" en la vista de editar tarjeta/examen,
+   SEPARADA de "📷 Teoría a estudiar": el tutor sube fotos de ejercicios de ejemplo (de un libro,
+   de otro examen...) y la IA describe su FORMATO/ESTILO (tipo de pregunta, estructura,
+   dificultad) SIN copiar los datos ni la respuesta concreta del ejemplo (prompt nuevo
+   EXAMPLE_FORMAT_SYS/describeExampleExercise, distinto del de apuntes -NOTES_SYS-, que
+   precisamente ignora los ejercicios que encuentra). La descripción se añade sola al campo ya
+   existente "Consejos para la IA" (e.hint), que ya estaba conectado a la generación de preguntas
+   (genPrompt) desde antes -- no ha hecho falta tocar genPrompt/genQuestions para nada. Estas
+   fotos se guardan aparte (state.exEjemplos[id], nunca en state.examFotos), nunca se sincronizan
+   entre dispositivos (igual que las de apuntes, a propósito) y NUNCA se muestran en ninguna
+   pantalla de estudio de Julia -- son solo para el tutor. Al eliminar una de estas fotos se quita
+   también su descripción de "Consejos para la IA" (si no se ha editado a mano).
+   Revisión adversarial, 2 rondas:
+   - 1ª ronda, 1 hallazgo real (MEDIO): la sección estaba oculta para exámenes sueltos
+     (!e.isExam), así que "✂️ Convertir en varios exámenes" (exSplit, que convierte una tarjeta de
+     teoría en examen reusando la MISMA id) dejaba huérfanas las fotos de ejemplo ya subidas --
+     datos vivos en el estado sin ninguna pantalla desde la que verlos. Arreglado quitando ese
+     filtro: la sección se muestra siempre, igual que ya hacía la de fotos de apuntes (que tampoco
+     distingue isExam) y tiene sentido porque "Consejos para la IA" se usa igual en ambos casos.
+   - 2ª ronda, centrada en ese arreglo: limpia, sin hallazgos nuevos.
+   Cubierto por tests nuevos: verify_ex_ejemplos.js (24 comprobaciones: estado por defecto, IA de
+   fotos desactivada, separación total de state.examFotos/e.notes, descripción añadida a e.hint,
+   fotos que la IA dice que no son un ejercicio, fallos de la IA sin romper nada, deduplicado por
+   hash, nunca aparece en pantallas de estudio, borrado de una foto limpia su línea en el hint,
+   limpieza al borrar tarjeta/examen, y el caso de exSplit ya arreglado). Suite completa en verde
+   salvo los 2 hallazgos pre-existentes ya documentados, sin relación con este cambio.
+
+   72. David pidió, en "Agregar a deberes" de Spelling: "en rondas escuchadas tambien pon ninguna
+   para poder no hacer estas y si hacer las frases". Se añadió "Ninguna" (0) también a "¿Cuántas
+   rondas escuchando las palabras?" (antes el mínimo era 1; solo "rondas de frases" tenía esa
+   opción). Si se ponen las DOS a "Ninguna" a la vez, el botón "💾 Agregar a deberes" aparece
+   deshabilitado con un aviso explicando por qué (adaptado si la lista no tiene frases todavía).
+   Revisión adversarial, 3 rondas:
+   - 1ª ronda, 1 hallazgo ALTO: varios sitios usaban "cfg.dictRounds||2" (trataban 0 como "sin
+     elegir" y lo devolvían a 2 en silencio) y spHwStart tenía un suelo "Math.max(1,dR)" que forzaba
+     1 ronda de escuchar igualmente. Arreglado comprobando "!==undefined" en vez de "||" en los 3
+     sitios (taskAddConfirm, renderSpellList, spHwStart) y quitando el suelo mínimo.
+   - 2ª ronda, 1 hallazgo ALTO (con dictRounds=0 y sentRounds>0, si se borran TODAS las frases de
+     la lista antes de que Julia empiece el deber, se autocompletaba al instante con "0 de 0 bien"
+     sin aviso) y 1 BAJO (el aviso de "elige al menos una ronda" sugería frases aunque la lista no
+     tuviera esa opción visible). El arreglo del ALTO (recortar el plan de rondas según las frases
+     disponibles ahora mismo) introdujo a su vez una regresión MEDIO detectada en la propia 2ª
+     ronda: un deber A MEDIAS con rondas YA completadas y guardadas podía dejar de "retomarse" y
+     perder ese progreso en silencio si mientras tanto se perdían las frases.
+   - 3ª ronda, centrada en el arreglo final (separar "construir el plan de rondas", que usa
+     siempre el reparto configurado sin recortar, de "decidir si bloquear al empezar de cero", que
+     sí mira las frases disponibles ahora mismo): limpia. Confirmó que retomar un deber a medias
+     sigue funcionando exactamente igual que siempre, y que la guardia ya existente en
+     spHwRunStep() cierra bien el deber usando el progreso real si la siguiente ronda pendiente
+     resulta ser de frases sin frases disponibles. Señaló un caso límite PRE-EXISTENTE sin relación
+     con este cambio (un deber que queda completo del todo pero Julia cierra la app justo antes de
+     pulsar "✅ Terminar Spelling" puede acabar repitiéndose entero al reabrir) -- documentado en
+     el backlog, no tocado aquí.
+   Cubierto por tests nuevos: verify_spell_dictrounds_none.js (24 comprobaciones: aparece la opción
+   "Ninguna" en escuchar, se guarda tal cual sin volver a 2, el plan de rondas la respeta sin forzar
+   ninguna ronda fantasma, no se puede confirmar ni ejecutar con las dos a "Ninguna", el aviso se
+   adapta a listas sin frases, el caso de perder las frases con un deber recién empezado se bloquea
+   con aviso claro, y el caso de perder las frases con un deber A MEDIAS retoma el progreso real sin
+   perder nada). Suite completa en verde salvo los 2 hallazgos pre-existentes ya documentados, sin
+   relación con este cambio.
+
+   73. (2026-10-30) Pedido por David mirando una captura del "Informe" (tutor): "en el spelling
+   quiero que me diga cuantas preguntas ha hecho bien y mal y cuantas la quedan sin terminar".
+   Antes, un deber de Spelling abierto desde "Hoy" pero sin terminar (sin pulsar el botón final que
+   dispara spHwFinishAll) siempre mostraba el aviso genérico "Empezado, sin terminar" en el Informe,
+   sin ningún detalle, aunque ya hubiera rondas reales completadas y guardadas en
+   state.spellProgress. Se modificó sessionReport() (su función interna one(), que ahora recibe
+   también el item real `it` para poder leer it.spid): si el deber no está terminado pero ya hay al
+   menos 1 ronda real guardada, se calcula bien/mal acumulados de las rondas ya hechas y cuántas
+   preguntas quedan en las rondas que faltan (contando palabras para cada ronda de escuchar
+   pendiente y frases para cada ronda de frases pendiente, reconstruyendo el plan igual que
+   spHwStart). Sin ninguna ronda real todavía, se mantiene el aviso genérico de siempre.
+   Revisión adversarial, 3 rondas:
+   - Ronda 1: halló (ALTO en gravedad real de producto, aunque solo alcanzable con datos corruptos/
+     antiguos) que el cálculo confiaba ciegamente en prog.dictRounds/prog.sentRounds -- si faltaban o
+     eran inválidos, el mensaje salía "optimista" (sugería que ya casi estaba cuando en realidad
+     faltaba casi todo). Y (BAJO) que si quedaban rondas de frases planeadas pero la lista ya no
+     tenía frases (borradas a medio deber), el mensaje decía igualmente "le queda cerrar la última
+     ronda" sin avisar de que esa ronda nunca se podrá hacer de verdad.
+   - Ronda 2 (sobre los arreglos de la ronda 1): halló (MEDIO) que si de las rondas pendientes había
+     una MEZCLA -- una con preguntas reales y otra sin ellas (p.ej. queda 1 ronda de escuchar con
+     palabras y 1 de frases ya sin frases) -- el mensaje decía sin más "N preguntas sin terminar"
+     ignorando que una de esas rondas no es alcanzable. Y (BAJO) que dictRounds/sentRounds no enteros
+     (solo alcanzable restaurando una copia de seguridad editada a mano) pasaban el chequeo
+     typeof==='number' pero reventaban Array() con RangeError dentro de sessionReport.
+   - Ronda 3 (sobre los arreglos de la ronda 2): limpia, sin hallazgos nuevos.
+   Arreglo final: se exige Number.isInteger(prog.dictRounds)&&>=0 (y lo mismo para sentRounds) antes
+   de calcular nada; se separan pendingSteps (cuántas rondas del plan faltan) de pendingQ (cuántas
+   preguntas reales hay en ellas) y de emptySteps (cuántas de esas rondas, una a una, no tienen ya
+   contenido); y el mensaje final distingue 4 casos: nada pendiente ("le queda cerrar la última
+   ronda"), todo pendiente tiene preguntas reales ("N preguntas sin terminar"), todo pendiente está
+   vacío ("le quedan N rondas pendientes... no tiene preguntas... revísalo"), y mezcla ("le quedan N
+   rondas pendientes (M preguntas reales, pero alguna ronda no tiene preguntas disponibles ahora:
+   revísalo)"). Sin r.res, el comportamiento de un deber YA terminado no cambia en nada.
+   Cubierto por tests nuevos: verify_spell_partial_report.js (15 comprobaciones: sin ronda completada
+   cae al aviso genérico; progreso real tras 1 y 2 rondas con bien/mal y preguntas pendientes
+   correctas; detalle de palabras falladas; lista borrada mientras tanto no revienta y cae al aviso
+   genérico; un deber ya terminado no cambia; reportHTML incluye el texto nuevo; dictRounds/
+   sentRounds ausentes caen al aviso genérico; rondas de frases sin frases disponibles -caso singular
+   y plural- avisan de rondas pendientes sin inventar que "ya casi está"; caso mixto de rondas con y
+   sin preguntas reales avisa de la mezcla; dictRounds no entero no revienta con RangeError). Suite
+   completa (40 archivos verify_*.js) en verde, sin relación con las exclusiones pre-existentes ya
+   documentadas.
+
+   75. (2026-11-01) Pedido por David: "tenemos finalmente que meter la IA para la corrección de las
+   preguntas que no son de tipo test, por que con el sistema actual muchas veces las escribe bien y
+   aun asi dice que esta mal, por alguna falta de ortografía o similar". Investigado: ese "segundo
+   vistazo" de IA (aiGradeWritten) ya existía y se usaba automáticamente en Teoría ("escríbelo tú",
+   studyCheck) desde antes -- pero en el módulo de Exámenes (preguntas de "respuesta redactada",
+   tipo 'red'), solo se corregía con exGrade (palabras clave + stemming + 1 errata de Levenshtein
+   como mucho) y Julia veía el ❌/🟡 al instante en renderExres() al entregar; la IA solo entraba
+   después, a mano, con el botón "🤖 Corregir con IA" del tutor en el Informe. Se cambió exSubmit()
+   (ahora async) para que, igual que ya hacía Teoría, cada pregunta roja que exGrade no diera ya por
+   buena se le pida automáticamente una segunda opinión a la IA ANTES de que Julia vea el resultado
+   -- en paralelo (Promise.all) para no alargar la espera. Solo puede MEJORAR el veredicto (nunca de
+   'ok' a fallo), y si no hay IA activada (state.ai.photoOn) o falla la conexión, se queda el
+   veredicto de siempre, sin romper nada. Mientras corrige, ui.ex.submitting deshabilita "Entregar
+   examen" y avisa "⏳ Corrigiendo con IA…".
+   Revisión adversarial, 6 rondas (5 con hallazgo real, la 6ª limpia):
+   - Ronda 1 (MEDIO): el aviso de renderExres() prometía una "segunda revisión de IA" aunque la IA
+     estuviera desactivada o la llamada hubiera fallado -- arreglado exigiendo que de verdad se
+     consultara con éxito (r.qa.some(a=>a.ai)).
+   - Ronda 2 (MEDIO): en un examen con varias preguntas rojas, si la IA tenía éxito en una y fallaba
+     en otra (mismo Promise.all), el aviso seguía generalizando "se revisaron las que parecían mal"
+     aunque una de ellas no se hubiera revisado de verdad -- arreglado exigiendo que TODAS las que
+     sigan sin estar "ok" tengan a.ai guardado (allWrongReviewed).
+   - Ronda 3 (MEDIO): si la IA promovía a ✅ una pregunta que las palabras clave puntuaban muy bajo
+     (p.ej. 0 de 4), seguía mostrándose "Te han faltado: ..." listando casi todo justo debajo del
+     ✅ -- contradictorio. Arreglado: cuando el ✅ viene de la IA (aiPromoted), se muestra el propio
+     comentario de la IA en su lugar, no el detalle de palabras clave.
+   - Ronda 4 (BAJO): si la IA confirmaba pero devolvía un comentario vacío, quedaba una línea "🤖"
+     huérfana sin texto -- arreglado cayendo al detalle de palabras clave de siempre en ese caso.
+   - Ronda 5 (BAJO): mientras se corregía con IA, Julia podía pulsar "Anterior" o cambiar una
+     respuesta sin que tuviera ningún efecto real (el array ya estaba "congelado" para la nota) --
+     arreglado deshabilitando "Anterior", las opciones de tipo test y el textarea mientras dura la
+     corrección, con guards a juego en examActions y en el listener de "input".
+   - Ronda 6: limpia, sin hallazgos nuevos.
+   Cubierto por tests nuevos: verify_exam_ai_grade.js (15 bloques, 48 comprobaciones: solo se llama
+   a la IA a las preguntas rojas que lo necesitan, nunca a tipo test ni a las ya "ok"; mejora el
+   veredicto sin empeorarlo nunca; guarda a.ai para el tutor; respeta state.ai.photoOn; no revienta
+   si falla la conexión; deshabilita y avisa el botón de entregar mientras corrige; no resucita un
+   examen abandonado a medio corregir; el aviso de renderExres() solo promete revisión de IA cuando
+   de verdad ocurrió para TODAS las preguntas que sigan mal; sin contradicción ✅+"Te han faltado";
+   sin línea de IA vacía; "Anterior"/tipo test/textarea bloqueados mientras corrige). Suite completa
+   (41 archivos verify_*.js) en verde, salvo las exclusiones pre-existentes ya documentadas (y un
+   hallazgo preexistente y ajeno en verify_prueba_minigame_timer_leak.js, sin relación con este
+   cambio, señalado por la ronda 6 pero no tocado aquí).
+
+   76. (2026-11-01) Fase 2 del plan de David para Teoría: "preparar examen con repetición hasta
+   dominar". Pedido textual: "Las preguntas que falle hay que volver a ponérselas hasta que no las
+   falle, cuando haya hecho todas las preguntas correctamente hay que hacer una nueva vuelta a las
+   preguntas y repetimos este proceso, y si generamos preguntas nuevas hacemos lo mismo." David
+   aclaró que esto NO es un modo nuevo y separado, sino el comportamiento normal del estudio de
+   Teoría ya existente (Nivel 1 "modo estudio" con foto / Nivel 2 "modo examen" repaso de memoria),
+   tanto en práctica libre como en deberes del tutor con nº fijo de preguntas y modo.
+   Implementado en studyActions.studyCheck: cada pregunta fallada (test o de "escribir", tras la
+   corrección de IA de la Fase 1 si aplica) se vuelve a meter al final de la cola de la ronda
+   (st.qs.push) y se repite hasta acertarla; "firstOk" (el "X de N a la primera" del informe) solo
+   cuenta el primer intento de verdad de cada pregunta, nunca un reintento; "n" (el denominador fijo
+   del informe) no crece con los reintentos, solo con preguntas nuevas de verdad (generadas por el
+   tutor, o usadas para rellenar un hueco de una pregunta borrada del banco); la ronda solo llega a
+   su pantalla final cuando hasta la última repetición pendiente se ha contestado bien. "Nivel 2"/
+   "Nivel 1"/"Repetir esta ronda" repiten exactamente LAS MISMAS preguntas de la ronda que se deja
+   atrás (no un sorteo nuevo), respetando el nº fijo de un deber. Retomar una ronda a medias
+   (studyOpen/studyOpenHomework) conserva los reintentos pendientes, seenIds y el nº fijo tal cual.
+   Revisión adversarial, 11 rondas (8 con hallazgo real, la 9ª y 10ª con hallazgo real cada una, la
+   11ª limpia):
+   - Ronda 1 (ALTO/MEDIO): el "n" fijo no bajaba cuando una pregunta pendiente se borraba del todo
+     del banco (studyMissingPendingCount); miniGameDue recibía qs.length (crece con reintentos) en
+     vez del "n" fijo de la ronda (studyNext ahora pasa st.n).
+   - Ronda 2 (ALTO): "Anterior" (studyPrev) permitía refallar a propósito una pregunta ya resuelta y
+     requeuearla sin límite -- arreglado con st.doneIdx, marcado en el momento mismo de corregir.
+   - Ronda 3 (MEDIO): "Nivel 2"/"Nivel 1"/"Repetir" usables mientras la IA corregía una respuesta de
+     "escribir" -- bloqueados con guard st.checking; un deber de "todas las preguntas" (hwN=null) no
+     incluía preguntas nuevas del banco al retomarlo a medias.
+   - Ronda 4 (ALTO/MEDIO): "n" no crecía bien al retomar un deber con nº fijo que ya había crecido
+     por reintentos (un .slice(0,nReq) recortaba la repetición pendiente); salir mientras la IA
+     corregía podía emitir un chime/render sobre una ronda ya abandonada.
+   - Ronda 5 (ALTO): studyOpen (práctica libre) borraba hwN/hwMode de un deber a medias si se entraba
+     por ahí; "Nivel 2"/"Nivel 1"/"Repetir" sobre un deber con nº fijo se expandían sin aviso a todo
+     el banco.
+   - Ronda 6 (ALTO): "Nivel 2"/"Repetir"/"Nivel 1" sorteaban preguntas aleatorias nuevas en vez de
+     repetir las MISMAS del deber -- arreglado pasando prevQs (las preguntas de la ronda que se deja
+     atrás) a studyRound, con relleno solo si alguna se ha borrado del banco.
+   - Ronda 7 (ALTO): seenIds se guardaba por REFERENCIA (alias) entre ui.study y el progreso
+     persistido -- un fallo justo antes de "Salir y seguir luego" se filtraba al progreso ya
+     guardado sin que mediara ningún guardado nuevo. Arreglado clonando seenIds en studySave.
+   - Ronda 8 (ALTO): una ronda bonus voluntaria tras completar un deber (p.ej. "Nivel 2" en la
+     pantalla final) heredaba hwN/hwMode y podía confundirse con un deber real pendiente si se
+     abandonaba a medias y el tutor asignaba luego un deber nuevo idéntico. Nuevo campo hwPending
+     distingue "deber de verdad, todavía sin terminar" de "ronda voluntaria tras entregarlo".
+   - Ronda 9 (ALTO): ui.item (qué item de "deberes de hoy" está abierto) no se limpiaba al terminar
+     una ronda ni al pulsar "Nivel 2"/"Repetir", así que una ronda bonus posterior podía sobrescribir
+     sin aviso el informe YA grabado del deber real. Arreglado: recordStudyOnce solo escribe contra
+     el item cuando st.hwPending es true; una ronda bonus cae a un registro suelto de actividad.
+   - Ronda 10 (ALTO x2): (1) "hwN" es lo PEDIDO, no lo REPARTIDO -- si el banco tenía menos preguntas
+     que hwN al abrir el deber, "Nivel 2"/"Repetir" podían "completarlo" después con preguntas NUEVAS
+     que nunca formaron parte de él; arreglado topando el relleno de studyRound al tamaño real que
+     tenía la ronda anterior, nunca a hwN por esta razón. (2) Dos items de "deberes de hoy" distintos
+     sobre la MISMA tarjeta con el mismo nº/modo podían robarse progreso e informe entre sí, porque
+     "sameHw" no comparaba de qué item era la ronda guardada; nuevo campo hwItem (persistido,
+     parámetro nuevo en studyOpenHomework/studyRound/taskActions.openItem) lo distingue.
+   - Ronda 11: limpia, sin hallazgos nuevos.
+   Cubierto por tests nuevos: verify_study_repeat.js (25 bloques): requeue hasta acertar, firstOk
+   solo a la primera, n fijo sin crecer con reintentos, retomar a medias con reintentos/seenIds/n
+   intactos, IA de Fase 1 integrada sin requeuear si mejora el veredicto, progresos antiguos sin
+   reventar, "Anterior"/"Nivel"/"Repetir" bloqueados durante corrección de IA, deber de "todas" con
+   preguntas nuevas al retomar, hwN/hwMode preservados en práctica libre y respetados por Nivel/
+   Repetir, identidad de las preguntas del deber preservada (nunca sorteo nuevo) con relleno solo
+   por borrado, seenIds clonado (sin alias), hwPending distinguiendo deber real de ronda bonus,
+   informe del item nunca sobrescrito por una ronda bonus posterior, relleno de studyRound topado al
+   tamaño real del deber (nunca ampliado con preguntas nuevas aunque se pidieran más), y dos items
+   del mismo día sobre la misma tarjeta sin robarse progreso ni informe. Suite completa (42 archivos
+   verify_*.js) en verde, salvo las exclusiones pre-existentes ya documentadas.
+
+   77. (2026-11-02) Pedido por David, viendo la pantalla "Agregar a deberes" de una tarjeta de
+   teoría: "En esta pantalla quiero poder elegir si las preguntas deben ser solo tipo test o que
+   también haga las escritas". Se añade un selector de tipo de pregunta (Todas / Solo test / Solo
+   escritas, ver taskAddOverlay) que solo aparece si la tarjeta tiene AMBOS tipos en el banco; se
+   guarda en el item de "deberes de hoy" (it.qType: 'test'/'red'/null) y se respeta en todo el ciclo
+   de vida de la ronda: al crearla (studyOpenHomework filtra el pool antes de repartir, igual que
+   studyPickHomeworkSet), al retomarla a medias (tanto desde el propio deber como desde "practicar
+   este tema"/studyOpen, incluido el relleno de huecos con preguntas nuevas del banco), y al cambiar
+   de nivel o repetir (studyRound, Nivel 1/Nivel 2/Repetir esta ronda). "¿Cuántas preguntas?" en el
+   modal cuenta dentro del subconjunto elegido, no del total de la tarjeta; itemPendingInfo (el
+   resumen en "Deberes de hoy") hace lo mismo y añade "· solo test"/"· solo escritas".
+   Revisión adversarial, 3 rondas (1ª y 2ª con hallazgo real, 3ª limpia):
+   - Ronda 1 (ALTO): state.studyHist (la rotación "qué preguntas ya le han tocado como deber") solo
+     llevaba un historial por tarjeta, sin distinguir tipo -- alternar deberes "Solo test"/"Solo
+     escritas" sobre la MISMA tarjeta en días distintos sobrescribía en silencio el historial del
+     otro tipo, repitiendo preguntas antes de tiempo. Arreglado con studyHistKey('test'/'red'/'all')
+     y una subclave de historial independiente por tipo dentro de state.studyHist[id], con
+     compatibilidad para historiales guardados antes de este cambio.
+   - Ronda 2 (ALTO): studyRound (Nivel 1/Nivel 2/Repetir) no comprobaba si el pool filtrado por tipo
+     podía quedar vacío cuando el tutor desactivaba, con el deber a medias, todas las preguntas del
+     tipo pedido (con el filtro por tipo basta con editar ese subconjunto, ya no hace falta vaciar
+     la tarjeta entera) -- sin guarda, se creaba una ronda de 0 preguntas que se grababa al instante
+     como "0 de 0 a la primera" en el deber real, sin que Julia contestara nada. Arreglado con un
+     aviso y un corte antes de tocar ui.study/studySave/render, dejando la ronda real tal cual
+     estaba.
+   - Ronda 3: limpia, sin hallazgos nuevos.
+   Cubierto por test nuevo: verify_qtype_filter.js (13 bloques): cálculo de poolLen/poolTestLen/
+   poolRedLen, selector visible solo con ambos tipos, reinicio de nQuestions al cambiar de tipo,
+   it.qType normalizado al confirmar, reparto filtrado por tipo (incluido el aviso si no hay
+   preguntas de ese tipo), no retomar una ronda a medias con qType distinto al guardado, relleno de
+   studyRound sin colar preguntas del otro tipo, itemPendingInfo con su etiqueta, integración de
+   punta a punta vía taskActions.openItem, studyOpen conservando qType y filtrando su propio
+   relleno, rotación de state.studyHist independiente por tipo a lo largo de varios días alternando
+   tipos, y el aviso de studyRound sin grabar el deber real cuando se vacía el tipo filtrado a
+   medias. Suite completa (43 archivos verify_*.js) en verde, salvo las exclusiones pre-existentes
+   ya documentadas. */
+const APP_VERSION='2026.11.02-1';
 /* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
    1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
       hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
@@ -1545,7 +1816,7 @@ const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:tru
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
-  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},studyProgress:{},studyHist:{},tutorNotes:'',notas:[],notasAlumna:[],asignaturas:[],temas:[],spelling:[],morfos:[],miniGameEvery:15,engDictCache:{},prepPool:{},spellProgress:{}};
+  const d={pin:null,dictados:null,rulesMode:'test',customRules:[],history:[],tareas:[],sesiones:[],examenes:[],examFotos:{},exEjemplos:{},studyProgress:{},studyHist:{},tutorNotes:'',notas:[],notasAlumna:[],asignaturas:[],temas:[],spelling:[],morfos:[],miniGameEvery:15,engDictCache:{},prepPool:{},spellProgress:{}};
   s=Object.assign(d,s);s.ai=Object.assign({on:true,photoOn:true,key:'',model:'gpt-4o-mini-tts',voice:'coral',speed:0.9,visionModel:'gpt-6.1-sol'},s.ai||{});
   if(s.ai.visionModel==='gpt-4o'||s.ai.visionModel==='gpt-5-chat-latest')s.ai.visionModel='gpt-6.1-sol'; // migración automática: OpenAI retiró gpt-5-chat-latest, pasamos a todo el mundo a gpt-6.1-sol sin tener que tocar nada
   s.settings=Object.assign({},DEF_SETTINGS,s.settings||{});s.sync=Object.assign({t:{},j:{},init:false,last:0,dirty:false,hclear:0,hj:'',sj:'',isnap:{},itomb:{}},s.sync||{});
@@ -1637,7 +1908,7 @@ function undoLast(){
   ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;
   render();toast('↩️ Última acción deshecha');
 }
-const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,spCheckedText:null,spOrigWords:null,spHwQuitAsk:false,morfoEditId:null,morfoDraft:null,morfoGenBusy:false,taskAdd:null,testZoneBackup:null};
+const ui={role:'alumna',screen:'home',dict:null,answer:'',photo:null,fix:null,tab:'dictados',editId:null,unlocked:false,run:null,item:null,mrun:null,exId:null,ex:null,exres:null,exPhotoView:null,exExPhotoView:null,exExpand:null,exCombineOn:false,exCombineSel:[],dictTheoryOpen:true,studyQuitAsk:false,dictRuleOpen:null,exlAsig:null,exlTema:null,spId:null,spRun:null,spCheckedText:null,spOrigWords:null,spHwQuitAsk:false,morfoEditId:null,morfoDraft:null,morfoGenBusy:false,taskAdd:null,testZoneBackup:null};
 const $=(s,el)=>(el||document).querySelector(s);
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const app=$('#app');
@@ -2589,7 +2860,14 @@ function itemSummary(it,x){
 function itemPendingInfo(it){
   if(it.type==='dictado'){const d=state.dictados.find(x=>x.id===it.did);return d?`${nWords(d.text)} palabras`:'';}
   if(it.type==='examen'){const e=exGet(it.eid);if(!e)return '';const n=Math.min(e.n,e.pool.filter(q=>!q.off).length);return `${n} ${n===1?'pregunta':'preguntas'}`;}
-  if(it.type==='teoria'){const e=exGet(it.tid);if(!e)return '';const total=e.pool.filter(q=>!q.off).length,n=it.n?Math.min(it.n,total):total;return `${n} ${n===1?'pregunta':'preguntas'}${it.mode==='examen'?' · modo examen':''}`;}
+  if(it.type==='teoria'){const e=exGet(it.tid);if(!e)return '';
+    // el total tiene que contar SOLO dentro del tipo elegido (it.qType): si no, con "Solo test"
+    // puesto este número prometería más preguntas de las que studyOpenHomework va a repartir de
+    // verdad (que filtra con este mismo criterio -- ver su propio aviso).
+    const poolT=it.qType?e.pool.filter(q=>!q.off&&q.t===it.qType):e.pool.filter(q=>!q.off);
+    const total=poolT.length,n=it.n?Math.min(it.n,total):total;
+    const qtLabel=it.qType==='test'?' · solo test':it.qType==='red'?' · solo escritas':'';
+    return `${n} ${n===1?'pregunta':'preguntas'}${it.mode==='examen'?' · modo examen':''}${qtLabel}`;}
   if(it.type==='spelling'){const l=state.spelling.find(x=>x.id===it.spid);if(!l)return '';return `${l.words.length} ${l.words.length===1?'palabra':'palabras'}`;}
   if(it.type==='morfo'){const m=state.morfos.find(x=>x.id===it.mid);return m?`${nWords(m.text)} palabras`:'';}
   if(it.type==='mates'){const n=(it.cfg&&it.cfg.n)||10;return `${n} ${n===1?'ejercicio':'ejercicios'}`;}
@@ -2620,7 +2898,7 @@ function recordDictado(){
 /* ---- informe (sirve para la pantalla y para el futuro correo) ---- */
 function sessionReport(s){
   const rows=[];
-  const one=(r,extra)=>{
+  const one=(r,extra,it)=>{
     const o={title:r.title,done:!!r.done||extra,secs:r.secs||0,at:r.start,line:'',det:[],src:r};
     if(r.kind==='dictado'&&r.res){const x=r.res;o.line=`${x.total-x.wrong} de ${x.total} palabras bien (${x.total?Math.round(100*(x.total-x.wrong)/x.total):100}%)`+(x.punct?` · ${x.punct} fallos de puntuación`:'')+(x.photo?' · con foto del cuaderno':'');
       o.det=x.errs.map(e=>e.type==='sub'?`${e.typed} → ${e.correct}`:`falta «${e.correct}»`);}
@@ -2631,18 +2909,67 @@ function sessionReport(s){
     else if(r.kind==='minijuego'&&r.res){o.line=r.res.line;}
     else if(r.kind==='morfo'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien clasificadas`;}
     else if(r.kind==='prep'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} preposiciones bien`;}
-    else if(r.kind==='spelling'&&r.res){const x=r.res;
-      /* los deberes de Spelling del día son 2 rondas de escuchar + 1 de frases (x.kind==='hw',
-         ver spHwFinishAll en p7b.js); la práctica suelta sigue siendo una sola ronda. */
-      o.line=x.kind==='hw'&&x.rounds?`${x.ok} de ${x.n} palabras bien (${x.rounds.length} ronda${x.rounds.length===1?'':'s'}: ${x.rounds.map(rr=>rr.kind==='dict'?'escuchar':'frases').join(', ')})`:`${x.ok} de ${x.n} palabras bien (${x.kind==='dict'?'dictado':'frases'})`;
-      o.det=(x.wrong||[]).map(w=>`${w.word}${w.given?' (puso '+w.given+')':''}${w.meaning?' · significado: '+w.meaning+(w.meaningOk===true?' ✅':w.meaningOk===false?' ❌':''):''}`);}
+    else if(r.kind==='spelling'){
+      if(r.res){const x=r.res;
+        /* los deberes de Spelling del día son 2 rondas de escuchar + 1 de frases (x.kind==='hw',
+           ver spHwFinishAll en p7b.js); la práctica suelta sigue siendo una sola ronda. */
+        o.line=x.kind==='hw'&&x.rounds?`${x.ok} de ${x.n} palabras bien (${x.rounds.length} ronda${x.rounds.length===1?'':'s'}: ${x.rounds.map(rr=>rr.kind==='dict'?'escuchar':'frases').join(', ')})`:`${x.ok} de ${x.n} palabras bien (${x.kind==='dict'?'dictado':'frases'})`;
+        o.det=(x.wrong||[]).map(w=>`${w.word}${w.given?' (puso '+w.given+')':''}${w.meaning?' · significado: '+w.meaning+(w.meaningOk===true?' ✅':w.meaningOk===false?' ❌':''):''}`);
+      }else{
+        /* pedido por David (2026-10-30): "en el spelling quiero que me diga cuantas preguntas ha
+           hecho bien y mal y cuantas la quedan sin terminar" -- antes, un deber de Spelling
+           empezado pero sin terminar (abierto desde "Hoy" pero sin llegar a pulsar el botón final,
+           ver spHwFinishAll) caía siempre en el aviso genérico "Empezado, sin terminar" de más
+           abajo, sin ningún detalle. Ahora, si ya hay al menos una ronda completada y guardada de
+           verdad (state.spellProgress, ver spellFinish/spHwStart), se calcula el progreso real:
+           cuántas palabras lleva bien/mal en las rondas ya hechas, y cuántas preguntas le quedan
+           en las rondas que faltan (según sean de escuchar -todas las palabras- o de frases
+           -todas las frases-, reconstruyendo el plan igual que hace spHwStart). Si no hay ninguna
+           ronda completada todavía (lista abierta pero sin empezar ninguna ronda de verdad), no
+           hay nada real que mostrar y se deja caer al aviso genérico de siempre. */
+        const list=it&&it.spid&&state.spelling.find(x=>x.id===it.spid);
+        const prog=list&&state.spellProgress&&state.spellProgress[list.id];
+        /* Revisión adversarial (2026-10-30, ronda 1): solo nos fiamos de prog.dictRounds/
+           prog.sentRounds si son ENTEROS >=0 de verdad (Number.isInteger, no solo typeof==='number'
+           -- un typeof 'number' deja pasar decimales como 1.5, que harían reventar Array() más abajo
+           con RangeError) -- si faltan o están corruptos (progreso antiguo/parcial, o un backup
+           restaurado a mano con el JSON editado) no reconstruimos ningún plan, para no arriesgarnos
+           a decir "le queda cerrar la última ronda" (sonando a que ya casi está) ni a reventar la
+           pantalla. En ese caso dejamos o.line vacío y cae al aviso genérico de siempre. */
+        if(list&&prog&&prog.rounds&&prog.rounds.length&&Number.isInteger(prog.dictRounds)&&prog.dictRounds>=0&&Number.isInteger(prog.sentRounds)&&prog.sentRounds>=0){
+          const okSoFar=prog.rounds.reduce((a,rr)=>a+(rr.ok||0),0),nSoFar=prog.rounds.reduce((a,rr)=>a+(rr.n||0),0);
+          const planSteps=Array(prog.dictRounds).fill('dict').concat(Array(prog.sentRounds).fill('sent'));
+          const pendingKinds=planSteps.slice(prog.rounds.length);
+          const pendingSteps=pendingKinds.length;
+          const pendingAvail=pendingKinds.map(k=>k==='dict'?list.words.length:list.sentences.length);
+          const pendingQ=pendingAvail.reduce((a,n)=>a+n,0);
+          const emptySteps=pendingAvail.filter(n=>n===0).length;
+          /* Revisión adversarial (2026-10-30, ronda 2): pendingSteps (cuántas rondas del plan
+             faltan) y pendingQ (cuántas preguntas reales hay en ellas) se miran por separado, y
+             además se cuenta emptySteps (cuántas de esas rondas pendientes, UNA A UNA, no tienen ya
+             ni palabras ni frases -- p.ej. el tutor borró las frases a medio deber). No basta con
+             mirar si pendingQ>0 en conjunto: si queda 1 ronda de escuchar con palabras de verdad Y 1
+             ronda de frases ya sin frases, pendingQ sale >0 (por la de escuchar) y antes se diría
+             "N preguntas sin terminar" sin avisar de que la ronda de frases nunca podrá hacerse de
+             verdad -- por eso se distingue el caso "todo pendiente tiene preguntas" (emptySteps===0)
+             del caso mixto o totalmente vacío. */
+          let tail;
+          if(pendingSteps===0)tail=' · le queda cerrar la última ronda';
+          else if(emptySteps===0)tail=` · ${pendingQ} ${pendingQ===1?'pregunta sin terminar':'preguntas sin terminar'}`;
+          else if(pendingQ===0)tail=` · le ${pendingSteps===1?'queda 1 ronda':'quedan '+pendingSteps+' rondas'} pendiente${pendingSteps===1?'':'s'}, pero ahora mismo esta lista no tiene preguntas para ella${pendingSteps===1?'':'s'} (revísalo)`;
+          else tail=` · le quedan ${pendingSteps} rondas pendientes (${pendingQ} ${pendingQ===1?'pregunta':'preguntas'} real${pendingQ===1?'':'es'}, pero alguna ronda no tiene preguntas disponibles ahora: revísalo)`;
+          o.line=`${okSoFar} bien y ${nSoFar-okSoFar} mal hasta ahora${tail}`;
+          o.det=prog.rounds.flatMap(rr=>(rr.wrong||[]).map(w=>`${w.word}${w.given?' (puso '+w.given+')':''}`));
+        }
+      }
+    }
     else if(r.kind==='vocab'&&r.res){const x=r.res;o.line=`${x.n} palabras consultadas · ${x.ok} ya las sabía`;}
-    else o.line=r.done?'Hecho':'Empezado, sin terminar';
+    if(!o.line)o.line=r.done?'Hecho':'Empezado, sin terminar';
     return o;
   };
   const plan=itemsOf(s.date);
   const seen=new Set();
-  plan.forEach(it=>{seen.add(it.id);const r=s.items[it.id];rows.push(r?Object.assign(one(r),{rid:it.id}):{title:itemTitle(it),done:false,secs:0,line:'Sin hacer',det:[],todo:true});});
+  plan.forEach(it=>{seen.add(it.id);const r=s.items[it.id];rows.push(r?Object.assign(one(r,undefined,it),{rid:it.id}):{title:itemTitle(it),done:false,secs:0,line:'Sin hacer',det:[],todo:true});});
   Object.keys(s.items).filter(k=>!seen.has(k)).forEach(k=>rows.push(Object.assign(one(s.items[k]),{rid:k})));
   (s.extra||[]).forEach(r=>rows.push(Object.assign(one(r,true),{loose:true,rid:r.id})));
   const secs=rows.reduce((a,r)=>a+r.secs,0);
@@ -2779,7 +3106,7 @@ const taskActions={
     else if(it.type==='teoria'){
       const e=exGet(it.tid);
       if(!e||e.status!=='ready')return toast('Esa tarjeta de teoría ya no está disponible');
-      studyOpenHomework(it.tid,it.n,it.mode);
+      studyOpenHomework(it.tid,it.n,it.mode,it.id,it.qType);
     }
     else if(it.type==='spelling'){
       const l=state.spelling.find(x=>x.id===it.spid);
@@ -2901,6 +3228,15 @@ function taskAddOverlay(){
   const ds=tfDates(a);
   const when=ds.length===1?fmtDay(ds[0]):`${ds.length} días: del ${fmtDay(ds[0]).toLowerCase()} al ${fmtDay(ds[ds.length-1]).toLowerCase()}`;
   const chip=(on,act,attrs,label)=>`<button class="chip${on?' on':''}" data-act="${act}" ${attrs}>${label}</button>`;
+  /* pedido por David (2026-11-02): en "Agregar a deberes" de una tarjeta de teoría, poder elegir
+     si ese deber debe ser solo de preguntas tipo test, solo de preguntas "escritas" (tipo 'red',
+     las que Julia responde redactando), o las dos cosas mezcladas (como siempre, por defecto). Se
+     calcula aquí "qTypeLen" -- cuántas preguntas activas hay del tipo elegido -- porque "¿Cuántas
+     preguntas?" (más abajo) tiene que contar SOLO dentro de ese subconjunto: si se siguiera
+     mostrando el total de la tarjeta entera (a.poolLen) con "Solo test" elegido, "Todas (32)"
+     prometería 32 preguntas cuando en realidad studyOpenHomework (que filtra por tipo con este
+     mismo criterio) le va a dar muchas menos. */
+  const qTypeLen=a.type==='teoria'?(a.qType==='test'?(a.poolTestLen||0):a.qType==='red'?(a.poolRedLen||0):a.poolLen):0;
   return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.taskAddClose()"><div class="exph-box" style="max-width:420px">
   <h3 style="margin-top:0">📅 Agregar a deberes</h3>
   <p class="mute" style="margin-top:0">${TASK_ADD_LABEL[a.type]||''}<br><b>${esc(a.title)}</b></p>
@@ -2909,16 +3245,19 @@ function taskAddOverlay(){
   <div class="lbl">¿Cuántos días seguidos?</div>
   <div class="chips">${[1,3,5,10,15].map(n=>chip(a.days===n,'taskAddDays',`data-v="${n}"`,n===1?'Solo ese día':n+' días')).join('')}</div>
   ${a.days>1?`<div class="chips" style="margin-top:8px">${chip(a.skip,'taskAddSkip','',a.skip?'✓ Sin sábados ni domingos':'Sin sábados ni domingos')}</div>`:''}
-  ${a.type==='teoria'?`<div class="lbl" style="margin-top:14px">¿Cuántas preguntas?</div>
-  <div class="chips">${chip(!a.nQuestions,'taskAddN','data-v="0"',`Todas (${a.poolLen})`)}${[10,15,20,30].filter(n=>n<a.poolLen).map(n=>chip(a.nQuestions===n,'taskAddN',`data-v="${n}"`,n)).join('')}</div>
+  ${a.type==='teoria'?`${(a.poolTestLen&&a.poolRedLen)?`<div class="lbl" style="margin-top:14px">¿Qué tipo de preguntas?</div>
+  <div class="chips">${chip((a.qType||'all')==='all','taskAddQType','data-v="all"',`Todas (${a.poolLen})`)}${chip(a.qType==='test','taskAddQType','data-v="test"',`📝 Solo test (${a.poolTestLen})`)}${chip(a.qType==='red','taskAddQType','data-v="red"',`✍️ Solo escritas (${a.poolRedLen})`)}</div>`:''}
+  <div class="lbl" style="margin-top:14px">¿Cuántas preguntas?</div>
+  <div class="chips">${chip(!a.nQuestions,'taskAddN','data-v="0"',`Todas (${qTypeLen})`)}${[10,15,20,30].filter(n=>n<qTypeLen).map(n=>chip(a.nQuestions===n,'taskAddN',`data-v="${n}"`,n)).join('')}</div>
   <div class="lbl">¿Estudio o examen?</div>
   <div class="chips">${chip(a.mode==='estudio','taskAddMode','data-v="estudio"','📖 Estudio (con foto)')}${chip(a.mode==='examen','taskAddMode','data-v="examen"','📝 Examen (sin foto)')}</div>`:''}
   ${a.type==='spelling'?`<div class="lbl" style="margin-top:14px">¿Cuántas rondas escuchando las palabras?</div>
-  <div class="chips">${[1,2,3].map(n=>chip(a.dictRounds===n,'taskAddDictRounds',`data-v="${n}"`,n+(n===1?' ronda':' rondas'))).join('')}</div>
+  <div class="chips">${[0,1,2,3].map(n=>chip(a.dictRounds===n,'taskAddDictRounds',`data-v="${n}"`,n===0?'Ninguna':n+(n===1?' ronda':' rondas'))).join('')}</div>
   <div class="lbl">¿Cuántas rondas de frases para completar?</div>
-  ${a.nSent?`<div class="chips">${[0,1,2,3].map(n=>chip(a.sentRounds===n,'taskAddSentRounds',`data-v="${n}"`,n===0?'Ninguna':n+(n===1?' ronda':' rondas'))).join('')}</div>`:'<p class="mute" style="margin:4px 0;font-size:.85rem">Esta lista todavía no tiene frases preparadas, así que hoy solo escuchar.</p>'}`:''}
+  ${a.nSent?`<div class="chips">${[0,1,2,3].map(n=>chip(a.sentRounds===n,'taskAddSentRounds',`data-v="${n}"`,n===0?'Ninguna':n+(n===1?' ronda':' rondas'))).join('')}</div>`:'<p class="mute" style="margin:4px 0;font-size:.85rem">Esta lista todavía no tiene frases preparadas, así que hoy solo escuchar.</p>'}
+  ${!a.dictRounds&&!a.sentRounds?(a.nSent?'<p class="msg wrong" style="margin:6px 0">⚠️ Elige al menos una ronda (de escuchar o de frases): no puedes poner «Ninguna» en las dos a la vez, si no Julia no tendría nada que hacer ese día.</p>':'<p class="msg wrong" style="margin:6px 0">⚠️ Esta lista todavía no tiene frases preparadas, así que tiene que tener al menos 1 ronda de escuchar las palabras (si no, Julia no tendría nada que hacer ese día).</p>'):''}`:''}
   <p class="mute" style="margin:10px 0">${esc(when)}</p>
-  <div class="row" style="margin-top:4px"><button class="btn primary big" data-act="taskAddConfirm">💾 Agregar a deberes</button><button class="btn" data-act="taskAddClose">Cancelar</button></div>
+  <div class="row" style="margin-top:4px"><button class="btn primary big" data-act="taskAddConfirm" ${a.type==='spelling'&&!a.dictRounds&&!a.sentRounds?'disabled':''}>💾 Agregar a deberes</button><button class="btn" data-act="taskAddClose">Cancelar</button></div>
   </div></div>`;
 }
 function taInput(t){
@@ -2933,7 +3272,9 @@ const taskAddActions={
   taskAddOpen(b){
     const a={type:b.dataset.type,ref:b.dataset.id,title:b.dataset.title,date:todayStr(),days:1,skip:true};
     if(a.type==='teoria'){
-      const e=exGet(a.ref);a.poolLen=e?e.pool.filter(q=>!q.off).length:0;a.nQuestions=null;a.mode='estudio';
+      const e=exGet(a.ref),activePool=e?e.pool.filter(q=>!q.off):[];
+      a.poolLen=activePool.length;a.poolTestLen=activePool.filter(q=>q.t==='test').length;a.poolRedLen=activePool.filter(q=>q.t==='red').length;
+      a.nQuestions=null;a.mode='estudio';a.qType='all';
     }else if(a.type==='spelling'){
       const l=spGet(a.ref);a.nSent=l?l.sentences.length:0;a.dictRounds=2;a.sentRounds=a.nSent?1:0;
     }
@@ -2945,17 +3286,33 @@ const taskAddActions={
   taskAddSkip(){ui.taskAdd.skip=!ui.taskAdd.skip;render();},
   taskAddN(b){ui.taskAdd.nQuestions=(+b.dataset.v)||null;render();},
   taskAddMode(b){ui.taskAdd.mode=b.dataset.v;render();},
+  // al cambiar el tipo de pregunta se reinicia "¿cuántas preguntas?" a "Todas" (de ese tipo): si
+  // se dejara el nº ya elegido tal cual, uno elegido bajo "Todas" (p.ej. 30, con el total de la
+  // tarjeta) podría quedar pidiendo MÁS preguntas de las que de verdad hay de "Solo test"/"Solo
+  // escritas" sin que ningún chip lo reflejara ya (el botón de ese nº deja de pintarse si ya no
+  // cabe, pero el valor seguiría vivo en ui.taskAdd.nQuestions y se usaría igual al confirmar).
+  taskAddQType(b){ui.taskAdd.qType=b.dataset.v;ui.taskAdd.nQuestions=null;render();},
   taskAddDictRounds(b){ui.taskAdd.dictRounds=+b.dataset.v;render();},
   taskAddSentRounds(b){ui.taskAdd.sentRounds=+b.dataset.v;render();},
   taskAddConfirm(){
     const a=ui.taskAdd;if(!a)return;
+    // pedido por David (2026-10-30): se puede elegir "Ninguna" ronda de escuchar palabras (antes
+    // el mínimo era 1); por eso aquí ya NO vale "a.dictRounds||2" (0 es un valor válido elegido a
+    // propósito, no "sin elegir" -- ese `||` lo convertía de vuelta en 2 en silencio). Y, ya que
+    // ahora las dos rondas pueden ponerse a "Ninguna" a la vez (nada que hacer ese día), se
+    // bloquea aquí también por si acaso (el botón ya está disabled en ese caso, esto es solo para
+    // no crear un deber vacío si se llegara a pulsar de algún otro modo).
+    if(a.type==='spelling'&&!a.dictRounds&&!a.sentRounds)return toast('Elige al menos una ronda (de escuchar o de frases)');
     const ds=tfDates(a);
     const keyByType={dictado:'did',examen:'eid',teoria:'tid',spelling:'spid',morfo:'mid'};
     const k=keyByType[a.type];if(!k)return;
     ds.forEach(date=>{
       const it={id:'i'+uid(),type:a.type,[k]:a.ref};
-      if(a.type==='teoria'){it.n=a.nQuestions||null;it.mode=a.mode||'estudio';}
-      if(a.type==='spelling'){it.dictRounds=a.dictRounds||2;it.sentRounds=a.sentRounds!==undefined?a.sentRounds:1;}
+      // qType: 'test' (solo tipo test), 'red' (solo escritas) o null (ambas, de siempre). Se
+      // normaliza aquí a solo esos 3 valores posibles -- nunca se confía en a.qType "tal cual"
+      // (defensivo, igual que ya hace el resto de este bloque con nQuestions/mode).
+      if(a.type==='teoria'){it.n=a.nQuestions||null;it.mode=a.mode||'estudio';it.qType=(a.qType==='test'||a.qType==='red')?a.qType:null;}
+      if(a.type==='spelling'){it.dictRounds=a.dictRounds!==undefined?a.dictRounds:2;it.sentRounds=a.sentRounds!==undefined?a.sentRounds:1;}
       state.tareas.push({id:'t'+uid(),date,items:[it]});
     });
     save();ui.taskAdd=null;render();toast(`Agregado a deberes de ${ds.length} ${ds.length===1?'día':'días'} ✅`);
@@ -3151,6 +3508,16 @@ async function aiText(messages,max){
 }
 async function readNotesPhoto(dataUrl){
   const t=await aiText([{role:'system',content:NOTES_SYS},{role:'user',content:[{type:'text',text:'Transcribe estos apuntes.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}],1500);
+  if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja recta.');
+  return t.replace(/^```[a-z]*\n?|```$/g,'').trim();
+}
+/* Describe el FORMATO/ESTILO de un ejercicio de ejemplo (foto subida por el tutor) para orientar a
+   la IA sobre cómo generar preguntas parecidas -- a propósito NO copia los datos/números/respuestas
+   concretos del ejemplo, solo su estructura, para no filtrar el contenido exacto a las preguntas que
+   se generen luego. */
+const EXAMPLE_FORMAT_SYS='Eres un ayudante de un profesor de primaria (Year 6, colegio británico). Te enseño la foto de UN ejercicio de ejemplo, ya resuelto o en blanco. Tu tarea es describir brevemente, en 2-4 frases, el FORMATO y ESTILO del ejercicio para que otra IA pueda generar preguntas NUEVAS con una estructura parecida: tipo de pregunta (opción múltiple, rellenar hueco, cálculo, redacción corta...), cómo se presenta (con dibujo, tabla, lista...), nivel de dificultad aproximado y longitud. NO copies los datos, números, nombres ni la respuesta concreta de este ejemplo: describe solo el molde/estructura, nunca el contenido exacto, para que no se repita. Si la foto no parece un ejercicio (por ejemplo son apuntes de teoría), responde exactamente: NO_ES_EJERCICIO. Responde solo con la descripción (o NO_ES_EJERCICIO), sin explicaciones adicionales.';
+async function describeExampleExercise(dataUrl){
+  const t=await aiText([{role:'system',content:EXAMPLE_FORMAT_SYS},{role:'user',content:[{type:'text',text:'Describe el formato de este ejercicio de ejemplo.'},{type:'image_url',image_url:{url:dataUrl,detail:'high'}}]}],400);
   if(!t)throw new Error('No he podido leer nada en la foto. Prueba con más luz y la hoja recta.');
   return t.replace(/^```[a-z]*\n?|```$/g,'').trim();
 }
@@ -3559,6 +3926,15 @@ function exEditView(t,e){
   ${examPhotosHTML(e.id)}
   <label class="f">Texto de los apuntes (revísalo y corrígelo si hace falta)<textarea data-exf="notes" style="min-height:200px" placeholder="Sube fotos o pega aquí el texto de la teoría.">${esc(e.notes)}</textarea></label></div>
   ${exPhotoOverlay(e.id)}
+  <div class="panel" data-dropzone="exExamples"><h3 style="margin-top:0">🧩 Ejemplos de ejercicios (opcional)</h3>
+  <p class="mute" style="margin-top:0">Sube fotos de ejercicios de ejemplo (de un libro, una ficha, exámenes de otros años...) para que la IA sepa más o menos QUÉ TIPO de preguntas quieres, sin copiar sus datos ni respuestas concretas. La IA describirá el formato y lo añadirá a «Consejos para la IA» de aquí abajo, donde puedes revisarlo y editarlo.</p>
+  <div class="row" style="align-items:center;gap:12px;flex-wrap:wrap">
+  <label class="btn" style="display:inline-flex;align-items:center;gap:6px">🧩 Subir fotos de ejemplos<input type="file" accept="image/*" id="exExamples" multiple hidden></label>
+  <small class="mute">Hasta ${EX_MAXPH} fotos por tanda. También puedes arrastrar y soltar las fotos aquí mismo.</small>
+  </div>
+  <div id="exExSt" class="mute" style="margin:6px 0"></div>
+  ${exExamplesHTML(e.id)}</div>
+  ${exExampleOverlay(e.id)}
   <div class="panel"><h3 style="margin-top:0">🧠 Preguntas <small class="mute">(${act} activas de ${e.pool.length})</small></h3>
   <div class="grid2"><label class="f">Tipo de preguntas<select data-exf="mode">${Object.entries(EX_MODES).map(([k,v])=>`<option value="${k}" ${e.mode===k?'selected':''}>${v}</option>`).join('')}</select></label>
   <label class="f">Tamaño del banco a generar<input type="number" data-exf="bank" min="10" max="80" value="${e.bank}"></label></div>
@@ -3579,10 +3955,18 @@ function exInput(t){
   if(t.id==='exPhotos'){if(t.type==='file'&&t.files&&t.files.length){const f=[...t.files];t.value='';readNotesPhotos(f);}return true;}
   if(t.id==='exPdf'){if(t.type==='file'&&t.files&&t.files.length){const f=[...t.files];t.value='';readNotesPdfs(f);}return true;}
   if(t.id==='exPptx'){if(t.type==='file'&&t.files&&t.files.length){const f=[...t.files];t.value='';readNotesPptxs(f);}return true;}
+  if(t.id==='exExamples'){if(t.type==='file'&&t.files&&t.files.length){const f=[...t.files];t.value='';readExamplePhotos(f);}return true;}
   if(t.dataset.exph){
     const e=exGet(ui.exId);if(!e)return true;
     const L=state.examFotos[e.id]||[];const p=L.find(x=>x.id===t.dataset.id);if(!p)return true;
     const k=t.dataset.exph;if(k==='name')p.name=t.value;else if(k==='desc')p.desc=t.value;
+    save();
+    return true;
+  }
+  if(t.dataset.exexph){
+    const e=exGet(ui.exId);if(!e)return true;
+    const L=state.exEjemplos[e.id]||[];const p=L.find(x=>x.id===t.dataset.id);if(!p)return true;
+    if(t.dataset.exexph==='name')p.name=t.value;
     save();
     return true;
   }
@@ -3664,6 +4048,85 @@ async function readNotesPhotos(files){
     s2.innerHTML=msg;
   }
 }
+/* Pedido por David (2026-10-25): "en la teoria ademas de las fotos con la teoria créame un
+   apartado para subir fotos de ejemplos de ejercicios para que la IA sepa mas o menos como generar
+   los ejercicios". Es una sección NUEVA y SEPARADA de "📷 Teoría a estudiar" (arriba): estas fotos
+   no son apuntes, son ejemplos del ESTILO/FORMATO de ejercicio que quiere el tutor. Por eso:
+   - Se guardan en state.exEjemplos[id], NUNCA en state.examFotos[id] (que es lo que ve Julia).
+   - Nunca se muestran en ninguna pantalla de estudio de Julia (solo existen en esta vista de tutor).
+   - En vez de transcribir su contenido (como hace readNotesPhoto con los apuntes), se les pasa un
+     prompt de visión DISTINTO (EXAMPLE_FORMAT_SYS/describeExampleExercise) que describe el
+     formato/estilo sin copiar los datos o la respuesta concretos del ejemplo, para no filtrar el
+     ejercicio exacto a las preguntas que se generen.
+   - El resultado se añade al final del campo "Consejos para la IA" (e.hint), que YA estaba
+     conectado a la generación de preguntas (genPrompt) desde antes de esta función -- así no hace
+     falta tocar genPrompt/genQuestions para nada. El tutor puede seguir editando ese texto a mano. */
+async function readExamplePhotos(files){
+  const e=exGet(ui.exId),st=()=>$('#exExSt');if(!e)return;
+  if(!state.ai.photoOn){if(st())st().textContent='';return toast('Activa la IA de fotos en Ajustes para leer fotos');}
+  const total=files.length;files=files.slice(0,EX_MAXPH);
+  const gallery=state.exEjemplos[e.id]=(state.exEjemplos[e.id]||[]);
+  const out=[];let okN=0,errN=0,dupN=0,noEjN=0;
+  const seenHashes=new Set(gallery.map(p=>p.hash).filter(Boolean));
+  for(let i=0;i<files.length;i++){
+    const hash=await fileHash(files[i]);
+    if(hash&&seenHashes.has(hash)){dupN++;continue;}
+    if(hash)seenHashes.add(hash);
+    if(st())st().innerHTML=`🔎 Mirando el ejemplo ${i+1} de ${files.length}…`;
+    const entry={id:uid(),thumb:'',full:'',desc:'',err:'',rot:0,hash,name:files[i].name||''};
+    try{
+      const info=await fileToJpegInfo(files[i],1800),thumb=await fileToJpeg(files[i],260);
+      entry.full=info.url;entry.thumb=thumb;
+      const [rot,desc]=await Promise.all([detectPhotoRot(entry.full).catch(()=>0),describeExampleExercise(entry.full)]);
+      entry.rot=rot;
+      if(desc==='NO_ES_EJERCICIO'){
+        entry.err='Esta foto no parece un ejercicio (parece teoría/apuntes). Súbela en la sección de arriba («📷 Teoría a estudiar») si es teoría.';
+        noEjN++;
+      }else{entry.desc=desc;out.push(desc);okN++;}
+    }catch(er){entry.err=er.message;errN++;}
+    gallery.push(entry);
+  }
+  state.exEjemplos[e.id]=gallery.slice(-40);
+  if(out.length){
+    const add=out.map(d=>`• ${d}`).join('\n');
+    e.hint=(e.hint&&e.hint.trim()?e.hint.trim()+'\n':'')+add;
+    const ta=$('[data-exf=hint]');if(ta)ta.value=e.hint;
+  }
+  save();
+  const y=scrollY;render();scrollTo(0,y);
+  const s2=$('#exExSt');
+  if(s2){
+    let msg=okN?`✅ <b>${okN} ${okN===1?'ejemplo añadido':'ejemplos añadidos'}.</b> Se ha descrito su formato en «Consejos para la IA» (puedes revisarlo y corregirlo).`:'';
+    if(noEjN)msg+=(msg?' ':'')+`⚠️ ${noEjN} ${noEjN===1?'foto no parecía un ejercicio':'fotos no parecían un ejercicio'} (toca su miniatura para ver el motivo).`;
+    if(dupN)msg+=(msg?' ':'')+`♻️ ${dupN} ${dupN===1?'foto estaba repetida':'fotos estaban repetidas'} y no se ha vuelto a contar.`;
+    if(errN)msg+=(msg?' ':'')+`⚠️ ${errN} ${errN===1?'foto no se pudo leer':'fotos no se pudieron leer'} (toca su miniatura para ver el motivo).`;
+    if(total>EX_MAXPH)msg+=` <br><small>Has subido ${total}; solo se procesan ${EX_MAXPH} de golpe. Sube el resto en otra tanda.</small>`;
+    if(!msg)msg='Ese ejemplo ya estaba subido, no se ha vuelto a añadir.';
+    s2.innerHTML=msg;
+  }
+}
+function exExamplesHTML(id){
+  const L=state.exEjemplos[id]||[];if(!L.length)return '';
+  return `<div style="margin:8px 0"><b>${L.length} ${L.length===1?'ejemplo subido':'ejemplos subidos'}</b> <span class="mute" style="font-size:.85rem">· toca uno para ampliarlo y ver cómo lo ha descrito la IA</span>
+  <div class="exph-grid">${L.map(p=>`<div><button class="exph-item" data-act="exExPhotoOpen" data-id="${esc(p.id)}" title="${esc(p.name||'Ver este ejemplo')}"><img src="${p.thumb}" alt="Ejemplo de ejercicio">${p.err?'<span class="exph-warn">⚠</span>':''}</button>${p.name?`<div class="mute" style="font-size:.72rem;text-align:center;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</div>`:''}</div>`).join('')}</div></div>`;
+}
+function exExampleOverlay(examId){
+  if(!ui.exExPhotoView)return '';
+  const L=state.exEjemplos[examId]||[],p=L.find(x=>x.id===ui.exExPhotoView);if(!p)return '';
+  const rot=p.rot||0,turned=rot===90||rot===270;
+  const imgStyle=turned
+    ?'max-width:52vh;max-height:80vw;width:auto;height:auto'
+    :'max-width:100%;max-height:52vh;width:auto;height:auto';
+  return `<div class="exph-ov" onclick="if(event.target===event.currentTarget)ALL.exExPhotoClose()"><div class="exph-box">
+  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><span class="row" style="gap:6px;align-items:center"><button class="btn" style="min-height:36px;padding:4px 10px" data-act="exExPhotoPrev" ${L.length<2?'disabled':''}>◀</button><b>Ejemplo ${L.indexOf(p)+1} de ${L.length}</b><button class="btn" style="min-height:36px;padding:4px 10px" data-act="exExPhotoNext" ${L.length<2?'disabled':''}>▶</button></span><span class="row" style="gap:6px;flex-wrap:wrap"><button class="btn" style="min-height:36px;padding:4px 12px" data-act="exExPhotoRotate" data-id="${esc(p.id)}">🔄 Girar</button><button class="btn danger" style="min-height:36px;padding:4px 12px" data-act="exExPhotoDel" data-id="${esc(p.id)}">🗑 Eliminar</button><button class="btn" style="min-height:36px;padding:4px 14px" data-act="exExPhotoClose">✕ Cerrar</button></span></div>
+  <div style="text-align:center;padding:${turned?'26px 0':'0'};margin-top:10px">
+  <img src="${p.full||p.thumb}" alt="Ejemplo de ejercicio" style="${imgStyle};transform:rotate(${rot}deg);border-radius:10px;display:inline-block"></div>
+  <div class="grid2" style="margin-top:10px">
+  <label class="f">Nombre<input type="text" data-exexph="name" data-id="${esc(p.id)}" value="${esc(p.name||'')}" placeholder="Ej.: Ejercicio de fracciones tipo test"></label>
+  </div>
+  <div class="mute" style="margin:10px 0 4px;font-weight:800">Cómo ha descrito la IA este formato (añadido a «Consejos para la IA»):</div>
+  <div class="marked" style="max-height:22vh;overflow:auto;font-size:.95rem;line-height:1.6">${p.err?`<span class="wrong">${esc(p.err)}</span>`:esc(p.desc||'(sin descripción)')}</div></div></div>`;
+}
 const examActions={
   exNew(){
     const tm=state.temas.find(x=>x.id===ui.exTemaId);if(!tm)return toast('Abre primero un tema para crear una tarjeta de teoría');
@@ -3706,7 +4169,7 @@ const examActions={
     const cardIds=state.examenes.filter(e=>!e.isExam&&temaIds.includes(e.temaId)).map(e=>e.id);
     if(!confirm(`¿Borrar la asignatura «${a.name}»? Se borrarán sus ${temaIds.length} ${temaIds.length===1?'tema':'temas'} y las ${cardIds.length} tarjetas de teoría que contienen, con sus fotos y preguntas. Los exámenes que ya hayas creado a partir de ellas NO se borran (quedan como exámenes sueltos).`))return;
     snapUndo();
-    cardIds.forEach(id=>delete state.examFotos[id]);
+    cardIds.forEach(id=>{delete state.examFotos[id];delete state.exEjemplos[id];});
     state.examenes=state.examenes.filter(e=>e.isExam||!cardIds.includes(e.id));
     state.examenes.forEach(e=>{if(e.isExam&&e.asigId===a.id){e.asigId=null;e.temaId=null;e.scope=null;}});
     state.temas=state.temas.filter(x=>x.asigId!==a.id);
@@ -3728,7 +4191,7 @@ const examActions={
     const cardIds=state.examenes.filter(e=>!e.isExam&&e.temaId===tm.id).map(e=>e.id);
     if(!confirm(`¿Borrar el tema «${tm.name}»? Se borrarán sus ${cardIds.length} tarjetas de teoría, con sus fotos y preguntas. Los exámenes que ya hayas creado a partir de ellas NO se borran (quedan como exámenes sueltos).`))return;
     snapUndo();
-    cardIds.forEach(id=>delete state.examFotos[id]);
+    cardIds.forEach(id=>{delete state.examFotos[id];delete state.exEjemplos[id];});
     state.examenes=state.examenes.filter(e=>e.isExam||!cardIds.includes(e.id));
     state.examenes.forEach(e=>{if(e.isExam&&e.temaId===tm.id){e.temaId=null;e.scope=null;}});
     state.temas=state.temas.filter(x=>x.id!==tm.id);
@@ -3793,7 +4256,7 @@ const examActions={
     ui.exExpand=null;save();render();
     toast(`Creados ${total} exámenes de ${n} preguntas cada uno. Revísalos y publícalos.`);
   },
-  exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){snapUndo();delete state.examFotos[b.dataset.id];state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
+  exDel(b){if(confirm('¿Borrar este examen y todas sus preguntas?')){snapUndo();delete state.examFotos[b.dataset.id];delete state.exEjemplos[b.dataset.id];state.examenes=state.examenes.filter(e=>e.id!==b.dataset.id);save();render();}},
   exCombineStart(){ui.exCombineOn=true;ui.exCombineSel=[];render();},
   exCombineCancel(){ui.exCombineOn=false;ui.exCombineSel=[];render();},
   exCombineTog(b){ui.exCombineSel=ui.exCombineSel||[];const id=b.dataset.id;
@@ -3840,6 +4303,31 @@ const examActions={
     render();
     toast('Foto eliminada');
   },
+  exExPhotoOpen(b){ui.exExPhotoView=b.dataset.id;render();},
+  exExPhotoClose(){ui.exExPhotoView=null;render();},
+  exExPhotoPrev(){const e=exGet(ui.exId);const L=e&&state.exEjemplos[e.id]||[];if(L.length<2)return;const i=L.findIndex(x=>x.id===ui.exExPhotoView);ui.exExPhotoView=L[(i-1+L.length)%L.length].id;render();},
+  exExPhotoNext(){const e=exGet(ui.exId);const L=e&&state.exEjemplos[e.id]||[];if(L.length<2)return;const i=L.findIndex(x=>x.id===ui.exExPhotoView);ui.exExPhotoView=L[(i+1)%L.length].id;render();},
+  exExPhotoRotate(b){const e=exGet(ui.exId);const L=e&&state.exEjemplos[e.id]||[];const p=L.find(x=>x.id===b.dataset.id);if(!p)return;p.rot=((p.rot||0)+90)%360;save();render();},
+  exExPhotoDel(b){
+    const e=exGet(ui.exId);if(!e)return;
+    const L=state.exEjemplos[e.id]||[];const p=L.find(x=>x.id===b.dataset.id);if(!p)return;
+    if(!confirm('¿Eliminar este ejemplo? También se quitará su descripción de «Consejos para la IA» (si no la has editado a mano).'))return;
+    const d=(p.desc||'').trim();
+    if(d&&e.hint){
+      const line='• '+d;
+      let n=e.hint;
+      if(n.includes('\n'+line))n=n.replace('\n'+line,'');
+      else if(n.includes(line+'\n'))n=n.replace(line+'\n','');
+      else if(n.includes(line))n=n.replace(line,'');
+      e.hint=n.trim();
+    }
+    state.exEjemplos[e.id]=L.filter(x=>x.id!==p.id);
+    ui.exExPhotoView=null;
+    save();
+    const ta=$('[data-exf=hint]');if(ta)ta.value=e.hint;
+    render();
+    toast('Ejemplo eliminado');
+  },
   exQDel(b){const e=exGet(ui.exId);snapUndo();e.pool.splice(+b.dataset.i,1);save();const y=scrollY;render();scrollTo(0,y);},
   exDelAll(){const e=exGet(ui.exId);if(!e||!e.pool.length)return;if(!confirm(`¿Seguro que quieres borrar las ${e.pool.length} preguntas de «${e.title||'esta tarjeta'}»?`))return;snapUndo();e.pool=[];e.dropped=[];save();render();},
   exPub(b){const e=exGet(ui.exId);
@@ -3875,9 +4363,13 @@ const examActions={
   exlTemaOpen(b){ui.exlTema=b.dataset.id;render();},
   exlTemaBack(){ui.exlTema=null;render();},
   exStart(b){startExam(b.dataset.id,null);},
-  exPick(b){ui.ex.ans[ui.ex.i]=+b.dataset.k;render();scrollQCenter();},
-  exPrev(){if(ui.ex.i>0){ui.ex.i--;render();scrollQCenter();}},
-  exNext(){if(ui.ex.i<ui.ex.qs.length-1){ui.ex.i++;if(miniGameDue(ui.ex.i,ui.ex.qs.length))return startMiniGame('exrun');render();scrollQCenter();}else exSubmit();},
+  /* Revisión adversarial (2026-11-01, ronda 5): guards de refuerzo por si el "disabled" del botón
+     no llega a tiempo a frenar un clic/toque ya en curso -- el qa que se corrige con IA se calculó
+     al principio de exSubmit(), así que tocar nada mientras ui.ex.submitting no tendría ningún
+     efecto real y solo confundiría a Julia. */
+  exPick(b){if(ui.ex.submitting)return;ui.ex.ans[ui.ex.i]=+b.dataset.k;render();scrollQCenter();},
+  exPrev(){if(ui.ex.submitting)return;if(ui.ex.i>0){ui.ex.i--;render();scrollQCenter();}},
+  exNext(){if(ui.ex.submitting)return;if(ui.ex.i<ui.ex.qs.length-1){ui.ex.i++;if(miniGameDue(ui.ex.i,ui.ex.qs.length))return startMiniGame('exrun');render();scrollQCenter();}else exSubmit();},
   exSubmit(){exSubmit();},
   exQuit(){if(confirm('¿Salir del examen? Perderás las respuestas.')){ui.ex=null;ui.screen=ui.item?'today':'exlist';render();}}
 };
@@ -3946,17 +4438,43 @@ function renderExrun(){
   app.innerHTML=`<button class="link" data-act="exQuit">← Salir</button><h2 style="margin:0">${esc(e?e.title:'Examen')}</h2>
   <div class="status"><span class="ico">📝</span><div style="flex:1"><div>Pregunta ${x.i+1} de ${x.qs.length}</div><div style="margin-top:6px">${dots}</div></div></div>
   <div class="panel" id="qpanel"><div style="font-size:1.25rem;font-weight:800;line-height:1.45;margin-bottom:12px">${esc(q.q)}</div>
-  ${q.t==='test'?q.o.map((o,k)=>`<button class="item" style="display:block;width:100%;text-align:left;font:inherit;background:${ans===k?'#ece9fb':'#fff'};border:2px solid ${ans===k?'var(--pri)':'var(--line)'};border-radius:var(--r);padding:14px 16px;margin:8px 0;cursor:pointer;color:var(--ink)" data-act="exPick" data-k="${k}"><b style="color:var(--pri2)">${'ABCDE'[k]}.</b> ${esc(o)}</button>`).join('')
-   :`<textarea id="exans" placeholder="Escribe tu respuesta con tus palabras…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:130px">${esc(ans||'')}</textarea>`}</div>
-  <div class="row"><button class="btn" data-act="exPrev" ${x.i?'':'disabled'}>⬅ Anterior</button><button class="btn ${last?'success':'primary'} big" data-act="exNext">${last?'🏁 Entregar examen':'Siguiente ➜'}</button></div>`;
+  ${q.t==='test'?q.o.map((o,k)=>`<button class="item" ${x.submitting?'disabled':''} style="display:block;width:100%;text-align:left;font:inherit;background:${ans===k?'#ece9fb':'#fff'};border:2px solid ${ans===k?'var(--pri)':'var(--line)'};border-radius:var(--r);padding:14px 16px;margin:8px 0;cursor:pointer;color:var(--ink)" data-act="exPick" data-k="${k}"><b style="color:var(--pri2)">${'ABCDE'[k]}.</b> ${esc(o)}</button>`).join('')
+   :`<textarea id="exans" ${x.submitting?'disabled':''} placeholder="Escribe tu respuesta con tus palabras…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:130px">${esc(ans||'')}</textarea>`}</div>
+  <div class="row"><button class="btn" data-act="exPrev" ${x.i&&!x.submitting?'':'disabled'}>⬅ Anterior</button><button class="btn ${last?'success':'primary'} big" data-act="exNext" ${x.submitting?'disabled':''}>${x.submitting?'⏳ Corrigiendo con IA…':(last?'🏁 Entregar examen':'Siguiente ➜')}</button></div>`;
 }
-function exSubmit(){
-  const x=ui.ex,un=x.qs.filter((q,i)=>x.ans[i]===undefined||x.ans[i]==='').length;
+async function exSubmit(){
+  const x=ui.ex;if(!x||x.submitting)return;
+  const un=x.qs.filter((q,i)=>x.ans[i]===undefined||x.ans[i]==='').length;
   if(un&&!confirm(`Te faltan ${un} ${un===1?'pregunta':'preguntas'} sin contestar. ¿Entregar de todas formas?`))return;
   const e=exGet(x.eid),secs=Math.round((Date.now()-x.t0)/1000);
   const qa=x.qs.map((q,i)=>{const a=x.ans[i];
     if(q.t==='test'){const ok=a===q.c;return {id:q.id,t:'test',q:q.q,given:a===undefined?'':q.o[a],correct:q.o[q.c],score:ok?1:0,ok:ok?'ok':'ko',hits:[],miss:[],e:q.e||''};}
     const g=exGrade(q,a||'');return {id:q.id,t:'red',q:q.q,given:a||'',correct:q.a,score:g.score,ok:g.ok,hits:g.hits,miss:g.miss,e:q.e||''};});
+  /* pedido por David (2026-11-01): "las preguntas que no son de tipo test... muchas veces las
+     escribe bien y aun así dice que está mal, por alguna falta de ortografía o similar". Las
+     preguntas "red" (respuesta redactada) de un examen se corregían SOLO con exGrade (palabras
+     clave + stemming + una errata de Levenshtein como mucho) y Julia veía el ❌/🟡 al momento en
+     renderExres -- la IA solo entraba después, y a mano, con el botón "🤖 Corregir con IA" del
+     tutor en el Informe. Igual que ya hace studyCheck (Teoría, "escríbelo tú") desde antes, ahora
+     se le pide una segunda opinión a la IA a CADA pregunta redactada que el corrector rápido no
+     haya dado ya por buena, antes de que Julia vea el resultado -- así no ve un fallo por algo que
+     en realidad ha puesto bien. Solo puede MEJORAR el veredicto (igual que en Teoría: nunca pasa de
+     'ok' a fallo por la IA), y si no hay IA activada o falla la conexión, se queda el veredicto de
+     siempre. Se piden todas en paralelo (Promise.all) para no alargar la espera de Julia con varias
+     preguntas falladas. */
+  const redPending=qa.filter(a=>a.t==='red'&&a.ok!=='ok');
+  if(redPending.length&&state.ai.photoOn){
+    x.submitting=true;render();
+    await Promise.all(redPending.map(async a=>{
+      try{
+        const r=await aiGradeWritten({q:a.q,correct:a.correct,hits:a.hits,miss:a.miss,given:a.given});
+        a.ai={score:r.score,comment:r.comment};
+        if(r.score>=0.6)a.ok='ok';
+      }catch(err){/* sin conexión o sin IA: nos quedamos con el veredicto del corrector rápido */}
+    }));
+    if(ui.ex!==x)return; // Julia salió del examen (exQuit) mientras se corregía con IA -- no resucitarlo
+    x.submitting=false;
+  }
   const res=exRecalc({eid:x.eid,n:qa.length,qa,secs});
   const title='Examen: '+(e?e.title:'');
   let s=null;
@@ -3967,12 +4485,40 @@ function exSubmit(){
 function renderExres(){
   const R=ui.exres;if(!R){ui.screen='home';return render();}
   const r=R.res,pct=Math.round(100*r.score/r.n),hasRed=r.qa.some(a=>a.t==='red');
+  /* Revisión adversarial (2026-11-01), 2 rondas: el aviso de abajo solo debe prometer una "segunda
+     revisión de IA" si de verdad se llegó a consultar con éxito en ALGUNA pregunta roja -- ronda 1
+     (no basta con que el examen TENGA preguntas rojas, hasRed: si la IA estaba desactivada o falló
+     la conexión, exSubmit() no toca nada). Ronda 2: en un examen con varias preguntas rojas
+     pendientes, las llamadas van en paralelo (Promise.all) y cada una puede tener éxito o fallar
+     por su cuenta -- si alguna SÍ se revisó pero OTRA que sigue mostrando ❌/🟡 no (falló su
+     llamada, o la IA no la dio por buena... no, esa SÍ cuenta como revisada), decir sin más "se
+     revisaron las que parecían mal" seguía siendo engañoso para esa pregunta en concreto que nadie
+     revisó de verdad. Por eso ahora se exige que TODAS las preguntas rojas que sigan sin estar "ok"
+     tengan de verdad a.ai guardado (allWrongReviewed, vacuously true si no queda ninguna mal) antes
+     de prometer la revisión de IA; si falta alguna, se cae al aviso neutro de siempre. */
+  const redWrong=r.qa.filter(a=>a.t==='red'&&a.ok!=='ok');
+  const anyAiUsed=r.qa.some(a=>a.t==='red'&&a.ai);
+  const allWrongReviewed=redWrong.every(a=>a.ai);
+  const aiReviewed=anyAiUsed&&allWrongReviewed;
   app.innerHTML=`<h2>${pct>=80?'🎉 ¡Genial, Julia!':pct>=50?'👍 ¡Buen trabajo!':'💪 ¡A repasar un poco más!'}</h2>
-  <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${(Math.round(r.score*10)/10).toString().replace('.',',')} de ${r.n} (${pct}%)</div><small class="mute">⏱ ${fmtDur(r.secs)}${hasRed?' · Las preguntas redactadas las ha corregido la app por palabras clave; tu tutor las revisará.':''}</small></div>
-  ${r.qa.map((a,i)=>{const ic=a.ok==='ok'?'✅':a.ok==='part'?'🟡':'❌';return `<div class="panel"><b>${ic} ${i+1}. ${esc(a.q)}</b><br>
+  <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${(Math.round(r.score*10)/10).toString().replace('.',',')} de ${r.n} (${pct}%)</div><small class="mute">⏱ ${fmtDur(r.secs)}${hasRed?(aiReviewed?' · Las preguntas redactadas las ha corregido la app por palabras clave (con una segunda revisión de IA en las que parecían mal); tu tutor también puede revisarlas.':' · Las preguntas redactadas las ha corregido la app por palabras clave; tu tutor puede revisarlas con IA.'):''}</small></div>
+  ${r.qa.map((a,i)=>{const ic=a.ok==='ok'?'✅':a.ok==='part'?'🟡':'❌';
+   /* Revisión adversarial (2026-11-01, ronda 3): a.ai solo existe cuando exSubmit() llamó a la IA
+      -- y eso solo pasa para preguntas que exGrade NO había dado ya por buenas (redPending). Así
+      que a.ai presente + a.ok==='ok' significa siempre que fue la IA quien subió el veredicto, no
+      las palabras clave -- y en ese caso a.hits/a.miss pueden seguir reflejando un acierto muy bajo
+      (incluso 0 de todas las palabras clave) aunque ahora se vea un ✅, lo cual contradecía ese ✅
+      con un "te han faltado: ..." que listaba casi todo. En vez de ocultarlo sin más, se sustituye
+      por el propio comentario de la IA (más útil: explica POR QUÉ se considera correcta).
+      Revisión adversarial (ronda 4): si la IA devuelve un comentario vacío o solo espacios (no hay
+      garantía de que siempre mande algo, aunque el prompt se lo pida), no tiene sentido mostrar una
+      línea "🤖 " huérfana sin texto -- en ese caso cae al detalle de palabras clave de siempre
+      (mejor eso que una línea vacía, aunque sea el mismo caso que motivó el arreglo de la ronda 3). */
+   const aiPromoted=a.t==='red'&&a.ai&&a.ok==='ok'&&(a.ai.comment||'').trim();
+   return `<div class="panel"><b>${ic} ${i+1}. ${esc(a.q)}</b><br>
    <small>Tu respuesta: ${a.given?esc(a.given):'<i>(sin contestar)</i>'}</small>
    ${a.ok!=='ok'?`<br><small style="color:var(--ok);font-weight:800">Respuesta correcta: ${esc(a.correct)}</small>`:''}
-   ${a.t==='red'&&(a.hits.length||a.miss.length)?`<br><small class="mute">${a.hits.length?'Ideas que has puesto: '+a.hits.map(esc).join(', ')+'. ':''}${a.miss.length?'Te han faltado: '+a.miss.map(esc).join(', ')+'.':''}</small>`:''}
+   ${aiPromoted?`<br><small class="mute">🤖 ${esc(a.ai.comment)}</small>`:(a.t==='red'&&(a.hits.length||a.miss.length)?`<br><small class="mute">${a.hits.length?'Ideas que has puesto: '+a.hits.map(esc).join(', ')+'. ':''}${a.miss.length?'Te han faltado: '+a.miss.map(esc).join(', ')+'.':''}</small>`:'')}
    ${a.e&&a.ok!=='ok'?`<br><small class="mute">💡 ${esc(a.e)}</small>`:''}</div>`;}).join('')}
   <div class="row"><button class="btn primary big" data-act="${R.itemId?'goToday':'goExams'}">${R.itemId?'📅 Volver a los deberes':'🔁 Practicar otra vez'}</button><button class="btn" data-act="goHome">Inicio</button></div>`;
 }
@@ -4012,29 +4558,174 @@ function studySave(){
      de retomar una ronda a medias: si el tutor cambió el nº de preguntas o el modo para un nuevo
      deber sobre la misma tarjeta, no tiene sentido seguir retomando la ronda vieja con la
      configuración vieja. */
-  state.studyProgress[st.temaId]={i:st.i,firstOk:st.firstOk,level:st.level,showPhoto:st.showPhoto,order:st.qs.map(q=>q.id),hwN:st.hwN!==undefined?st.hwN:null,hwMode:st.hwMode||null};
+  /* seenIds (Fase 2, 2026-11-01): qué preguntas ya se han corregido alguna vez en esta ronda --
+     ver studyActions.studyCheck -- se guarda también para que retomar una ronda a medias no
+     vuelva a contar como "a la primera" una pregunta que ya se había fallado antes de salir.
+     Revisión adversarial (2026-11-01, ronda 7, ALTO): "seenIds:st.seenIds||{}" guardaba la MISMA
+     referencia al objeto, nunca una copia -- así que state.studyProgress[...].seenIds y
+     ui.study.seenIds terminaban siendo literalmente el mismo objeto. studyCheck marca
+     st.seenIds[q.id]=true en el momento mismo de corregir (antes de que exista ningún studySave()
+     posterior -- eso solo pasa en studyNext/studyPrev/al abrir), así que esa marca se "filtraba"
+     al progreso YA guardado sin que mediara ningún guardado nuevo de verdad. Resultado: fallar una
+     pregunta y salir con "Salir y seguir luego aquí mismo" (studyQuitResume, un botón normal, SIN
+     pulsar "Siguiente" antes) dejaba "order"/"i" correctamente en el último punto de control real
+     (como si el fallo nunca hubiera pasado), pero "seenIds" SÍ quedaba con esa pregunta marcada
+     como ya vista -- al reabrir, se la volvía a presentar como "primer intento real" (según
+     order/i/doneIdx, que sí son consistentes) pero si la acertaba, firstOk NO subía, porque para
+     seenIds (el único sitio que decide si cuenta "a la primera") ya estaba marcada de un intento
+     que, según el resto del estado, nunca llegó a confirmarse. Clonar aquí el objeto rompe el alias:
+     a partir de este guardado, mutar ui.study.seenIds en vivo (en studyCheck) ya no toca lo que
+     quedó persistido en el último punto de control real. */
+  /* n (Fase 2, 2026-11-01): se guarda el "nº de preguntas" FIJO de esta ronda (no st.qs.length,
+     que ahora puede crecer con los reintentos de preguntas falladas -- ver studyCheck), para que
+     al retomar una ronda a medias "X de N a la primera" siga comparando contra las N preguntas
+     ORIGINALES del banco/deber, no contra N+reintentos ya acumulados. */
+  /* hwPending (revisión adversarial, 2026-11-01, ronda 8, ALTO): hwN/hwMode por sí solos NO
+     bastan para saber si esta ranura es un deber de verdad TODAVÍA PENDIENTE, o una ronda
+     VOLUNTARIA de refuerzo ("Nivel 2"/"Repetir esta ronda") que Julia hizo DESPUÉS de terminar y
+     entregar ese mismo deber -- desde la ronda 5/6 de esta misma serie, esas rondas voluntarias
+     también heredan hwN/hwMode (a propósito, para repetir las mismas preguntas), así que si Julia
+     la deja a medias con "Salir y seguir luego", quedaba guardada con el MISMO hwN/hwMode que un
+     deber real. Si el tutor pone después OTRO deber de verdad con ese mismo nº/modo (nada raro en
+     deberes recurrentes), studyOpenHomework (sameHw) la confundía con ESE deber nuevo y la
+     retomaba tal cual -- saltándose la rotación de studyPickHomeworkSet, y pudiendo mostrar Nivel 2
+     (sin foto) aunque el deber nuevo pidiera Nivel 1 (con foto). hwPending distingue ambos casos:
+     TRUE solo en una ronda de deber de verdad, todavía sin completar (puesta por
+     studyOpenHomework, o heredada tal cual al pasar por studyOpen -ver más abajo-, o heredada por
+     studyRound SOLO si la ronda que se abandona aún NO se había completado -ver su aviso-). Una
+     vez una ronda llega a su pantalla final (recordStudyOnce, "recorded=true"), cualquier ronda
+     posterior que nazca de ahí (Nivel 1/2, Repetir) queda con hwPending=false -- sigue repitiendo
+     LAS MISMAS preguntas (por pedagogía), pero ya nunca puede ser confundida por
+     studyOpenHomework con un deber real pendiente. */
+  /* hwItem (revisión adversarial, 2026-11-01, ronda 10, ALTO -- Hallazgo 2): hwN/hwMode/hwPending
+     por sí solos no bastan para identificar DE QUÉ item de "deberes de hoy" es esta ronda cuando el
+     tutor pone, el mismo día, DOS items distintos sobre la MISMA tarjeta con el MISMO nº y modo
+     (p.ej. un duplicado, o querer que repase el mismo tema dos veces en el checklist del día): sin
+     esto, "sameHw" (ver studyOpenHomework) no tenía forma de distinguir "retomar el deber de verdad
+     que dejé a medias" de "esto es un item DIFERENTE que casualmente pide lo mismo", y el segundo
+     item que Julia abría se quedaba con el progreso Y el informe del primero (robándoselo:
+     el primer item quedaba "sin hacer" para siempre). Se guarda aquí el id del item de "deberes de
+     hoy" (ui.item en el momento de abrir el deber -ver studyOpenHomework-, null si es una ronda sin
+     item, p.ej. práctica libre) para que studyOpenHomework pueda exigir también que coincida. */
+  /* qType (pedido por David, 2026-11-02): 'test'/'red'/null -- qué filtro de tipo de pregunta tenía
+     este deber (ver taskAddOverlay/studyOpenHomework). Se guarda por la misma razón que hwItem: si
+     no se guardara, retomar una ronda a medias de "Solo test" no podría distinguirse de un deber
+     nuevo de "Solo escritas" sobre la misma tarjeta con el mismo nº/modo, y studyOpenHomework la
+     retomaría tal cual -- con preguntas del tipo que ya no toca. */
+  state.studyProgress[st.temaId]={i:st.i,firstOk:st.firstOk,level:st.level,showPhoto:st.showPhoto,order:st.qs.map(q=>q.id),seenIds:{...(st.seenIds||{})},n:st.n,hwN:st.hwN!==undefined?st.hwN:null,hwMode:st.hwMode||null,hwPending:!!st.hwPending,hwItem:st.hwItem!==undefined?st.hwItem:null,qType:st.qType!==undefined?st.qType:null};
   save();
 }
 function studyClearProgress(temaId){
   if(state.studyProgress&&state.studyProgress[temaId]){delete state.studyProgress[temaId];save();}
 }
+/* Revisión adversarial (2026-11-01, ronda 1, MEDIO): si el tutor BORRA del todo una pregunta
+   (no solo la desactiva con "off") mientras seguía pendiente de un reintento en una ronda a
+   medias, "ordered" ya la pierde correctamente -- pero antes de este arreglo el "n" fijo de la
+   ronda (ver studySave) no bajaba, y como esa pregunta ya nunca puede volver a aparecer, Julia no
+   podría llegar nunca al 100% aunque acertara absolutamente todo lo demás. Esta función cuenta
+   cuántos ids DISTINTOS de "order" ya no existen en el banco actual (byId) Y todavía tenían algún
+   hueco pendiente sin resolver (una aparición en el índice "i" o más adelante -- toda aparición
+   ANTERIOR a "i" ya se había resuelto, por construcción: solo se avanza desde un acierto). Solo
+   esos cuentan como "huecos perdidos" que hay que restarle al "n" fijo; una pregunta ya resuelta
+   que se borra después no afecta a nada, porque ya había contado lo que tenía que contar. */
+function studyMissingPendingCount(order,i,byId){
+  const missing=new Set();
+  order.forEach((qid,idx)=>{if(idx>=i&&!byId[qid])missing.add(qid);});
+  return missing.size;
+}
+/* Revisión adversarial (2026-11-01, ronda 2, ALTO): "ordered=saved.order.map(...).filter(Boolean)"
+   quita del array cualquier id que ya no esté en el banco -- incluida una pregunta YA RESUELTA
+   (de un índice anterior a "i") que se borre del todo. Al quitarla, todo lo que iba DETRÁS se
+   desplaza una posición hacia atrás, así que el "i" guardado (un índice del array VIEJO) deja de
+   señalar a la pregunta correcta en el array NUEVO -- y con él, "doneIdx" (que antes se
+   reconstruía como "todo índice < i") podía marcar como "ya resuelta" una pregunta que Julia NUNCA
+   había contestado, bloqueándola para siempre (ni suma el punto si la acierta, ni se repite si la
+   falla). Esta función reconstruye "ordered" guardando, para cada pregunta que sobrevive, si su
+   posición ORIGINAL (antes de que nada se desplazara) era anterior a "i" -- ese dato viaja pegado
+   a la pregunta, no a la posición, así que el desplazamiento ya no lo puede confundir. */
+function studyRebuildOrdered(order,i,byId){
+  const ordered=[],doneFlags=[];
+  order.forEach((qid,idx)=>{const q=byId[qid];if(q){ordered.push(q);doneFlags.push(idx<i);}});
+  return {ordered,doneFlags};
+}
+// a qué índice del array reconstruido hay que retomar: el primero que NO esté ya resuelto (según
+// doneFlags), o justo detrás del final si absolutamente todo lo que sobrevivió ya estaba resuelto
+// (p.ej. porque la única pregunta pendiente era justo la que se borró) -- eso cae exactamente en
+// el hueco donde empiezan las preguntas "extra" nuevas del banco, o en el fin de la ronda si no
+// hay ninguna "extra" que ofrecer.
+function studyResumeIndex(doneFlags){
+  const k=doneFlags.findIndex(d=>!d);
+  return k===-1?doneFlags.length:k;
+}
 function studyOpen(id){
   const e=exGet(id);if(!e||e.status!=='ready')return toast('Este tema todavía no está disponible');
   const pool=e.pool.filter(q=>!q.off);if(!pool.length)return toast('Este tema no tiene preguntas todavía');
   const saved=state.studyProgress&&state.studyProgress[id];
-  let qs=null,i=0,firstOk=0,level=1,showPhoto=true;
+  let qs=null,i=0,firstOk=0,level=1,showPhoto=true,seenIds={},n=null,doneIdx=null,hwN,hwMode,hwPending,hwItem,qType;
   if(saved&&Array.isArray(saved.order)&&saved.i<saved.order.length){
     const byId={};pool.forEach(q=>byId[q.id]=q);
-    const ordered=saved.order.map(qid=>byId[qid]).filter(Boolean);
-    const extra=pool.filter(q=>!saved.order.includes(q.id));
+    const {ordered,doneFlags}=studyRebuildOrdered(saved.order,saved.i,byId);
+    // qTypeSaved (pedido por David, 2026-11-02): si la ronda a medias que se retoma aquí era un
+    // deber con filtro de tipo ("Solo test"/"Solo escritas", ver studyOpenHomework/studySave), el
+    // relleno de huecos de más abajo (extraAll) tiene que sacar las preguntas nuevas SOLO de ese
+    // mismo tipo -- si no, entrar por "practicar este tema" a un deber de "Solo test" a medias que
+    // necesita relleno (p.ej. porque el tutor desactivó una pregunta) podría colarle a Julia
+    // preguntas "escritas" que el deber nunca pidió.
+    const qTypeSaved=saved.qType!==undefined?saved.qType:null;
+    const poolForExtra=qTypeSaved?pool.filter(q=>q.t===qTypeSaved):pool;
+    /* Revisión adversarial (2026-11-01, ronda 5, ALTO): si la ronda a medias que se está
+       retomando aquí es en realidad un DEBER del tutor (saved.hwN/hwMode puestos por
+       studyOpenHomework), hay que conservarlos tal cual -- si no, como studySave más abajo
+       normaliza "undefined" a null, entrar a "practicar este tema" (este studyOpen, p.ej. desde
+       el listado de temas) BORRABA para siempre la marca de que esa ranura era de un deber
+       concreto. La próxima vez que se reabriera ESE MISMO deber (studyOpenHomework con el mismo
+       nº de preguntas y modo), "sameHw" ya no coincidía (null !== el nº de preguntas del deber) y
+       se tiraba a la basura en silencio todo el progreso real (reintentos pendientes, aciertos ya
+       contados), empezando un set nuevo de cero sin ningún aviso. Además, si es un deber con nº
+       FIJO de preguntas (saved.hwN no es null), el relleno con preguntas nuevas del banco ("extra",
+       igual que ya hace studyOpenHomework con "addCount") no puede añadir MÁS preguntas de las que
+       pedía el deber: sin este tope, entrar por aquí a un deber de 3 de 5 preguntas colaba las 2
+       preguntas que NO formaban parte del deber, ampliándolo sin aviso a las 5 del banco. */
+    const extraAll=poolForExtra.filter(q=>!saved.order.includes(q.id));
+    const savedHwN=saved.hwN!=null?saved.hwN:null;
+    const extra=savedHwN!=null?extraAll.slice(0,Math.max(0,savedHwN-ordered.length)):extraAll;
     const rebuilt=ordered.concat(extra);
-    if(rebuilt.length){qs=rebuilt;i=Math.min(saved.i,qs.length-1);firstOk=saved.firstOk||0;level=saved.level||1;showPhoto=saved.showPhoto!==undefined?saved.showPhoto:true;}
+    if(rebuilt.length){qs=rebuilt;i=studyResumeIndex(doneFlags);firstOk=saved.firstOk||0;level=saved.level||1;showPhoto=saved.showPhoto!==undefined?saved.showPhoto:true;seenIds=saved.seenIds||{};
+      // nº fijo de preguntas de la ronda: el guardado (ver studySave) o, para progresos antiguos
+      // guardados antes de esta versión (sin reintentos todavía posibles), el nº de ids distintos
+      // -- menos los huecos perdidos para siempre (ver studyMissingPendingCount arriba) MÁS las
+      // preguntas "extra" nuevas que se acaban de añadir aquí mismo (si el tutor generó más
+      // preguntas para este tema mientras la ronda estaba a medias, y topadas al nº del deber si lo
+      // hay -- ver aviso de arriba). Revisión adversarial (2026-11-01, ronda 4, ALTO): sin sumar
+      // "extra.length", esas preguntas nuevas SÍ se presentaban y SÍ podían subir firstOk, pero el
+      // denominador fijo nunca crecía -- "19 de 5 a la primera (380%)" en el informe, persistido
+      // para siempre en el historial de Julia.
+      const nBase=typeof saved.n==='number'?saved.n:new Set(saved.order).size;
+      n=Math.max(0,nBase-studyMissingPendingCount(saved.order,saved.i,byId))+extra.length;
+      // doneIdx: las posiciones de "ordered" que ya estaban resueltas (doneFlags), más las "extra"
+      // (añadidas al final, nunca resueltas todavía).
+      doneIdx={};doneFlags.forEach((d,k)=>{if(d)doneIdx[k]=true;});
+      hwN=saved.hwN;hwMode=saved.hwMode;
+      // hwPending (ronda 8 de revisión adversarial, ALTO -- ver su aviso en studySave): se
+      // conserva TAL CUAL lo que ya hubiera guardado -- si era un deber de verdad pendiente, sigue
+      // siéndolo al entrar por aquí (igual que hwN/hwMode); si era una ronda voluntaria de
+      // refuerzo, sigue sin poder confundirse con un deber real. Progresos guardados ANTES de que
+      // existiera este campo (undefined) se tratan como "si tenían hwN, probablemente SÍ eran un
+      // deber de verdad" por seguridad (evita romper una continuidad legítima ya en curso).
+      hwPending=saved.hwPending!==undefined?!!saved.hwPending:(savedHwN!=null);
+      // hwItem (ronda 10): igual que hwN/hwMode/hwPending, se conserva tal cual lo que ya hubiera
+      // guardado -- entrar por "practicar este tema" a un deber a medias no debe borrar de qué item
+      // de "deberes de hoy" es, o ese item dejaría de poder retomarse correctamente luego.
+      hwItem=saved.hwItem!==undefined?saved.hwItem:null;
+      // qType: igual que hwN/hwMode/hwPending/hwItem, se conserva tal cual lo que ya hubiera
+      // guardado, para que un futuro studyOpenHomework (sameHw) lo siga pudiendo comparar.
+      qType=qTypeSaved;}
   }
   if(!qs)qs=shuffleArr(pool);
   /* theoryOpen empieza abierto en Nivel 1 (con foto) y PLEGADO en Nivel 2 (sin foto): David quiere
      que Julia pueda ver la foto también en Nivel 2 si se atasca, pero que no salga ya abierta de
      golpe, para no quitarle del todo el reto de intentar recordar primero (ver studyTheoryOrWarn). */
-  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk,n:qs.length,recorded:false,theoryOpen:showPhoto};
+  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk,n:n!=null?n:qs.length,recorded:false,theoryOpen:showPhoto,hwN,hwMode,hwPending,hwItem,qType,seenIds,doneIdx:doneIdx||{}};
   ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 /* ---- nº de preguntas y rotación cuando la teoría se pone como DEBER del día ----
@@ -4049,55 +4740,231 @@ function studyOpen(id){
    considera agotado el banco y se vuelve a barajar desde cero (un ciclo nuevo). Si el tutor pide
    "todas" (o pide tantas o más de las que hay), no hace falta rotación: le tocan todas, como
    siempre. */
-function studyPickHomeworkSet(id,pool,n){
+/* histKey (hallazgo ALTO de la revisión adversarial, 2026-11-02, del filtro de tipo de pregunta):
+   state.studyHist guardaba un ÚNICO "used" por temaId, sin distinguir tipo de pregunta -- y cada
+   reparto nuevo REEMPLAZA ese "used" entero (no lo fusiona). Si el tutor alterna, sobre la MISMA
+   tarjeta, un deber de "Solo test" un día y uno de "Solo escritas" al siguiente, el segundo reparto
+   sobrescribía silenciosamente el historial del primero (sus ids ni siquiera pertenecen al pool
+   filtrado del segundo, así que "usedSet" los descartaba igualmente al guardar). El resultado: al
+   volver a tocarle "Solo test", la rotación se trataba como ciclo nuevo y podía repetir preguntas
+   que ya le habían tocado, antes de que le tocaran todas las demás -- justo lo contrario de lo que
+   esta rotación existe para garantizar. Cada combinación de tipo lleva ahora su PROPIO historial
+   (una subclave de state.studyHist[id] en vez de un único "used" directo), para que "Solo test" y
+   "Solo escritas" (y "Todas") roten cada una de forma independiente sin pisarse entre sí. */
+function studyHistKey(qType){return(qType==='test'||qType==='red')?qType:'all';}
+function studyPickHomeworkSet(id,pool,n,qType){
   if(!n||n>=pool.length)return shuffleArr(pool);
   state.studyHist=state.studyHist||{};
-  const prev=state.studyHist[id];
+  const slot=state.studyHist[id]||{};
+  const hk=studyHistKey(qType);
+  // compatibilidad con historiales guardados ANTES de que existiera esta subclave por tipo (forma
+  // vieja: {used:[...]} directamente en slot, sin anidar): si se pide el histórico de "Todas"
+  // (hk==='all', el caso de siempre hasta ahora) y slot tiene esa forma vieja, se reutiliza tal
+  // cual en vez de tirarlo y empezar un ciclo nuevo de golpe.
+  const prev=slot[hk]||(hk==='all'&&Array.isArray(slot.used)?slot:undefined);
   let usedSet=new Set((prev&&Array.isArray(prev.used)?prev.used:[]).filter(qid=>pool.some(q=>q.id===qid)));
   let unused=pool.filter(q=>!usedSet.has(q.id));
-  if(!unused.length){usedSet=new Set();unused=pool.slice();} // banco agotado: ciclo nuevo
+  if(!unused.length){usedSet=new Set();unused=pool.slice();} // banco agotado: ciclo nuevo (de ESTE tipo)
   const picked=shuffleArr(unused).slice(0,n);
   picked.forEach(q=>usedSet.add(q.id));
-  if(usedSet.size>=pool.length)usedSet=new Set(); // con este deber se completa el ciclo: la próxima vez, a barajar de nuevo
-  state.studyHist[id]={used:Array.from(usedSet)};
+  if(usedSet.size>=pool.length)usedSet=new Set(); // con este deber se completa el ciclo de este tipo: la próxima vez, a barajar de nuevo
+  state.studyHist[id]=Object.assign({},slot,{[hk]:{used:Array.from(usedSet)}});
   save();
   return shuffleArr(picked);
 }
 /* mode: 'estudio' (nivel 1, con foto -por defecto-) o 'examen' (nivel 2, sin foto), elegido por el
-   tutor al poner la tarjeta como deber (it.mode). */
-function studyOpenHomework(id,n,mode){
+   tutor al poner la tarjeta como deber (it.mode). itemId: el id del item de "deberes de hoy" que
+   abre este deber (taskActions.openItem pasa it.id; un null/omitido es un deber "suelto", sin item
+   -p.ej. "Probar 3 preguntas" del tutor, que ya borra el progreso antes de llamar aquí-).
+   qType (pedido por David, 2026-11-02): 'test' (solo preguntas tipo test), 'red' (solo "escritas")
+   o null/undefined (las dos, de siempre -- ver taskAddOverlay). Se filtra el pool ANTES de todo lo
+   demás: así studyPickHomeworkSet (la rotación "qué preguntas ya le han tocado") y el relleno de
+   huecos de más abajo solo ven preguntas del tipo pedido, sin tocar su lógica en absoluto. */
+function studyOpenHomework(id,n,mode,itemId,qType){
   const e=exGet(id);if(!e||e.status!=='ready')return toast('Este tema todavía no está disponible');
-  const pool=e.pool.filter(q=>!q.off);if(!pool.length)return toast('Este tema no tiene preguntas todavía');
-  const nReq=n||null,modeReq=mode==='examen'?'examen':'estudio';
+  const qTypeReq=(qType==='test'||qType==='red')?qType:null;
+  const poolAll=e.pool.filter(q=>!q.off);
+  const pool=qTypeReq?poolAll.filter(q=>q.t===qTypeReq):poolAll;
+  if(!poolAll.length)return toast('Este tema no tiene preguntas todavía');
+  if(!pool.length)return toast(`Este tema no tiene preguntas de tipo ${qTypeReq==='test'?'test':'escritas'} todavía`);
+  const nReq=n||null,modeReq=mode==='examen'?'examen':'estudio',itemIdReq=itemId||null;
   const saved=state.studyProgress&&state.studyProgress[id];
   /* solo se retoma una ronda a medias si es EXACTAMENTE el mismo deber (mismo nº de preguntas y
      mismo modo) que se dejó a medias: si el tutor puso un deber nuevo sobre esta misma tarjeta
      con otro nº de preguntas u otro modo, se descarta lo que hubiera a medias y se sortea un set
-     nuevo con la configuración de ESTE deber (ver studySave: hwN/hwMode). */
-  const sameHw=saved&&(saved.hwN||null)===nReq&&(saved.hwMode||null)===modeReq;
+     nuevo con la configuración de ESTE deber (ver studySave: hwN/hwMode).
+     Revisión adversarial (2026-11-01, ronda 8, ALTO): comparar solo hwN/hwMode no basta -- una
+     ronda VOLUNTARIA de refuerzo ("Nivel 2"/"Repetir esta ronda", pulsada DESPUÉS de terminar y
+     entregar este mismo deber) también lleva ese mismo hwN/hwMode a propósito (para repetir las
+     mismas preguntas, ver studyRound), así que si Julia la deja a medias, un deber nuevo de verdad
+     con idéntico nº/modo (nada raro en deberes recurrentes) la confundía con ESE deber nuevo y la
+     retomaba tal cual -- saltándose la rotación de studyPickHomeworkSet y pudiendo mostrar el
+     nivel/modo de la ronda de refuerzo en vez del que pide el deber nuevo. hwPending (ver su aviso
+     en studySave) distingue "deber de verdad, todavía sin terminar" de "ronda voluntaria de
+     refuerzo tras terminarlo": solo se retoma si sigue siendo TRUE.
+     Revisión adversarial (2026-11-01, ronda 10, ALTO -- Hallazgo 2): tampoco basta con hwN/hwMode/
+     hwPending si el tutor pone, el mismo día, DOS items de "deberes de hoy" distintos sobre la
+     MISMA tarjeta con el MISMO nº y modo -- sin comparar también QUÉ item originó la ronda
+     guardada, abrir el SEGUNDO item retomaba sin aviso el progreso del PRIMERO (y se quedaba con
+     su informe al terminar), dejando el primer item "sin hacer" para siempre aunque Julia ya lo
+     hubiera hecho. hwItem (ver su aviso en studySave) es justo esa comparación que falta.
+     qType (2026-11-02): por la misma razón que hwItem -- si el tutor cambia, para esta misma
+     tarjeta, de "Solo test" a "Solo escritas" (o a "Todas") entre un deber y el siguiente, no vale
+     retomar la ronda a medias del tipo viejo: ni las preguntas que trae (son del tipo que ya no
+     toca) ni el relleno de huecos (ver "extra" más abajo, que ahora sale de "pool" ya filtrado por
+     tipo) tendrían sentido con el deber nuevo. */
+  const sameHw=saved&&(saved.hwN||null)===nReq&&(saved.hwMode||null)===modeReq&&saved.hwPending===true&&(saved.hwItem||null)===itemIdReq&&(saved.qType||null)===qTypeReq;
   if(sameHw&&Array.isArray(saved.order)&&saved.i<saved.order.length){
     const byId={};pool.forEach(q=>byId[q.id]=q);
-    const ordered=saved.order.map(qid=>byId[qid]).filter(Boolean);
+    // ver el aviso de studyRebuildOrdered (ronda 2 de revisión adversarial) más arriba: reconstruye
+    // "ordered" guardando, pegado a cada pregunta superviviente, si su posición ORIGINAL era
+    // anterior a "saved.i" -- así una pregunta borrada del todo no desplaza mal esa información.
+    const {ordered,doneFlags}=studyRebuildOrdered(saved.order,saved.i,byId);
     // si alguna de las preguntas originales ya no está activa, se rellena con otras del banco que
     // todavía no se hubieran usado en esta ronda, igual que hace studyOpen, sin pasarse del nº de
     // preguntas que pidió este deber (nReq) cuando lo pidió.
     const extra=pool.filter(q=>!saved.order.includes(q.id));
-    let rebuilt=ordered.concat(extra);
-    if(nReq&&rebuilt.length>nReq)rebuilt=rebuilt.slice(0,nReq);
+    /* Fase 2 (2026-11-01): antes, si "ordered" ya tenía más elementos que nReq, se recortaba con
+       .slice(0,nReq) -- correcto cuando "ordered" nunca podía superar nReq (antes de que las
+       preguntas falladas se volvieran a meter en la cola, ver studyCheck). Ahora SÍ puede ser más
+       larga que nReq de forma legítima (reintentos pendientes todavía por hacer), y recortarla
+       borraría justo esos reintentos guardados. Por eso ya no se recorta "ordered": solo se
+       completa con "extra" cuando falta (p.ej. porque el tutor desactivó alguna pregunta), sin
+       pasarse de nReq en ese relleno.
+       Revisión adversarial (2026-11-01, ronda 3, MEDIO): con nReq=null/0 ("todas las preguntas"),
+       la primera versión de esta fórmula daba addCount=0 SIEMPRE, así que las preguntas nuevas
+       que el tutor hubiera generado para este tema mientras la ronda estaba a medias dejaban de
+       incluirse al retomarla (antes de la Fase 2 sí se incluían: el código viejo concatenaba TODO
+       "extra" sin condición, y solo recortaba al final si nReq lo exigía). Con nReq puesto SÍ hay
+       que limitar el relleno a lo que falte hasta nReq, pero sin nReq (deber de "todas") hay que
+       añadir TODO "extra", igual que ya hace studyOpen (estudio libre) con su propio "extra". */
+    const addCount=nReq?Math.max(0,Math.min(extra.length,nReq-ordered.length)):extra.length;
+    const rebuilt=ordered.concat(extra.slice(0,addCount));
+    // las preguntas "extra" añadidas nunca estaban resueltas todavía (son nuevas en esta ronda).
+    const doneFlagsFull=doneFlags.concat(Array(addCount).fill(false));
     if(rebuilt.length){
       const showPhoto2=saved.showPhoto!==undefined?saved.showPhoto:true;
-      ui.study={temaId:id,level:saved.level||1,showPhoto:showPhoto2,qs:rebuilt,i:Math.min(saved.i,rebuilt.length-1),stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:saved.firstOk||0,n:rebuilt.length,recorded:false,theoryOpen:showPhoto2,hwN:nReq,hwMode:modeReq};
+      const i2=studyResumeIndex(doneFlagsFull);
+      // nº fijo de preguntas del deber: el guardado (ver studySave) o, para progresos antiguos
+      // guardados antes de esta versión, el nº de ids distintos (nunca había duplicados todavía)
+      // -- menos los huecos perdidos para siempre (ver studyMissingPendingCount, ronda 1 de
+      // revisión adversarial): una pregunta BORRADA del todo (no solo desactivada) mientras
+      // seguía pendiente de reintento ya no puede volver a aparecer nunca, así que no debe seguir
+      // contando contra el 100% posible -- MÁS "addCount" (ronda 4, ALTO): si se han rellenado
+      // huecos con preguntas "extra" nuevas del banco, también se presentan y también pueden subir
+      // firstOk, así que el denominador fijo tiene que crecer con ellas o el % final sale
+      // disparatado (p.ej. por encima del 100%) y queda así persistido para siempre.
+      const nBase=typeof saved.n==='number'?saved.n:new Set(saved.order).size;
+      const nFixed=Math.max(0,nBase-studyMissingPendingCount(saved.order,saved.i,byId))+addCount;
+      // doneIdx: las posiciones de "ordered" que ya estaban resueltas (doneFlagsFull), más las
+      // "extra" (añadidas al final, nunca resueltas todavía).
+      const doneIdx2={};doneFlagsFull.forEach((d,k)=>{if(d)doneIdx2[k]=true;});
+      ui.study={temaId:id,level:saved.level||1,showPhoto:showPhoto2,qs:rebuilt,i:i2,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:saved.firstOk||0,n:nFixed,recorded:false,theoryOpen:showPhoto2,hwN:nReq,hwMode:modeReq,hwPending:true,hwItem:itemIdReq,qType:qTypeReq,seenIds:saved.seenIds||{},doneIdx:doneIdx2};
       ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();return;
     }
   }
-  const qs=studyPickHomeworkSet(id,pool,n);
+  const qs=studyPickHomeworkSet(id,pool,n,qTypeReq);
   const level=modeReq==='examen'?2:1,showPhoto=level===1;
-  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:nReq,hwMode:modeReq};
+  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:nReq,hwMode:modeReq,hwPending:true,hwItem:itemIdReq,qType:qTypeReq,seenIds:{},doneIdx:{}};
   ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
-function studyRound(temaId,level,showPhoto){
+/* hwN/hwMode (ronda 5 de revisión adversarial, 2026-11-01, ALTO): "Nivel 2"/"Nivel 1"/"Repetir esta
+   ronda" (studyLevel2/studyLevel1/studyRepeat) llamaban aquí pasando solo temaId/level/showPhoto,
+   así que una ronda de DEBER con nº fijo de preguntas (nReq) se convertía, con un solo toque, en
+   una ronda sobre TODO el banco (pool.length en vez de nReq) -- el deber de "haz estas 3 preguntas"
+   se volvía sin aviso "hazte las 5 preguntas del tema", inflando "n"/"firstOk" en el informe que ve
+   David (res.n/res.ok, ver recordStudyOnce) y perdiendo también hwN/hwMode (quedaban undefined),
+   con lo que además se repetía el mismo problema del Hallazgo de studyOpen de arriba.
+   prevQs (ronda 6 de revisión adversarial, ALTO): limitar solo el NÚMERO (shuffleArr(pool) y
+   recortar a hwN) no basta -- eso sortea hwN preguntas CUALESQUIERA del banco, normalmente
+   distintas de las que de verdad formaban el deber en curso. Eso contradice justo lo que pidió
+   David ("una nueva vuelta a LAS PREGUNTAS", las mismas, no otras al azar): "Nivel 2" dejaba de
+   repasar de memoria lo que Julia acababa de leer con la foto, y además, al guardarse ese sorteo
+   nuevo como si fuera el deber (mismo hwN/hwMode), la identidad de "qué preguntas son este deber"
+   quedaba a la deriva con cada toque de nivel/repetir. Por eso se recibe prevQs: las preguntas de
+   la ronda que se está dejando atrás (st.qs, con los reintentos ya incluidos). Si hay hwN, se
+   reconstruye el conjunto de ids ÚNICOS de prevQs (quitando duplicados de reintentos) -- eso ES,
+   por construcción, el conjunto de preguntas asignado al deber (ver studyOpenHomework/studyOpen) --
+   y se repite exactamente ESE conjunto. Solo si alguna de esas preguntas ya no existe en el banco
+   (borrada del todo) se rellena el hueco con otras preguntas del banco todavía no usadas en esta
+   ronda, igual que ya hace el relleno de studyOpen/studyOpenHomework al retomar.
+   NO se usa aquí studyPickHomeworkSet (la rotación de "qué preguntas ya le han tocado como deber",
+   pensada para repartir entre DÍAS distintos de deberes nuevos -ver su propio aviso-): (a) mutaría
+   state.studyHist con cada simple toque de "Nivel 2"/"Repetir", en vez de solo al abrir un deber
+   nuevo de verdad; y (b) tiene un fallo latente y preexistente para cuando quedan menos preguntas
+   "no usadas todavía" que las pedidas.
+   Lo que SIGUE sin cambiar (deliberado, no es un bug de esta funcionalidad): cambiar de nivel o
+   repetir reinicia firstOk/doneIdx/seenIds igual que ya hacía antes de la Fase 2 para CUALQUIER
+   ronda (de deber o de práctica libre) -- es justo lo que significa "una vuelta nueva" (un pase de
+   memoria fresco, no una continuación), y ese reinicio-sin-confirmar ya existía para la práctica
+   libre antes de esta funcionalidad; no se añade aquí un diálogo de confirmación nuevo para no
+   cambiar un comportamiento general preexistente que David no ha pedido cambiar.
+   prevRecorded (ronda 8 de revisión adversarial, ALTO -- ver el aviso de hwPending en studySave):
+   si la ronda que se abandona (prevQs) YA se había completado y registrado (st.recorded, puesto
+   por recordStudyOnce al llegar a la pantalla final), esta ronda nueva es una "ronda extra" por
+   decisión propia de Julia, no la continuación de un deber todavía pendiente -- aunque SIGUE
+   repitiendo las mismas preguntas (prevQs, por pedagogía), ya no puede marcarse como hwPending, o
+   un deber real futuro con el mismo nº/modo la confundiría con él y se saltaría la rotación. Si en
+   cambio la ronda anterior NO se había completado todavía (Nivel 2 a mitad de deber), sigue siendo
+   la MISMA continuación de un deber de verdad, y hwPending se conserva.
+   target (ronda 10 de revisión adversarial, ALTO -- Hallazgo 1): "hwN" es lo PEDIDO por el tutor
+   (nReq), no necesariamente lo REPARTIDO -- si el banco tenía menos preguntas que hwN cuando se
+   abrió el deber (studyOpenHomework/studyPickHomeworkSet reparten como mucho pool.length), el
+   deber de verdad nació más corto que hwN, y "keep" (las preguntas únicas de prevQs) refleja ese
+   tamaño real, menor que hwN. Antes, el relleno rellenaba hasta hwN sin más, así que si el tutor
+   añadía preguntas NUEVAS al banco después, un simple toque de "Nivel 2"/"Repetir" las colaba en
+   el deber (igual que si se tratara de huecos por preguntas borradas) -- contradiciendo "una nueva
+   vuelta a LAS PREGUNTAS" (las mismas, no otras nuevas que nunca formaron parte del deber). El
+   relleno debe seguir sirviendo SOLO para sustituir preguntas asignadas que se han borrado del
+   todo del banco, nunca para "completar" un deber que siempre fue más pequeño que lo pedido: el
+   tope real es el nº de ids ÚNICOS que tenía prevQs (antes de quitar huecos), nunca hwN si prevQs
+   ya era más corto que hwN por esta razón.
+   hwItem (ronda 10 de revisión adversarial, ALTO -- ver su aviso en studySave/studyOpenHomework):
+   se conserva tal cual el de la ronda que se abandona -- si era la continuación de un deber de
+   verdad todavía pendiente (hwPending true tras este cálculo), hay que seguir sabiendo de QUÉ item
+   de "deberes de hoy" es, para que studyOpenHomework pueda seguir distinguiéndolo de otro item
+   distinto con el mismo nº/modo sobre la misma tarjeta.
+   qType (pedido por David, 2026-11-02): igual que hwItem, se conserva tal cual el de la ronda que
+   se abandona. Se usa SOLO para el relleno ("extra"/el respaldo final cuando "keep" sale vacío):
+   "keep" ya viene de prevQs, que por construcción son todas del tipo correcto (vinieron de un
+   deber ya filtrado por tipo, ver studyOpenHomework), así que no hace falta volver a filtrarlas --
+   pero las preguntas NUEVAS que se saquen del banco para rellenar huecos si tienen que respetar el
+   mismo filtro, o "Nivel 2"/"Repetir" en un deber de "Solo test" podría colar una pregunta
+   "escrita" que el deber nunca pidió. */
+function studyRound(temaId,level,showPhoto,hwN,hwMode,prevQs,prevRecorded,hwItem,qType){
   const e=exGet(temaId),pool=e.pool.filter(q=>!q.off);
-  ui.study={temaId,level,showPhoto,qs:shuffleArr(pool),i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:pool.length,recorded:false,theoryOpen:showPhoto};
+  const qTypeReq=(qType==='test'||qType==='red')?qType:null;
+  const poolT=qTypeReq?pool.filter(q=>q.t===qTypeReq):pool;
+  let qs;
+  if(hwN!=null){
+    const byId={};pool.forEach(q=>byId[q.id]=q);
+    const seen=new Set(),keep=[];
+    (prevQs||[]).forEach(q=>{if(q&&!seen.has(q.id)&&byId[q.id]){seen.add(q.id);keep.push(byId[q.id]);}});
+    const prevUnique=new Set((prevQs||[]).filter(q=>q).map(q=>q.id)).size;
+    const target=Math.min(hwN,prevUnique||hwN);
+    if(keep.length<target){
+      const extra=poolT.filter(q=>!seen.has(q.id));
+      shuffleArr(extra).slice(0,target-keep.length).forEach(q=>keep.push(q));
+    }
+    qs=keep.length?shuffleArr(keep.slice(0,target)):shuffleArr(poolT).slice(0,Math.min(hwN,poolT.length));
+    /* Revisión adversarial (2026-11-02, ronda 2 del filtro de tipo de pregunta, ALTO): si TODAS
+       las preguntas asignadas a este deber (keep) se han borrado/desactivado del banco MIENTRAS
+       tanto, Y ya no queda ninguna pregunta del tipo filtrado (qTypeReq) con la que rellenar el
+       hueco (poolT vacío -- antes del filtro por tipo esto exigía desactivar la tarjeta ENTERA,
+       muy raro; con el filtro basta con que el tutor edite/desactive solo el subconjunto de tipo
+       que pidió el deber, un flujo normal), "qs" sale VACÍO. Sin esta guarda, "Nivel 2"/"Nivel 1"/
+       "Repetir esta ronda" creaba una ronda de 0 preguntas que, al renderizar, se consideraba
+       completada al instante (i:0>=qs.length:0) y -si hwPending seguía true- grababa el deber REAL
+       de "deberes de hoy" como terminado con "0 de 0 a la primera", sin que Julia hubiera
+       contestado nada. Se corta aquí, ANTES de tocar ui.study/studySave/render: Julia se queda tal
+       cual estaba (el deber real, si lo había, sigue pendiente de verdad), y se avisa con un toast
+       para que el tutor sepa que tiene que reactivar alguna pregunta de ese tipo. */
+    if(!qs.length)return toast(`Ya no quedan preguntas${qTypeReq==='test'?' tipo test':qTypeReq==='red'?' de tipo escritas':''} activas en esta tarjeta: pídele a tu tutor que reactive alguna antes de seguir`);
+  }else{
+    qs=shuffleArr(pool);
+  }
+  const hwPending=hwN!=null&&!prevRecorded;
+  ui.study={temaId,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:hwN!=null?hwN:null,hwMode:hwMode||null,hwPending,hwItem:hwItem!==undefined?hwItem:null,qType:qTypeReq,seenIds:{},doneIdx:{}};
   ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;studySave();render();
 }
 function studyPhotosHTML(id){
@@ -4251,7 +5118,22 @@ function studyAnswerHTML(st,q){
 function recordStudyOnce(st,e){
   if(st.recorded)return;st.recorded=true;
   const res={n:st.n,ok:st.firstOk,level:st.level};earnScreenTime(res.ok);
-  if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='teoria'){const [s,r]=recItem(it);r.end=Date.now();r.done=true;r.res=res;touchSes(s);studyClearProgress(st.temaId);return;}}
+  /* Revisión adversarial (2026-11-01, ronda 9, ALTO -- Hallazgo 1): "ui.item" (qué entrada de
+     "deberes de hoy" está abierta) NO se limpia al terminar una ronda ni al pulsar "Nivel
+     2"/"Repetir" desde la pantalla final (studyLevel2/studyRepeat no lo tocan, y studyQuitResume/
+     Discard/Ok lo usan solo para decidir a qué pantalla volver). Así que si Julia, tras completar
+     de verdad el deber asignado, pulsaba "Nivel 2" para la ronda bonus (pedagógicamente correcta,
+     ver ronda 6/8) y la terminaba, esta segunda llamada a recordStudyOnce volvía a caer en esta
+     MISMA rama (ui.item seguía valiendo el id del deber) y SOBRESCRIBÍA sin aviso r.res/r.done del
+     deber real con el resultado de la ronda bonus -- el informe que ve David para ESE deber
+     terminaba reflejando una ronda voluntaria posterior, no la entrega real. "hwPending" (ronda 8)
+     ya distingue exactamente esto: es TRUE solo en la ronda que de verdad es el deber pendiente
+     (incluido al retomarlo a medias), y FALSE en cualquier ronda bonus nacida de él. Así que ahora
+     solo se graba contra el item de "deberes de hoy" cuando la ronda que termina es ese deber de
+     verdad; una ronda bonus con ui.item todavía puesto cae al camino genérico de abajo (un registro
+     de actividad suelto, igual que ya hacía la práctica libre), sin tocar el resultado ya grabado
+     del deber. */
+  if(ui.item&&st.hwPending){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='teoria'){const [s,r]=recItem(it);r.end=Date.now();r.done=true;r.res=res;touchSes(s);studyClearProgress(st.temaId);return;}}
   const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now();
   s.extra.push({id:uid(),kind:'teoria',title:'Teoría: '+(e?e.title:''),start:Date.now(),end:Date.now(),secs:0,done:true,res});
   touchSes(s);
@@ -4285,7 +5167,12 @@ function renderStudy(){
   const e=exGet(st.temaId);if(!e){ui.study=null;ui.studyVideoOpen=false;ui.screen='exlist';return render();}
   if(st.i>=st.qs.length)return renderStudyDone();
   const q=st.qs[st.i];
-  const levelBtn=st.level===1?`<button class="btn" data-act="studyLevel2">🚀 Nivel 2 (repasar de memoria)</button>`:`<button class="btn" data-act="studyLevel1">📷 Volver a nivel 1 (con la foto siempre visible)</button>`;
+  /* Revisión adversarial (2026-11-01, ronda 3, MEDIO): igual que "Anterior", este botón no puede
+     usarse mientras la IA está corrigiendo (st.checking) -- cambiar de nivel en ese momento
+     abandonaría la ronda a medio corregir, y cuando la IA respondiera acabaría aplicando su
+     resultado (firstOk/requeue) sobre un objeto de ronda ya descartado, con un "chime" de
+     acierto/fallo sin pantalla visible a la que corresponda. */
+  const levelBtn=st.level===1?`<button class="btn" data-act="studyLevel2" ${st.checking?'disabled':''}>🚀 Nivel 2 (repasar de memoria)</button>`:`<button class="btn" data-act="studyLevel1" ${st.checking?'disabled':''}>📷 Volver a nivel 1 (con la foto siempre visible)</button>`;
   const overlay=studyPhotoOverlay();
   const videoOv=studyVideoOverlay();
   /* botón del vídeo de teoría: SIEMPRE visible mientras se estudia esta tarjeta (no solo una vez
@@ -4295,7 +5182,7 @@ function renderStudy(){
   app.innerHTML=`<button class="link" data-act="studyQuit">← Salir</button><h2 style="margin:0">📘 ${esc(e.title)}</h2>
   <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0">
   <span class="mute">Nivel ${st.level} · pregunta ${st.i+1} de ${st.qs.length}</span>
-  <span class="row" style="gap:8px;flex-wrap:wrap">${videoBtn}<button class="btn" data-act="studyPrev" ${st.i?'':'disabled'}>⬅ Anterior</button>${levelBtn}</span></div>
+  <span class="row" style="gap:8px;flex-wrap:wrap">${videoBtn}<button class="btn" data-act="studyPrev" ${st.i&&!st.checking?'':'disabled'}>⬅ Anterior</button>${levelBtn}</span></div>
   ${studyTheoryOrWarn(e)}
   <div class="panel" id="qpanel"><div style="font-size:1.2rem;font-weight:800;line-height:1.4;margin-bottom:12px">${esc(q.q)}</div>
   ${studyAnswerHTML(st,q)}</div>${overlay}${videoOv}${studyQuitOverlay()}`;
@@ -4331,10 +5218,51 @@ const studyActions={
         st.checking=true;render();scrollQCenter();
         try{const r=await aiGradeWritten({q:q.q,correct:q.a,hits:g.hits,miss:g.miss,given:v});if(r.score>=0.6)ok=true;}catch(e){}
         st.checking=false;
+        /* Revisión adversarial (2026-11-01, ronda 4, MEDIO): si Julia sale de la tarjeta ("← Salir")
+           MIENTRAS la IA todavía está corrigiendo, "studyQuit*" pone ui.study=null sin esperar a
+           esto -- mismo patrón ya aceptado para Exámenes (Fase 1, exSubmit): no hace falta bloquear
+           el botón de salir, basta con no aplicar nada a una ronda ya abandonada. Sin este guard, al
+           responder la IA se seguía mutando el "st" huérfano y, peor, se disparaba un chime() y un
+           render() de la pantalla ACTUAL (la que sea, tras salir), sin relación visible con esto. */
+        if(ui.study!==st)return;
       }
     }
-    if(ok){st.firstOk++;st.stage='ok';}
-    else{st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='rule';}
+    /* pedido por David (Fase 2, 2026-11-01): "las preguntas que falle hay que volver a ponérselas
+       hasta que no las falle, cuando haya hecho todas las preguntas correctamente hay que hacer
+       una nueva vuelta". st.seenIds recuerda qué preguntas ya se han corregido alguna vez EN ESTA
+       RONDA (se guarda y se restaura al retomar, ver studySave/studyOpen/studyOpenHomework), para
+       que "firstOk" (el "de la primera" del informe) solo cuente el primer intento de verdad y no
+       vuelva a subir en un reintento. Si falla -la primera vez o en un reintento-, la pregunta se
+       vuelve a meter al final de la cola (st.qs.push): como st.i solo avanza al pulsar
+       "Siguiente", la ronda no llega a su pantalla final (renderStudyDone, cuando
+       st.i>=st.qs.length) hasta que TODAS las preguntas, incluidas las que se han repetido, se
+       hayan contestado bien al menos una vez. Si el tutor genera preguntas nuevas, la siguiente
+       ronda (studyRepeat/studyOpen/studyOpenHomework, que releen e.pool de cero) ya las incluye
+       sin tocar nada más.
+       Revisión adversarial (2026-11-01, ronda 1, ALTO): "Anterior" (studyPrev) deja volver a
+       contestar una pregunta que YA se había resuelto en esta ronda (toda posición st.i<st.i
+       máximo alcanzado está, por construcción, ya resuelta -- solo se avanza desde un acierto).
+       Sin guardia, volver atrás y "fallar" a propósito una pregunta ya acertada la volvía a meter
+       en la cola sin ningún límite (bucle de crecimiento infinito con un simple toque). st.doneIdx
+       marca qué ÍNDICES del array ya se han CORREGIDO alguna vez (se reconstruye al retomar una
+       ronda a medias -- ver studyOpen/studyOpenHomework). Si el índice actual ya está marcado,
+       esto es una repetición de revisión (vía "Anterior"), no un intento nuevo: se sigue
+       mostrando el acierto/fallo en pantalla (para que Julia pueda repasar), pero SIN volver a
+       tocar firstOk ni la cola.
+       Revisión adversarial (2026-11-01, ronda 2, ALTO): marcar "doneIdx" solo en studyNext (al
+       pulsar "Siguiente") dejaba un hueco: si Julia fallaba una pregunta nueva y pulsaba
+       "Anterior" ANTES de llegar a pulsar "Siguiente" (con la explicación todavía a medias),
+       ese índice nunca se llegaba a marcar -- podía volver más tarde con el mismo índice "fresco"
+       y volver a fallarlo, requeueándolo sin límite por esa otra puerta. Arreglo: se marca aquí
+       mismo, en el momento exacto de corregir (la primera vez que se corrige un índice, acierte o
+       falle), nunca más tarde -- así cualquier corrección posterior en ESE MISMO índice (venga de
+       donde venga: "Anterior", o cualquier otro camino) ya es inequívocamente una repetición. */
+    const isReplay=!!(st.doneIdx&&st.doneIdx[st.i]);
+    const firstTry=!(st.seenIds&&st.seenIds[q.id]);
+    st.seenIds=st.seenIds||{};st.seenIds[q.id]=true;
+    st.doneIdx=st.doneIdx||{};st.doneIdx[st.i]=true;
+    if(ok){if(firstTry&&!isReplay)st.firstOk++;st.stage='ok';}
+    else{if(!isReplay)st.qs.push(q);st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='rule';}
     chime(ok);
     render();scrollQCenter();
   },
@@ -4380,21 +5308,35 @@ const studyActions={
   },
   studyNext(){
     const st=ui.study;if(!st)return;
+    // st.doneIdx ya se marca en studyCheck en el momento mismo de corregir (ver ronda 2 de
+    // revisión adversarial), no aquí: así queda marcado aunque Julia use "Anterior" antes de
+    // llegar a pulsar "Siguiente".
     st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='answer';
     studySave();
-    if(miniGameDue(st.i,st.qs.length))return startMiniGame('study');
+    /* Revisión adversarial (2026-11-01, ronda 1, MEDIO): se pasa st.n (fijo) en vez de
+       st.qs.length -- con los reintentos, st.qs.length crece casi al mismo ritmo que st.i, así
+       que el objetivo móvil de "mitad de la ronda" (miniGameDue, para rondas cortas) podía quedar
+       sin alcanzarse durante un tramo largo justo cuando más reintentos hay. Usando el total FIJO
+       de la ronda se recupera la cadencia de siempre durante la primera vuelta; en la "cola" de
+       reintentos más allá de st.n ya no sale ninguno nuevo garantizado, pero tampoco se rompe nada. */
+    if(miniGameDue(st.i,st.n))return startMiniGame('study');
     render();scrollQCenter();
   },
   studyPrev(){
-    const st=ui.study;if(!st||st.i<=0)return;
+    /* Revisión adversarial (2026-11-01, ronda 2, MEDIO): mientras la IA está corrigiendo una
+       respuesta de "escribir" (st.checking), no se puede retroceder -- si no, el resultado de la
+       IA podía acabar aplicándose (firstOk/requeue) a la pregunta a la que Julia se había movido
+       mientras esperaba, no a la que de verdad corrigió. Mismo patrón que ya se usó en Exámenes
+       (Fase 1, ronda 5): bloquear la navegación mientras dura una corrección asíncrona. */
+    const st=ui.study;if(!st||st.i<=0||st.checking)return;
     st.i--;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='answer';
     studySave();
     render();scrollQCenter();
   },
   studyToggleTheory(){const st=ui.study;if(!st)return;st.theoryOpen=!st.theoryOpen;const y=scrollY;render();scrollTo(0,y);},
-  studyLevel2(){const st=ui.study;if(!st)return;studyRound(st.temaId,2,false);},
-  studyLevel1(){const st=ui.study;if(!st)return;studyRound(st.temaId,1,true);},
-  studyRepeat(){const st=ui.study;if(!st)return;studyRound(st.temaId,st.level,st.showPhoto);},
+  studyLevel2(){const st=ui.study;if(!st||st.checking)return;studyRound(st.temaId,2,false,st.hwN,st.hwMode,st.qs,st.recorded,st.hwItem,st.qType);},
+  studyLevel1(){const st=ui.study;if(!st||st.checking)return;studyRound(st.temaId,1,true,st.hwN,st.hwMode,st.qs,st.recorded,st.hwItem,st.qType);},
+  studyRepeat(){const st=ui.study;if(!st||st.checking)return;studyRound(st.temaId,st.level,st.showPhoto,st.hwN,st.hwMode,st.qs,st.recorded,st.hwItem,st.qType);},
   studyPhotoOpen(b){ui.studyPhotoView=b.dataset.id;render();},
   studyPhotoClose(){ui.studyPhotoView=null;render();},
   studyVideoOpen(){ui.studyVideoOpen=true;render();},
@@ -6108,7 +7050,7 @@ function renderSpellList(){
      EXACTAMENTE estos mismos números al armar el plan (en vez de volver a buscar el item de
      deberes por su cuenta) y así nunca pueda mostrar un reparto distinto del que luego ejecuta,
      ni siquiera si el item desaparece justo entre que se muestra esta lista y se pulsa "Empezar". */
-  if(isHw)ui.spHwCfg={dictRounds:(hwIt&&hwIt.dictRounds)||2,sentRounds:hwIt&&hwIt.sentRounds!==undefined?hwIt.sentRounds:1};
+  if(isHw)ui.spHwCfg={dictRounds:(hwIt&&hwIt.dictRounds!==undefined)?hwIt.dictRounds:2,sentRounds:hwIt&&hwIt.sentRounds!==undefined?hwIt.sentRounds:1};
   const list=state.spelling.filter(l=>l.status==='ready'&&(!filterId||l.id===filterId));
   const row=l=>{
     const nSent=l.sentences.length;
@@ -6120,8 +7062,17 @@ function renderSpellList(){
     if(isHw){
       const dR=ui.spHwCfg.dictRounds,sR=ui.spHwCfg.sentRounds;
       const sRok=nSent?sR:0;
+      // pedido por David (2026-10-30): "Ninguna" ahora también es una opción válida para las
+      // rondas de ESCUCHAR (dR puede ser 0, no solo sR) -- se arma el texto por partes para que
+      // "Hoy toca:" no diga nunca algo raro como "0 rondas escuchando las palabras".
+      let todayTxt;
+      if(dR===0){
+        todayTxt=sRok?`nada de escuchar las palabras, ${sRok} ${sRok===1?'ronda':'rondas'} de frases para completar`:'nada que hacer hoy (revisa el reparto de rondas con el tutor)';
+      }else{
+        todayTxt=`${dR} ${dR===1?'ronda':'rondas'} escuchando las palabras${sRok?` y ${sRok} ${sRok===1?'ronda':'rondas'} de frases para completar`:(nSent?' (sin frases esta vez)':' (todavía no hay frases preparadas, así que hoy solo escuchar)')}`;
+      }
       return `<div class="panel"><b>🔤 ${esc(l.title)}</b><br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'}</small>
-    <p class="mute" style="margin:6px 0">Hoy toca: ${dR} ${dR===1?'ronda':'rondas'} escuchando las palabras${sRok?` y ${sRok} ${sRok===1?'ronda':'rondas'} de frases para completar`:(nSent?' (sin frases esta vez)':' (todavía no hay frases preparadas, así que hoy solo escuchar)')}.</p>
+    <p class="mute" style="margin:6px 0">Hoy toca: ${todayTxt}.</p>
     <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="spHwStart" data-id="${esc(l.id)}">▶ Empezar</button></div></div>`;
     }
     return `<div class="panel"><b>🔤 ${esc(l.title)}</b><br><small class="mute">${l.words.length} ${l.words.length===1?'palabra':'palabras'}</small>
@@ -6373,16 +7324,50 @@ const spellRunActions={
     /* usa los mismos nº de rondas que renderSpellList acaba de mostrar (ui.spHwCfg), para no
        poder ejecutar un reparto distinto del que se veía en pantalla. Si por lo que sea no hay
        spHwCfg (deberes creados antes de este cambio, o se llama sin haber pasado por
-       renderSpellList), se usa el reparto de siempre: 2 de escuchar + 1 de frases. */
+       renderSpellList), se usa el reparto de siempre: 2 de escuchar + 1 de frases.
+       Pedido por David (2026-10-30): "Ninguna" ahora es una opción válida para dR (antes el
+       mínimo era 1) -- por eso "cfg.dictRounds||2" ya no vale (0 es un valor elegido a propósito,
+       no "sin configurar") y el viejo suelo "Math.max(1,dR)" tampoco: forzaba 1 ronda de escuchar
+       incluso cuando el tutor había elegido "Ninguna" a propósito, deshaciendo su elección en
+       silencio.
+       Revisión adversarial (2026-10-30), hallazgo ALTO corregido: antes el guardia de abajo solo
+       miraba "!steps.length" (las dos a "Ninguna" a la vez), pero con dictRounds=0 hay un caso
+       peor: si el deber se puso con dictRounds=0 y sentRounds>0 confiando en que la lista tenía
+       frases, y luego el tutor borra TODAS las frases de esa lista antes de que Julia lo haga, el
+       primer (y único) paso sería "sent" con 0 frases -- spHwRunStep lo detecta y llama a
+       spHwFinishAll() AL INSTANTE, sin que Julia haga nada, dejando el deber marcado como "hecho"
+       con 0 de 0 y sin ningún aviso. Antes de poder elegir "Ninguna" en escuchar esto era
+       imposible (siempre había como mínimo 1 ronda de dictado real antes de cualquier "sent").
+       2ª ronda de revisión, hallazgo MEDIO corregido: el primer arreglo construía "steps" ya
+       recortado con sR_eff (rondas de frases REALMENTE posibles ahora mismo, 0 si no hay frases),
+       pero eso también se usaba para decidir si RETOMAR un deber a medias -- si entre que se
+       guardó el progreso (con rondas ya hechas y guardadas de verdad) y que se vuelve a pulsar
+       "Empezar" se borran las frases, "steps" podía encogerse por debajo de "saved.step", así que
+       dejaba de retomarse y se perdían en silencio rondas YA completadas, pidiendo repetir
+       trabajo ya hecho -- justo lo contrario de lo que promete spHwQuitOverlay ("las rondas que
+       ya has terminado quedan guardadas"). Se corrige dejando "steps" SIEMPRE construido con el
+       reparto configurado (dR/sR, sin recortar) -- igual que antes de este cambio, así que retomar
+       sigue funcionando exactamente igual que siempre (y si el primer paso futuro que le toque
+       fuera un "sent" sin frases, la guardia YA EXISTENTE de spHwRunStep lo cierra solo, usando
+       las rondas reales ya guardadas, sin pedir repetir nada) -- y el aviso de "nada real que
+       hacer" solo se comprueba para el caso de EMPEZAR DE CERO (no hay nada guardado que retomar),
+       que es el único caso en que de verdad podría arrancar sin ninguna actividad real. */
     const cfg=ui.spHwCfg||{};
-    const dR=cfg.dictRounds||2,sR=cfg.sentRounds!==undefined?cfg.sentRounds:1;
-    const steps=Array(Math.max(1,dR)).fill('dict').concat(Array(Math.max(0,sR)).fill('sent'));
+    const dR=cfg.dictRounds!==undefined?cfg.dictRounds:2,sR=cfg.sentRounds!==undefined?cfg.sentRounds:1;
+    const steps=Array(Math.max(0,dR)).fill('dict').concat(Array(Math.max(0,sR)).fill('sent'));
     /* si había un deber de esta MISMA lista a medias, con el MISMO reparto de rondas que se le ha
        puesto hoy (si el tutor cambió el nº de rondas desde entonces, no tendría sentido retomar
        una ronda pensada para el reparto viejo), se retoma justo donde se dejó; si no, empieza de
        cero. Mismo criterio que studyOpenHomework (Teoría) con el nº de preguntas/modo. */
     const saved=state.spellProgress&&state.spellProgress[l.id];
-    if(saved&&saved.dictRounds===dR&&saved.sentRounds===sR&&saved.step<steps.length){
+    const canResume=!!(saved&&saved.dictRounds===dR&&saved.sentRounds===sR&&saved.step<steps.length);
+    if(!canResume){
+      // Empezando de cero: solo aquí hace falta comprobar que hay de verdad alguna ronda posible
+      // ahora mismo (las de frases cuentan solo si la lista SIGUE teniendo frases en este momento).
+      const sR_eff=l.sentences.length?sR:0;
+      if(dR<=0&&sR_eff<=0)return toast(steps.length?'Este deber solo tenía rondas de frases, y esta lista ya no tiene frases preparadas. Avisa al tutor.':'Este deber no tiene ninguna ronda configurada (ni de escuchar ni de frases). Avisa al tutor.');
+    }
+    if(canResume){
       ui.spHw={listId:l.id,step:saved.step,steps,dictRounds:dR,sentRounds:sR,rounds:saved.rounds||[],secs:saved.secs||0};
     }else{
       ui.spHw={listId:l.id,step:0,steps,dictRounds:dR,sentRounds:sR,rounds:[],secs:0};
@@ -6751,6 +7736,7 @@ function tabAjustes(){
   <label class="f"><input type="checkbox" data-set="punct" ${s.punct?'checked':''}> Dictar los signos de puntuación</label><br>
   <label class="f"><input type="checkbox" data-set="showOrig" ${s.showOrig!==false?'checked':''}> Al corregir, permitir ver el texto original del dictado (Julia necesita el PIN de tutor)</label><br>
   <label class="f"><input type="checkbox" data-set="fxSound" ${s.fxSound!==false?'checked':''}> 🔊 Sonido de acierto/fallo (al corregir cada pregunta o palabra en dictado, Spelling, Teoría y Análisis Morfológico)</label>
+  <button class="btn" style="margin:4px 0" data-act="testFxSound">▶️ Probar sonido de acierto/fallo</button><br>
   <label class="f">Pausa después de cada signo<select data-set="ppause"><option value="0.6" ${s.ppause==0.6?'selected':''}>Corta</option><option value="1" ${s.ppause==1?'selected':''}>Normal</option><option value="1.6" ${s.ppause==1.6?'selected':''}>Larga</option><option value="2.2" ${s.ppause==2.2?'selected':''}>Muy larga</option></select></label>
   ${Dict.voices().length?`<label class="f">Voz<select data-set="voice">${Dict.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.voice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en español en este dispositivo.</p>'}</div>
   <p class="mute" style="margin-bottom:0">💡 <b>Para una voz más natural en el iPad:</b> Ajustes → Accesibilidad → Contenido hablado → Voces → Español, y descarga una voz «Premium» o «Mejorada» (por ejemplo Mónica, Paulina o Jorge). Luego elígela aquí (las de calidad alta aparecen con ⭐).</p></div>
@@ -6883,6 +7869,21 @@ const tutorActions={
   syncNow(){Cloud.sync(true);},
   changePin(){const p=prompt('Nuevo PIN (4 a 8 números):');if(p===null)return;if(!/^\d{4,8}$/.test(p))return toast('PIN no válido');state.pin=p;save();toast('PIN cambiado');},
   testVoice(){Dict.test(state.settings);},
+  /* pedido por David (2026-10-25): "no van los sonidos de bien y mal en ninguna parte" (ni en
+     Julia ni en la Zona de Pruebas). Revisando el código, chime()/playApplause()/playSadTrombone()
+     no tienen ninguna condición de rol ni de Zona de Pruebas que pudiera silenciarlos a propósito
+     -- así que, sin poder ver ni oír su navegador desde aquí, el paso más útil es darle un botón
+     de prueba directo (igual que ya existen "🔊 Probar voz" y "🔊 Probar voz IA" un poco más
+     arriba), que suena SIEMPRE al pulsarlo, sin importar si el interruptor de arriba está marcado
+     o no (para poder usarlo también para decidir si activarlo), y que avisa con un mensaje claro
+     si el motivo es que el propio navegador no soporta este tipo de sonido (Web Audio), en vez de
+     quedarse en silencio sin explicación. */
+  testFxSound(){
+    const ctx=_fxAudioCtx();
+    if(!ctx)return toast('⚠️ Este navegador no admite este sonido (Web Audio no disponible). Prueba con Chrome o Safari actualizados.');
+    playApplause();
+    setTimeout(playSadTrombone,900);
+  },
   testSpVoice(){sayWordEN('beautiful',()=>{});},
   async genVoice(b){const id=b.dataset.id;await genVoiceFor(id,true);},
   async testAI(){
@@ -7091,7 +8092,11 @@ document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(
   const f=ALL[act];if(f)f(b,e);});
 document.addEventListener('input',e=>{const t=e.target;
   if(t.id==='answer'){ui.answer=t.value;return;}
-  if(t.id==='exans'&&ui.ex){ui.ex.ans[ui.ex.i]=t.value;return;}
+  /* Revisión adversarial (2026-11-01, ronda 5): mientras ui.ex.submitting (corrigiendo con IA tras
+     pulsar "Entregar examen"), el qa que se va a corregir y mostrar ya se calculó al principio de
+     exSubmit() -- escribir aquí ahora no tendría ningún efecto real (se descartaría en silencio),
+     así que ni se guarda ni distraemos a Julia dejándola pensar que está corrigiendo algo a tiempo. */
+  if(t.id==='exans'&&ui.ex&&!ui.ex.submitting){ui.ex.ans[ui.ex.i]=t.value;return;}
   if(exInput(t)||tfInput(t)||spInput(t)||taInput(t))return;
   if(t.dataset.set){const k=t.dataset.set;state.settings[k]=t.type==='checkbox'?t.checked:(t.type==='range'||k==='ppause')?+t.value:t.value;save();
     if(k==='repeat'){const gb=$('#gapBox');if(gb)gb.style.display=state.settings.repeat>1?'':'none';}
@@ -7120,7 +8125,7 @@ document.addEventListener('change',e=>{const t=e.target;
    2) si lo que se arrastra no es un archivo (p.ej. texto seleccionado hacia el cuadro de notas,
       que ya sabe aceptar texto por sí mismo), no hay que tocar nada: se deja el comportamiento
       nativo tal cual, sin mostrar ningún aviso de "eso no son fotos". */
-const DROPZONE_HANDLERS={exPhotos:files=>readNotesPhotos(files)};
+const DROPZONE_HANDLERS={exPhotos:files=>readNotesPhotos(files),exExamples:files=>readExamplePhotos(files)};
 function dzEl(e){return e.target&&e.target.closest&&e.target.closest('[data-dropzone]');}
 function dzHasFiles(e){const dt=e.dataTransfer;return !!(dt&&dt.types&&Array.from(dt.types).includes('Files'));}
 document.addEventListener('dragover',e=>{if(dzHasFiles(e))e.preventDefault();});
