@@ -1621,7 +1621,39 @@ function dictadoPreviewHTML(text){
    chime() y nunca por los botones de prueba, y el valor por defecto) y verify_fxpack_edge_cases.js
    (nuevo, de la revisión adversarial: los casos límite de arriba). Suite completa (49 archivos
    verify_*.js) en verde, salvo las exclusiones pre-existentes ya documentadas. */
-const APP_VERSION='2026.11.02-4';
+/* 81. (v2026.11.02-5) FECHA DE EXAMEN POR TEMA, en "Área de tutor" -> "Teoría y exámenes".
+   Pedido por David a partir de una captura de esa pantalla (la lista de Temas de una asignatura):
+   "aqui es donde deberia aparecer la fecha del examen del tema, para saber cuando es el examen en
+   el caso que lo sepamos". Aclarado con él antes de construirlo (AskUserQuestion): UNA fecha por
+   TEMA (no por tarjeta de teoría ni por examen combinado -- eso ya existe aparte, como e.date en
+   los exámenes "isExam", un concepto totalmente distinto), opcional, puesta o quitada por el
+   tutor, visible tanto en la tarjeta del tema dentro de la asignatura (exAsigView) como dentro del
+   propio tema (exTemaView).
+   Campo nuevo: tm.examDate (string ISO yyyy-mm-dd, o '' si no tiene fecha), editable con un
+   <input type="date" data-temaf="examDate"> (manejado en exInput(), igual que el resto de campos
+   genéricos data-*, pero con su propio data-id porque puede haber varios temas a la vez en la
+   misma pantalla) y borrable con el botón "✕" (examActions.temaExamDateClear).
+   Revisión adversarial: TRES rondas con agentes independientes ejecutando código real, hasta
+   quedar limpia (como exige el proceso de esta sesión). Hallazgos reales encontrados y arreglados:
+   (1ª ronda, MEDIO) una fecha de solo espacios se trataba como "con fecha" y mostraba "Invalid
+   Date"/"NaN días" -- arreglado comprobando tm.examDate.trim() antes de mostrarla, y recortando el
+   valor en exInput() antes de guardarlo; (2ª ronda, MEDIO) un examDate truthy pero NO string
+   (número, booleano...), alcanzable por una copia de seguridad restaurada o una fusión de Cloud
+   sin pasar por el <input>, seguía reventando con "tm.examDate.trim is not a function" -- arreglado
+   comprobando también typeof tm.examDate==='string' antes de llamar a .trim(), y forzando siempre
+   el valor a string en exInput() con String(...).trim(); (3ª ronda, BAJO, blindaje) el valor
+   mostrado en el propio <input value="..."> se escapaba sin pasar por ese mismo guard de tipo --
+   arreglado para usarlo también ahí, aunque no era alcanzable por ninguna vía real de datos.
+   Quedó documentada (no es un bug de esta feature) una limitación general y pre-existente: el
+   merge de Cloud de "temas" es por elemento completo, no por campo -- si dos dispositivos editan
+   SIN sincronizar entre sí dos campos distintos del mismo tema (p.ej. uno cambia el nombre y otro
+   la fecha de examen), el último en sincronizar puede pisar el cambio del otro. Igual que ya le
+   pasa a otros campos de la app con el mismo tipo de clave.
+   Cubierto por tests: verify_tema_exam_date.js (lo básico + las dos primeras rondas),
+   verify_tema_exam_date_round2.js y verify_tema_exam_date_round3.js (casos límite de cada ronda).
+   Suite completa (51 archivos verify_*.js) en verde, salvo las exclusiones pre-existentes ya
+   documentadas. */
+const APP_VERSION='2026.11.04-1';
 /* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
    1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
       hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
@@ -2320,6 +2352,12 @@ const Dict=(()=>{
 /* ================= voz IA (OpenAI) ================= */
 const AI_STYLE='v1';
 const AI_INSTR='Habla en español de España, como una maestra de primaria dictando a una niña de diez años: voz cálida, clara y pausada, con muy buena dicción. Pronuncia cada palabra con calma, sin prisa y sin añadir ni quitar nada del texto. Los signos de puntuación escritos como palabras (coma, punto, punto y aparte, abrir exclamación…) dilos de forma natural, como hace una profesora al dictar.';
+/* pedido por David (2026-11-03): "faltan poner las voces de la IA en el spelling" -- voz IA para
+   las palabras en inglés de Spelling, reutilizando el mismo módulo Voz (y el mismo interruptor
+   "Usar voz IA" de Ajustes) que ya usa Dictado, pero con sus propias instrucciones de pronunciación
+   (en inglés, ritmo pensado para una niña española de 10 años deletreando, no para dictado en
+   español) -- ver el parámetro "ctx" nuevo en Voz, más abajo. */
+const AI_INSTR_EN='Say this single English word clearly and slowly, the way a patient teacher helps a ten-year-old Spanish-speaking child learn to spell it correctly for an English class. Use natural, neutral English pronunciation with clear separation between syllables. Say the word exactly once, with no extra commentary, no translation, and no repetition.';
 const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
 const apiErr=s=>s===401?'La clave de OpenAI no es correcta o no está configurada':s===429?'Límite de uso o saldo agotado en OpenAI':s===403?'Esta web no tiene permiso para usar la IA':s===413?'La foto es demasiado grande':'Error de OpenAI ('+s+')';
 /* Intenta leer el detalle real del error que devuelve OpenAI (p.ej. "content_policy_violation" o
@@ -2402,28 +2440,41 @@ const Voz=(()=>{
   const map=new Map();let dbp=null;
   const db=()=>dbp||(dbp=new Promise((res,rej)=>{const r=indexedDB.open('deberesJulia',1);r.onupgradeneeded=()=>r.result.createObjectStore('audio');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);}));
   const idb=async(mode,fn)=>{const d=await db();return new Promise((res,rej)=>{const t=d.transaction('audio',mode),r=fn(t.objectStore('audio'));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error);});};
-  const K=t=>[AI_STYLE,state.ai.model,state.ai.voice,t].join('|');
+  const K=(t,ctx)=>(ctx&&ctx!=='dict')?[AI_STYLE,ctx,state.ai.model,state.ai.voice,t].join('|'):[AI_STYLE,state.ai.model,state.ai.voice,t].join('|');
+  const mk=(t,ctx)=>(ctx&&ctx!=='dict')?ctx+'\u0000'+t:t;
   const ready=()=>!!state.ai.on;
-  async function gen(text){
+  async function gen(text,ctx){
     const a=state.ai,body={model:a.model,voice:a.voice,input:text,response_format:'mp3'};
-    if(/^gpt-4o/.test(a.model))body.instructions=AI_INSTR;
+    if(/^gpt-4o/.test(a.model))body.instructions=(ctx==='spell')?AI_INSTR_EN:AI_INSTR;
     let r;try{r=await aiCall('tts','/v1/audio/speech',body);}
     catch(e){throw new Error('Sin conexión con el servidor de voz');}
     if(!r.ok)throw new Error(await apiErrDetail(r));
     return await r.blob();
   }
-  async function missing(texts){const out=[];for(const t of [...new Set(texts)]){const v=await idb('readonly',s=>s.getKey(K(t))).catch(()=>undefined);if(v===undefined)out.push(t);}return out;}
-  async function prepare(texts,onProg){
+  async function missing(texts,ctx){const out=[];for(const t of [...new Set(texts)]){const v=await idb('readonly',s=>s.getKey(K(t,ctx))).catch(()=>undefined);if(v===undefined)out.push(t);}return out;}
+  async function prepare(texts,onProg,ctx){
     const q=[...new Set(texts)];let done=0,fail=0,err='';
     const worker=async()=>{while(q.length){const t=q.shift();let ok=false;
-      for(let n=0;n<2&&!ok;n++){try{const b=await gen(t);await idb('readwrite',s=>s.put(b,K(t)));ok=true;}catch(e){err=e.message;if(/clave|Límite|permiso/.test(err))break;}}
+      for(let n=0;n<2&&!ok;n++){try{const b=await gen(t,ctx);await idb('readwrite',s=>s.put(b,K(t,ctx)));ok=true;}catch(e){err=e.message;if(/clave|Límite|permiso/.test(err))break;}}
       if(ok)done++;else fail++;onProg&&onProg(done,fail);}};
     await Promise.all([worker(),worker(),worker()]);
     return{done,fail,err};
   }
-  async function load(texts){
-    map.forEach(u=>URL.revokeObjectURL(u));map.clear();
-    for(const t of [...new Set(texts)]){const b=await idb('readonly',s=>s.get(K(t))).catch(()=>null);if(b)map.set(t,URL.createObjectURL(b));}
+  async function load(texts,ctx){
+    /* HALLAZGO de la revisión adversarial (2026-11-03): map.clear() vaciaba el mapa en memoria
+       ENTERO sin mirar el ctx, así que un Voz.load() de Dictado podía borrar de memoria el audio
+       de Spelling que una ronda en curso estuviera usando (y al revés) si las dos llamadas se
+       solapaban en el tiempo -- por ejemplo, Julia entra en un Dictado con la IA todavía
+       generando, sale rápido a Spelling y empieza allí una ronda (que carga bien su propio audio),
+       pero cuando la llamada "abandonada" de Dictado termina de fondo, su propio load() volvía a
+       vaciar TODO el mapa y se llevaba por delante las entradas de Spelling que la ronda activa
+       necesitaba -- sin ningún error visible, solo dejaba de sonar la voz IA hasta la siguiente
+       ronda. Arreglado: cada load() borra solo las entradas de SU PROPIO ctx (reconocibles por el
+       mismo prefijo que ya usa mk: "ctx\u0000" para un ctx no-Dictado, o ninguna marca para
+       Dictado), dejando intactas las del otro contexto. */
+    const mine=k=>(ctx&&ctx!=='dict')?k.indexOf(ctx+'\u0000')===0:k.indexOf('\u0000')===-1;
+    for(const [k,u] of [...map]){if(mine(k)){URL.revokeObjectURL(u);map.delete(k);}}
+    for(const t of [...new Set(texts)]){const b=await idb('readonly',s=>s.get(K(t,ctx))).catch(()=>null);if(b)map.set(mk(t,ctx),URL.createObjectURL(b));}
   }
   function unlock(){try{el.src=SILENT;const p=el.play();if(p&&p.catch)p.catch(()=>{});}catch(e){}}
   function playUrl(url,speed,cb,fail){
@@ -2434,8 +2485,134 @@ const Voz=(()=>{
     const p=el.play();if(p&&p.catch)p.catch(bad);
     return()=>{fin=true;clearTimeout(g);el.onended=el.onerror=null;try{el.pause();}catch(e){}};
   }
-  return{ready,gen,missing,prepare,load,unlock,has:t=>map.has(t),play:(t,sp,cb,fail)=>playUrl(map.get(t),sp,cb,fail),playUrl,stop(){try{el.pause();}catch(e){}}};
+  return{ready,gen,missing,prepare,load,unlock,has:(t,ctx)=>map.has(mk(t,ctx)),play:(t,sp,cb,fail,ctx)=>playUrl(map.get(mk(t,ctx)),sp,cb,fail),playUrl,stop(){try{el.pause();}catch(e){}}};
 })();
+/* ================= reconocimiento de voz (entrada), "Escucha" =================
+   Módulo equivalente a Voz pero de ENTRADA: envuelve SpeechRecognition/webkitSpeechRecognition
+   (nativo del navegador, sin ninguna librería ni servidor de terceros -- a diferencia de Voz, que
+   sí llama a la IA para generar el audio, esto no cuesta nada ni necesita la IA activada).
+   Pensado para "escríbelo tú" en Teoría y Morfología cuando el tutor eligió modo "De voz" o
+   "Mixto" (ver taskAddOverlay/writeMode, p4t.js): en vez de teclear la respuesta, Julia puede
+   DECIRLA y se rellena el textarea con lo reconocido, reutilizando tal cual el mismo corrector de
+   siempre (textCloseEnough en Teoría, morfoWriteDiff en Morfología) -- la voz es solo una forma
+   distinta de RELLENAR la respuesta, nunca un camino de corrección aparte.
+   ready(): si el navegador soporta reconocimiento de voz (no todos lo soportan -- p.ej. Firefox de
+   escritorio no, en 2026). Si no hay soporte, el botón de micrófono ni se muestra (ver
+   voiceButtonHTML más abajo) y el modo "De voz" cae a "Escrito" como red de seguridad (ver
+   studyAnswerHTML/morfoWriteGateHTML): nunca se intenta start() sin haber comprobado antes.
+   start(onResult,onError): empieza a escuchar en español (es-ES) UNA sola frase (no continuo: se
+   para sola en el primer silencio). Se llama exactamente a UNA de las dos funciones:
+   - onResult(texto): con lo reconocido (puede ser '' si no se ha entendido nada, o si se cortó
+     con stop()); nunca se considera un error real, solo "no te he oído".
+   - onError(mensaje): solo ante un fallo real antes de poder reconocer nada (permiso de micrófono
+     denegado, sin micrófono disponible, etc.), con un mensaje en español ya listo para un toast().
+   stop(): corta a mano la escucha en curso (p.ej. si Julia sale de la tarjeta). Cortar así llama a
+   onResult('') internamente (ver onerror con error 'aborted' más abajo), nunca a onError. */
+const Escucha=(()=>{
+  const SR=(typeof window!=='undefined')&&(window.SpeechRecognition||window.webkitSpeechRecognition);
+  let rec=null;
+  function ready(){return !!SR;}
+  // corta el MOTOR real de reconocimiento (si hay uno en marcha), sin tocar ningún "st.listening"
+  // -- lo usa internamente start() para cortar una escucha anterior justo ANTES de arrancar una
+  // nueva, momento en el que el "st.listening=true" de la escucha NUEVA ya se ha puesto un
+  // instante antes (en studyVoiceStart/morfoVoiceStart) y no debe borrarse.
+  function abortEngine(){if(rec){try{rec.abort();}catch(e){}rec=null;}}
+  function stop(){
+    abortEngine();
+    /* Revisión adversarial (2026-11-04, ronda 7, ALTO): casi todos los sitios que llaman a
+       Escucha.stop() (la función PÚBLICA, para cortar de verdad y volver a un estado limpio) solo
+       ponían a false el "st.listening" del st concreto que tenían entre manos (o ninguno, en los
+       botones "siempre visibles" como goHome/setRole/logout, que ni siquiera saben si había una
+       escucha en curso). Eso dejaba un "listening=true" FANTASMA en ui.study o ui.morfo -- el motor
+       real ya muerto (abortEngine() lo corta de verdad), pero el flag seguía en true -- que luego:
+       (a) en setRole, al no cambiar ui.screen, mostraba "🎤 Escuchando…" de mentira en la MISMA
+           pregunta tras cambiar de rol y volver;
+       (b) en el listener de "visibilitychange", hacía que el ternario que prioriza ui.study sobre
+           ui.morfo cortara el flag "fantasma" en vez del que de verdad tenía el micrófono real
+           abierto, dejando ESE otro en true para siempre.
+       Al limpiar aquí los DOS posibles fantasmas cada vez que se corta Escucha DE VERDAD, desde
+       fuera (único sitio común a TODAS esas llamadas, presentes y futuras), el problema desaparece
+       de raíz en vez de ir parcheando cada botón uno a uno. IMPORTANTE: esto vive en stop(), NO en
+       abortEngine() -- si viviera ahí, el propio start() (que llama a abortEngine() para cortar la
+       escucha ANTERIOR antes de arrancar la nueva) borraría el "listening=true" que la escucha
+       NUEVA acababa de poner un instante antes de llamar a start(). */
+    if(typeof ui!=='undefined'){if(ui.study)ui.study.listening=false;if(ui.morfo)ui.morfo.listening=false;}
+  }
+  function start(onResult,onError){
+    if(!SR)return onError&&onError('Este navegador no permite reconocimiento de voz');
+    abortEngine();
+    const r=new SR();rec=r;
+    r.lang='es-ES';r.continuous=false;r.interimResults=false;r.maxAlternatives=1;
+    let done=false;
+    /* Revisión adversarial (2026-11-04, ALTO): los 3 handlers de abajo hacían "rec=null" a secas,
+       sin comprobar que "r" (ESTA instancia concreta) sigue siendo la escucha activa. En un
+       navegador real, abort() NO dispara su evento de error de forma síncrona (a diferencia del
+       SpeechRecognition de pruebas, que sí lo hace síncrono y por eso esto no se notaba en los
+       tests) -- así que si Julia pulsa el micrófono dos veces seguidas (la segunda start() aborta
+       la primera escucha y crea una nueva, "rec" ya apunta a la nueva), el evento TARDÍO de la
+       escucha vieja podía llegar DESPUÉS y volver a poner "rec=null", borrando la referencia a la
+       escucha nueva que seguía activa de verdad. Con "rec" ya en null, un Escucha.stop() posterior
+       (p.ej. al salir de la tarjeta) no tenía nada que abortar, y el micrófono real se quedaba
+       escuchando de fondo sin que la app pudiera cortarlo. Por eso cada handler comprueba primero
+       que "rec===r" (sigue siendo ESTA instancia la activa) antes de tocar nada. */
+    r.onresult=e=>{
+      if(done||rec!==r)return;done=true;rec=null;
+      let t='';for(let i=0;i<e.results.length;i++)t+=e.results[i][0].transcript;
+      onResult&&onResult(t.trim());
+    };
+    r.onerror=e=>{
+      if(done||rec!==r)return;done=true;rec=null;
+      // 'aborted' es un stop() a mano, no un fallo real -- se trata como "no hubo resultado".
+      if(e.error==='aborted'){onResult&&onResult('');return;}
+      const msg=(e.error==='not-allowed'||e.error==='permission-denied')?'Permiso de micrófono denegado: revísalo en los ajustes del navegador'
+        :e.error==='no-speech'?'No se ha oído nada: inténtalo de nuevo'
+        :e.error==='audio-capture'?'No se encuentra ningún micrófono'
+        :'No se ha podido usar el micrófono';
+      /* Revisión adversarial (2026-11-04, ronda 7, ALTO): con writeMode='voice' puro, si el
+         permiso de micrófono está denegado (o no hay micrófono, o el motor falla de cualquier otra
+         forma que no sea "no-speech"), volver a pulsar el mismo botón de micrófono fallará SIEMPRE
+         igual -- a diferencia de "no-speech" (simplemente no se oyó nada esta vez, reintentarlo
+         tiene sentido). Se pasa un 2º argumento "persistent" para que quien llama pueda distinguir
+         estos dos casos y ofrecer una vía de escape (ver micError más abajo) solo cuando de verdad
+         hace falta. */
+      onError&&onError(msg,e.error!=='no-speech');
+    };
+    // onend se dispara SIEMPRE al terminar, incluso tras un onresult/onerror ya atendidos -- el
+    // guard "done" evita llamar dos veces a onResult/onError (p.ej. si el navegador dispara result
+    // y end, o error y end, para el mismo intento).
+    r.onend=()=>{if(done||rec!==r)return;done=true;rec=null;onResult&&onResult('');};
+    try{r.start();}
+    catch(e){if(!done&&rec===r){done=true;rec=null;onError&&onError('No se ha podido empezar a escuchar');}}
+  }
+  return{ready,start,stop};
+})();
+/* botón de micrófono compartido por "escríbelo tú" en Teoría (ui.study) y Morfología (ui.morfo):
+   mismo "st" en forma (ambos tienen .listening), solo cambia qué acciones disparan al pulsarlo. No
+   se pinta nada si el navegador no soporta reconocimiento de voz (ver Escucha.ready() arriba) --
+   quien llama a esta función ya solo la invoca cuando corresponde mostrar el botón (writeMode
+   'voice'/'mixed'), pero se repite aquí la comprobación por seguridad, nunca pintar un botón que
+   luego no podría usarse.
+   Revisión adversarial (2026-11-04, MEDIO): mientras se escucha, el botón ya NO se deja
+   "disabled" sin ninguna acción -- si el motor de reconocimiento no detecta nunca un silencio (o
+   Julia simplemente cambia de idea), antes Julia se quedaba sin ninguna forma de salir de ahí
+   dentro de la misma pregunta. Ahora se convierte en un botón de "Cancelar" de verdad, que llama a
+   stopAct (studyVoiceStop/morfoVoiceStop) y corta el micrófono. */
+function voiceButtonHTML(st,startAct,stopAct){
+  if(!Escucha.ready())return '';
+  return st.listening
+    ?`<button class="btn danger" data-act="${stopAct}" style="margin-top:8px">🎤 Escuchando… (toca para cancelar)</button>`
+    :`<button class="btn" data-act="${startAct}" style="margin-top:8px">🎤 Decirlo en voz alta</button>`;
+}
+/* Revisión adversarial (2026-11-04, ronda 6, bajo/medio): si Julia escondía la pestaña o
+   minimizaba el navegador mientras el micrófono escuchaba su respuesta de "escríbelo tú" (Teoría o
+   Morfología), el reconocimiento seguía en marcha de fondo sin ningún control visible para
+   cortarlo. Al ocultarse la pestaña se corta como medida de seguridad/batería/privacidad. */
+if(typeof document!=='undefined')document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden)return;
+  const stL=(ui.study&&ui.study.listening)?ui.study:(ui.morfo&&ui.morfo.listening)?ui.morfo:null;
+  if(!stL)return;
+  stL.listening=false;Escucha.stop();render();
+});
 /* ================= sincronización con Supabase ================= */
 const SB_URL='https://rzzaizkzszgiirwmilyq.supabase.co',SB_KEY='sb_publishable_xdaxsZhA3FDyGWsMeT2pLA_4TSyUvpl';
 const Cloud=(()=>{
@@ -3522,7 +3699,7 @@ const taskActions={
     else if(it.type==='teoria'){
       const e=exGet(it.tid);
       if(!e||e.status!=='ready')return toast('Esa tarjeta de teoría ya no está disponible');
-      studyOpenHomework(it.tid,it.n,it.mode,it.id,it.qType);
+      studyOpenHomework(it.tid,it.n,it.mode,it.id,it.qType,it.writeMode);
     }
     else if(it.type==='spelling'){
       const l=state.spelling.find(x=>x.id===it.spid);
@@ -3533,7 +3710,7 @@ const taskActions={
       const d=state.morfos.find(x=>x.id===it.mid);
       if(!d)return toast('Ese texto ya no existe');
       if(!state.ai.photoOn)return toast('El tutor tiene que activar la IA de fotos en Ajustes para usar el análisis morfológico');
-      morfoStart(d.text,d.title,'today',d);
+      morfoStart(d.text,d.title,'today',d,it.writeMode);
     }
     else startMath(it.cfg,it.seed,it.id);
   },
@@ -3637,6 +3814,18 @@ function tfInput(t){
    como deberes a Julia, sin tener que ir al asistente de la pestaña Deberes. Reutiliza tfDates()
    para "varios días seguidos" igual que hace ese asistente. */
 const TASK_ADD_LABEL={dictado:'✏️ Dictado',examen:'📝 Examen',teoria:'📖 Tarjeta de teoría',spelling:'🔤 Spelling',morfo:'🔎 Análisis morfológico'};
+/* writeMode (pedido por David, 2026-11-04): en Teoría y Análisis Morfológico, al fallar y tener
+   que "escribir tú la respuesta correcta" para poder seguir, el tutor elige aquí, al poner el
+   deber, si Julia puede hacerlo escrito (⌨️, de toda la vida), de viva voz (🎤, reconocimiento de
+   voz del navegador -- ver Escucha, p2a.js) o mixto (🔀, puede elegir cada vez). NO se aplica a
+   Dictado ni a Spelling: ahí "reescribir" existe justo para comprobar ortografía, y una respuesta
+   dicha en voz alta no sirve para eso (pedido explícito de David). Por defecto 'mixed', igual que
+   todos los chips de esta pantalla tienen un valor por defecto razonable si el tutor no toca nada. */
+function taskAddWriteModeHTML(a){
+  const chip=(on,act,attrs,label)=>`<button class="chip${on?' on':''}" data-act="${act}" ${attrs}>${label}</button>`;
+  return `<div class="lbl" style="margin-top:14px">Al fallar y tener que escribir la respuesta correcta, ¿cómo puede hacerlo?</div>
+  <div class="chips">${chip(a.writeMode==='text','taskAddWriteMode','data-v="text"','⌨️ Escrito')}${chip(a.writeMode==='voice','taskAddWriteMode','data-v="voice"','🎤 De voz')}${chip((a.writeMode||'mixed')==='mixed','taskAddWriteMode','data-v="mixed"','🔀 Mixto (a elegir)')}</div>`;
+}
 function taskAddOverlay(){
   const a=ui.taskAdd;if(!a)return '';
   const t=todayStr();
@@ -3666,12 +3855,14 @@ function taskAddOverlay(){
   <div class="lbl" style="margin-top:14px">¿Cuántas preguntas?</div>
   <div class="chips">${chip(!a.nQuestions,'taskAddN','data-v="0"',`Todas (${qTypeLen})`)}${[10,15,20,30].filter(n=>n<qTypeLen).map(n=>chip(a.nQuestions===n,'taskAddN',`data-v="${n}"`,n)).join('')}</div>
   <div class="lbl">¿Estudio o examen?</div>
-  <div class="chips">${chip(a.mode==='estudio','taskAddMode','data-v="estudio"','📖 Estudio (con foto)')}${chip(a.mode==='examen','taskAddMode','data-v="examen"','📝 Examen (sin foto)')}</div>`:''}
+  <div class="chips">${chip(a.mode==='estudio','taskAddMode','data-v="estudio"','📖 Estudio (con foto)')}${chip(a.mode==='examen','taskAddMode','data-v="examen"','📝 Examen (sin foto)')}</div>
+  ${taskAddWriteModeHTML(a)}`:''}
   ${a.type==='spelling'?`<div class="lbl" style="margin-top:14px">¿Cuántas rondas escuchando las palabras?</div>
   <div class="chips">${[0,1,2,3].map(n=>chip(a.dictRounds===n,'taskAddDictRounds',`data-v="${n}"`,n===0?'Ninguna':n+(n===1?' ronda':' rondas'))).join('')}</div>
   <div class="lbl">¿Cuántas rondas de frases para completar?</div>
   ${a.nSent?`<div class="chips">${[0,1,2,3].map(n=>chip(a.sentRounds===n,'taskAddSentRounds',`data-v="${n}"`,n===0?'Ninguna':n+(n===1?' ronda':' rondas'))).join('')}</div>`:'<p class="mute" style="margin:4px 0;font-size:.85rem">Esta lista todavía no tiene frases preparadas, así que hoy solo escuchar.</p>'}
   ${!a.dictRounds&&!a.sentRounds?(a.nSent?'<p class="msg wrong" style="margin:6px 0">⚠️ Elige al menos una ronda (de escuchar o de frases): no puedes poner «Ninguna» en las dos a la vez, si no Julia no tendría nada que hacer ese día.</p>':'<p class="msg wrong" style="margin:6px 0">⚠️ Esta lista todavía no tiene frases preparadas, así que tiene que tener al menos 1 ronda de escuchar las palabras (si no, Julia no tendría nada que hacer ese día).</p>'):''}`:''}
+  ${a.type==='morfo'?taskAddWriteModeHTML(a):''}
   <p class="mute" style="margin:10px 0">${esc(when)}</p>
   <div class="row" style="margin-top:4px"><button class="btn primary big" data-act="taskAddConfirm" ${a.type==='spelling'&&!a.dictRounds&&!a.sentRounds?'disabled':''}>💾 Agregar a deberes</button><button class="btn" data-act="taskAddClose">Cancelar</button></div>
   </div></div>`;
@@ -3690,9 +3881,11 @@ const taskAddActions={
     if(a.type==='teoria'){
       const e=exGet(a.ref),activePool=e?e.pool.filter(q=>!q.off):[];
       a.poolLen=activePool.length;a.poolTestLen=activePool.filter(q=>q.t==='test').length;a.poolRedLen=activePool.filter(q=>q.t==='red').length;
-      a.nQuestions=null;a.mode='estudio';a.qType='all';
+      a.nQuestions=null;a.mode='estudio';a.qType='all';a.writeMode='mixed';
     }else if(a.type==='spelling'){
       const l=spGet(a.ref);a.nSent=l?l.sentences.length:0;a.dictRounds=2;a.sentRounds=a.nSent?1:0;
+    }else if(a.type==='morfo'){
+      a.writeMode='mixed';
     }
     ui.taskAdd=a;render();
   },
@@ -3708,6 +3901,7 @@ const taskAddActions={
   // escritas" sin que ningún chip lo reflejara ya (el botón de ese nº deja de pintarse si ya no
   // cabe, pero el valor seguiría vivo en ui.taskAdd.nQuestions y se usaría igual al confirmar).
   taskAddQType(b){ui.taskAdd.qType=b.dataset.v;ui.taskAdd.nQuestions=null;render();},
+  taskAddWriteMode(b){ui.taskAdd.writeMode=b.dataset.v;render();},
   taskAddDictRounds(b){ui.taskAdd.dictRounds=+b.dataset.v;render();},
   taskAddSentRounds(b){ui.taskAdd.sentRounds=+b.dataset.v;render();},
   taskAddConfirm(){
@@ -3727,8 +3921,9 @@ const taskAddActions={
       // qType: 'test' (solo tipo test), 'red' (solo escritas) o null (ambas, de siempre). Se
       // normaliza aquí a solo esos 3 valores posibles -- nunca se confía en a.qType "tal cual"
       // (defensivo, igual que ya hace el resto de este bloque con nQuestions/mode).
-      if(a.type==='teoria'){it.n=a.nQuestions||null;it.mode=a.mode||'estudio';it.qType=(a.qType==='test'||a.qType==='red')?a.qType:null;}
+      if(a.type==='teoria'){it.n=a.nQuestions||null;it.mode=a.mode||'estudio';it.qType=(a.qType==='test'||a.qType==='red')?a.qType:null;it.writeMode=(a.writeMode==='text'||a.writeMode==='voice')?a.writeMode:'mixed';}
       if(a.type==='spelling'){it.dictRounds=a.dictRounds!==undefined?a.dictRounds:2;it.sentRounds=a.sentRounds!==undefined?a.sentRounds:1;}
+      if(a.type==='morfo'){it.writeMode=(a.writeMode==='text'||a.writeMode==='voice')?a.writeMode:'mixed';}
       state.tareas.push({id:'t'+uid(),date,items:[it]});
     });
     save();ui.taskAdd=null;render();toast(`Agregado a deberes de ${ds.length} ${ds.length===1?'día':'días'} ✅`);
@@ -4233,11 +4428,26 @@ function exHomeView(t){
 function exAsigView(t,a){
   const temas=state.temas.filter(x=>x.asigId===a.id);
   const repaso=state.examenes.find(e=>e.isExam&&e.scope==='repaso'&&e.asigId===a.id);
+  /* Pedido por David (2026-11-02, a partir de una captura de esta misma pantalla): "aqui es donde
+     deberia aparecer la fecha del examen del tema, para saber cuando es el examen en el caso que
+     lo sepamos". Aclarado con él (AskUserQuestion): UNA fecha por Tema (no una por cada tarjeta de
+     teoría ni por cada examen combinado -- eso ya existe aparte como e.date para los exámenes
+     "isExam", ver exEditView, un concepto distinto), opcional, que pone y quita el tutor. Se guarda
+     en tm.examDate ('' o sin fecha si no se ha puesto); se sincroniza igual que tm.name (temas ya
+     es una clave item-keyed del módulo Cloud, sin fusión especial que añadir). Se reutilizan
+     exShortDate/exDaysTxt, las mismas funciones que ya usa la fecha de un examen combinado, para
+     que el formato sea coherente en toda la app. */
   const temaRow=tm=>{
     const nCards=state.examenes.filter(e=>!e.isExam&&e.temaId===tm.id).length;
-    return `<div class="panel row" style="justify-content:space-between">
+    return `<div class="panel">
+    <div class="row" style="justify-content:space-between">
     <button class="link" style="text-align:left;flex:1" data-act="temaOpen" data-id="${esc(tm.id)}"><b>🗂 ${esc(tm.name)}</b><br><small class="mute">${nCards} ${nCards===1?'tarjeta de teoría':'tarjetas de teoría'}</small></button>
     <span class="row"><button class="btn" data-act="temaRename" data-id="${esc(tm.id)}">✏️</button><button class="btn danger" data-act="temaDel" data-id="${esc(tm.id)}">🗑</button></span>
+    </div>
+    <div class="row" style="margin-top:8px;flex-wrap:wrap;align-items:center;gap:8px">
+    <label class="f" style="margin:0;flex:none">📅 Examen del tema<input type="date" data-temaf="examDate" data-id="${esc(tm.id)}" value="${esc(typeof tm.examDate==='string'?tm.examDate:'')}" style="width:auto;padding:6px 8px;font-size:0.95rem"></label>
+    ${typeof tm.examDate==='string'&&tm.examDate.trim()?`<small class="mute">${exShortDate(tm.examDate)} (${exDaysTxt(tm.examDate)})</small><button class="btn" style="padding:4px 10px;min-height:32px" data-act="temaExamDateClear" data-id="${esc(tm.id)}" title="Quitar la fecha del examen">✕</button>`:'<small class="mute">(todavía sin fecha)</small>'}
+    </div>
     </div>`;
   };
   t.innerHTML=`<div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:6px">
@@ -4268,6 +4478,10 @@ function exTemaView(t,tm){
   <span class="row" style="gap:6px"><button class="btn" data-act="temaRename" data-id="${esc(tm.id)}">✏️ Renombrar</button><button class="btn danger" data-act="temaDel" data-id="${esc(tm.id)}">🗑 Borrar</button></span>
   </div>
   <h2 style="margin:4px 0">🗂 ${esc(tm.name)}</h2>
+  <div class="row" style="margin:6px 0 2px;flex-wrap:wrap;align-items:center;gap:8px">
+  <label class="f" style="margin:0;flex:none">📅 Examen del tema<input type="date" data-temaf="examDate" data-id="${esc(tm.id)}" value="${esc(typeof tm.examDate==='string'?tm.examDate:'')}" style="width:auto;padding:6px 8px;font-size:0.95rem"></label>
+  ${typeof tm.examDate==='string'&&tm.examDate.trim()?`<small class="mute">${exShortDate(tm.examDate)} (${exDaysTxt(tm.examDate)})</small><button class="btn" style="padding:4px 10px;min-height:32px" data-act="temaExamDateClear" data-id="${esc(tm.id)}" title="Quitar la fecha del examen">✕</button>`:''}
+  </div>
   <div class="row" style="margin:6px 0;flex-wrap:wrap;gap:8px">
   <button class="btn primary" data-act="exNew">＋ Crear tarjeta de teoría</button>
   <button class="btn" data-act="exTemaExam">📝 ${ex?'Actualizar':'Crear'} examen de este tema</button>
@@ -4387,6 +4601,11 @@ function exInput(t){
     return true;
   }
   if(t.dataset.exf){const e=exGet(ui.exId);if(!e)return true;const k=t.dataset.exf;e[k]=(k==='n'||k==='bank')?Math.max(3,Math.min(80,+t.value||10)):t.value;save();return true;}
+  /* fecha de examen de un TEMA (pedido por David, 2026-11-02, ver temaRow en exAsigView) -- a
+     diferencia de data-exf (que siempre actúa sobre ui.exId, el examen/tarjeta actualmente
+     abierto), aquí puede haber varios temas a la vez en la misma pantalla, así que el input lleva
+     su propio data-id para saber sobre qué tema actuar. */
+  if(t.dataset.temaf){const tm=state.temas.find(x=>x.id===t.dataset.id);if(!tm)return true;tm[t.dataset.temaf]=String(t.value==null?'':t.value).trim();save();return true;}
   if(t.dataset.exq){const e=exGet(ui.exId);if(!e)return true;const q=e.pool[+t.dataset.i];if(!q)return true;const k=t.dataset.exq;
     if(k==='q'||k==='a'||k==='e')q[k]=t.value;
     else if(k==='o')q.o[+t.dataset.k]=t.value;
@@ -4602,6 +4821,12 @@ const examActions={
   temaOpen(b){ui.exTemaId=b.dataset.id;render();},
   temaBack(){ui.exTemaId=null;render();},
   temaRename(b){const tm=state.temas.find(x=>x.id===b.dataset.id);if(!tm)return;const name=(prompt('Nuevo nombre del tema:',tm.name)||'').trim();if(!name)return;snapUndo();tm.name=name;save();render();},
+  /* botón "✕" junto a la fecha de examen de un tema (ver temaRow en exAsigView) -- poner la fecha
+     se hace escribiendo directamente en el <input type="date"> (data-temaf, ver exInput), así que
+     solo hace falta esta acción para el camino contrario (quitarla). No pasa por snapUndo/undoLast
+     a propósito: es un único campo de fecha, trivial de volver a escribir si se quita por error,
+     a diferencia de lo que ya cubre "↩️ Deshacer" (borrar/editar registros enteros). */
+  temaExamDateClear(b){const tm=state.temas.find(x=>x.id===b.dataset.id);if(!tm)return;tm.examDate='';save();render();},
   temaDel(b){
     const tm=state.temas.find(x=>x.id===b.dataset.id);if(!tm)return;
     const cardIds=state.examenes.filter(e=>!e.isExam&&e.temaId===tm.id).map(e=>e.id);
@@ -5028,7 +5253,12 @@ function studySave(){
      no se guardara, retomar una ronda a medias de "Solo test" no podría distinguirse de un deber
      nuevo de "Solo escritas" sobre la misma tarjeta con el mismo nº/modo, y studyOpenHomework la
      retomaría tal cual -- con preguntas del tipo que ya no toca. */
-  state.studyProgress[st.temaId]={i:st.i,firstOk:st.firstOk,level:st.level,showPhoto:st.showPhoto,order:st.qs.map(q=>q.id),seenIds:{...(st.seenIds||{})},n:st.n,hwN:st.hwN!==undefined?st.hwN:null,hwMode:st.hwMode||null,hwPending:!!st.hwPending,hwItem:st.hwItem!==undefined?st.hwItem:null,qType:st.qType!==undefined?st.qType:null};
+  /* writeMode (pedido por David, 2026-11-04): 'text'/'voice'/'mixed' -- cómo podía escribir Julia
+     la respuesta correcta en "escríbelo tú" en este deber (ver taskAddOverlay/studyOpenHomework).
+     Se guarda por la misma razón que qType/hwItem: si el tutor cambia el modo entre un deber y el
+     siguiente sobre la misma tarjeta, no tiene sentido retomar una ronda a medias con el modo
+     viejo. */
+  state.studyProgress[st.temaId]={i:st.i,firstOk:st.firstOk,level:st.level,showPhoto:st.showPhoto,order:st.qs.map(q=>q.id),seenIds:{...(st.seenIds||{})},n:st.n,hwN:st.hwN!==undefined?st.hwN:null,hwMode:st.hwMode||null,hwPending:!!st.hwPending,hwItem:st.hwItem!==undefined?st.hwItem:null,qType:st.qType!==undefined?st.qType:null,writeMode:st.writeMode||'mixed'};
   save();
 }
 function studyClearProgress(temaId){
@@ -5077,7 +5307,7 @@ function studyOpen(id){
   const e=exGet(id);if(!e||e.status!=='ready')return toast('Este tema todavía no está disponible');
   const pool=e.pool.filter(q=>!q.off);if(!pool.length)return toast('Este tema no tiene preguntas todavía');
   const saved=state.studyProgress&&state.studyProgress[id];
-  let qs=null,i=0,firstOk=0,level=1,showPhoto=true,seenIds={},n=null,doneIdx=null,hwN,hwMode,hwPending,hwItem,qType;
+  let qs=null,i=0,firstOk=0,level=1,showPhoto=true,seenIds={},n=null,doneIdx=null,hwN,hwMode,hwPending,hwItem,qType,writeMode;
   if(saved&&Array.isArray(saved.order)&&saved.i<saved.order.length){
     const byId={};pool.forEach(q=>byId[q.id]=q);
     const {ordered,doneFlags}=studyRebuildOrdered(saved.order,saved.i,byId);
@@ -5135,13 +5365,17 @@ function studyOpen(id){
       hwItem=saved.hwItem!==undefined?saved.hwItem:null;
       // qType: igual que hwN/hwMode/hwPending/hwItem, se conserva tal cual lo que ya hubiera
       // guardado, para que un futuro studyOpenHomework (sameHw) lo siga pudiendo comparar.
-      qType=qTypeSaved;}
+      qType=qTypeSaved;
+      // writeMode (pedido por David, 2026-11-04): igual que qType, se conserva tal cual lo que ya
+      // hubiera guardado (progresos guardados antes de que existiera este campo caen a 'mixed',
+      // el valor por defecto de siempre).
+      writeMode=saved.writeMode!==undefined?saved.writeMode:'mixed';}
   }
   if(!qs)qs=shuffleArr(pool);
   /* theoryOpen empieza abierto en Nivel 1 (con foto) y PLEGADO en Nivel 2 (sin foto): David quiere
      que Julia pueda ver la foto también en Nivel 2 si se atasca, pero que no salga ya abierta de
      golpe, para no quitarle del todo el reto de intentar recordar primero (ver studyTheoryOrWarn). */
-  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk,n:n!=null?n:qs.length,recorded:false,theoryOpen:showPhoto,hwN,hwMode,hwPending,hwItem,qType,seenIds,doneIdx:doneIdx||{}};
+  ui.study={temaId:id,level,showPhoto,qs,i,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,listening:false,micError:false,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk,n:n!=null?n:qs.length,recorded:false,theoryOpen:showPhoto,hwN,hwMode,hwPending,hwItem,qType,writeMode:writeMode!==undefined?writeMode:'mixed',seenIds,doneIdx:doneIdx||{}};
   ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 /* ---- nº de preguntas y rotación cuando la teoría se pone como DEBER del día ----
@@ -5196,9 +5430,12 @@ function studyPickHomeworkSet(id,pool,n,qType){
    o null/undefined (las dos, de siempre -- ver taskAddOverlay). Se filtra el pool ANTES de todo lo
    demás: así studyPickHomeworkSet (la rotación "qué preguntas ya le han tocado") y el relleno de
    huecos de más abajo solo ven preguntas del tipo pedido, sin tocar su lógica en absoluto. */
-function studyOpenHomework(id,n,mode,itemId,qType){
+function studyOpenHomework(id,n,mode,itemId,qType,writeMode){
   const e=exGet(id);if(!e||e.status!=='ready')return toast('Este tema todavía no está disponible');
   const qTypeReq=(qType==='test'||qType==='red')?qType:null;
+  // writeMode (pedido por David, 2026-11-04): igual que qType, se normaliza aquí a uno de los 3
+  // valores posibles -- nunca se confía en lo que venga tal cual (ver taskAddOverlay/openItem).
+  const writeModeReq=(writeMode==='text'||writeMode==='voice')?writeMode:'mixed';
   const poolAll=e.pool.filter(q=>!q.off);
   const pool=qTypeReq?poolAll.filter(q=>q.t===qTypeReq):poolAll;
   if(!poolAll.length)return toast('Este tema no tiene preguntas todavía');
@@ -5228,8 +5465,13 @@ function studyOpenHomework(id,n,mode,itemId,qType){
      tarjeta, de "Solo test" a "Solo escritas" (o a "Todas") entre un deber y el siguiente, no vale
      retomar la ronda a medias del tipo viejo: ni las preguntas que trae (son del tipo que ya no
      toca) ni el relleno de huecos (ver "extra" más abajo, que ahora sale de "pool" ya filtrado por
-     tipo) tendrían sentido con el deber nuevo. */
-  const sameHw=saved&&(saved.hwN||null)===nReq&&(saved.hwMode||null)===modeReq&&saved.hwPending===true&&(saved.hwItem||null)===itemIdReq&&(saved.qType||null)===qTypeReq;
+     tipo) tendrían sentido con el deber nuevo.
+     writeMode (pedido por David, 2026-11-04): por la misma razón que qType -- si el tutor cambia,
+     para esta misma tarjeta, de "Escrito" a "De voz" (o a "Mixto") entre un deber y el siguiente,
+     la ronda a medias del modo viejo podía estar parada justo en mitad de un "escríbelo tú" con el
+     textarea/botón de micrófono que ya no toca -- se descarta igual que con qType y se sortea un
+     set nuevo con el writeMode de ESTE deber. */
+  const sameHw=saved&&(saved.hwN||null)===nReq&&(saved.hwMode||null)===modeReq&&saved.hwPending===true&&(saved.hwItem||null)===itemIdReq&&(saved.qType||null)===qTypeReq&&(saved.writeMode||'mixed')===writeModeReq;
   if(sameHw&&Array.isArray(saved.order)&&saved.i<saved.order.length){
     const byId={};pool.forEach(q=>byId[q.id]=q);
     // ver el aviso de studyRebuildOrdered (ronda 2 de revisión adversarial) más arriba: reconstruye
@@ -5275,13 +5517,13 @@ function studyOpenHomework(id,n,mode,itemId,qType){
       // doneIdx: las posiciones de "ordered" que ya estaban resueltas (doneFlagsFull), más las
       // "extra" (añadidas al final, nunca resueltas todavía).
       const doneIdx2={};doneFlagsFull.forEach((d,k)=>{if(d)doneIdx2[k]=true;});
-      ui.study={temaId:id,level:saved.level||1,showPhoto:showPhoto2,qs:rebuilt,i:i2,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:saved.firstOk||0,n:nFixed,recorded:false,theoryOpen:showPhoto2,hwN:nReq,hwMode:modeReq,hwPending:true,hwItem:itemIdReq,qType:qTypeReq,seenIds:saved.seenIds||{},doneIdx:doneIdx2};
+      ui.study={temaId:id,level:saved.level||1,showPhoto:showPhoto2,qs:rebuilt,i:i2,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,listening:false,micError:false,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:saved.firstOk||0,n:nFixed,recorded:false,theoryOpen:showPhoto2,hwN:nReq,hwMode:modeReq,hwPending:true,hwItem:itemIdReq,qType:qTypeReq,writeMode:writeModeReq,seenIds:saved.seenIds||{},doneIdx:doneIdx2};
       ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();return;
     }
   }
   const qs=studyPickHomeworkSet(id,pool,n,qTypeReq);
   const level=modeReq==='examen'?2:1,showPhoto=level===1;
-  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:nReq,hwMode:modeReq,hwPending:true,hwItem:itemIdReq,qType:qTypeReq,seenIds:{},doneIdx:{}};
+  ui.study={temaId:id,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,listening:false,micError:false,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:nReq,hwMode:modeReq,hwPending:true,hwItem:itemIdReq,qType:qTypeReq,writeMode:writeModeReq,seenIds:{},doneIdx:{}};
   ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen='study';studySave();render();
 }
 /* hwN/hwMode (ronda 5 de revisión adversarial, 2026-11-01, ALTO): "Nivel 2"/"Nivel 1"/"Repetir esta
@@ -5347,7 +5589,7 @@ function studyOpenHomework(id,n,mode,itemId,qType){
    pero las preguntas NUEVAS que se saquen del banco para rellenar huecos si tienen que respetar el
    mismo filtro, o "Nivel 2"/"Repetir" en un deber de "Solo test" podría colar una pregunta
    "escrita" que el deber nunca pidió. */
-function studyRound(temaId,level,showPhoto,hwN,hwMode,prevQs,prevRecorded,hwItem,qType){
+function studyRound(temaId,level,showPhoto,hwN,hwMode,prevQs,prevRecorded,hwItem,qType,writeMode){
   const e=exGet(temaId),pool=e.pool.filter(q=>!q.off);
   const qTypeReq=(qType==='test'||qType==='red')?qType:null;
   const poolT=qTypeReq?pool.filter(q=>q.t===qTypeReq):pool;
@@ -5380,7 +5622,10 @@ function studyRound(temaId,level,showPhoto,hwN,hwMode,prevQs,prevRecorded,hwItem
     qs=shuffleArr(pool);
   }
   const hwPending=hwN!=null&&!prevRecorded;
-  ui.study={temaId,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:hwN!=null?hwN:null,hwMode:hwMode||null,hwPending,hwItem:hwItem!==undefined?hwItem:null,qType:qTypeReq,seenIds:{},doneIdx:{}};
+  // writeMode (pedido por David, 2026-11-04): igual que hwItem/qType, se conserva tal cual el de
+  // la ronda que se abandona -- "Nivel 2"/"Nivel 1"/"Repetir esta ronda" no cambian cómo puede
+  // Julia escribir la respuesta correcta, solo repiten las mismas preguntas con otro nivel/foto.
+  ui.study={temaId,level,showPhoto,qs,i:0,stage:'answer',picked:null,given:'',opts:null,wrongPicks:[],writeGiven:'',writeOk:false,writeDiff:null,listening:false,micError:false,skipPinAsk:false,writeSkipped:false,writeNotNeeded:false,firstOk:0,n:qs.length,recorded:false,theoryOpen:showPhoto,hwN:hwN!=null?hwN:null,hwMode:hwMode||null,hwPending,hwItem:hwItem!==undefined?hwItem:null,qType:qTypeReq,writeMode:(writeMode==='text'||writeMode==='voice')?writeMode:'mixed',seenIds:{},doneIdx:{}};
   ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;studySave();render();
 }
 function studyPhotosHTML(id){
@@ -5470,10 +5715,13 @@ function studyVideoOverlay(){
 function studySkipHTML(st){
   if(st.skipPinAsk)return `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:nowrap;align-items:center">
     <input type="password" autocomplete="off" inputmode="numeric" id="studySkipPin" data-enter="studySkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
-    <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="studySkipGo">Saltar</button>
+    <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="studySkipGo" ${st.listening?'disabled':''}>Saltar</button>
     <button class="btn" style="min-height:36px;padding:4px 10px" data-act="studySkipNo">✕</button>
     </div>`;
-  return `<div class="row" style="margin-top:10px"><button class="link" data-act="studySkipAsk">🔑 ¿Sigue sin dejarte seguir? Pide a tu tutor que la salte</button></div>`;
+  // mientras se escucha (st.listening), ni se ofrece pedir el PIN del tutor -- ver el aviso de
+  // studySkipGo: saltar la pregunta mientras sigue en el aire un reconocimiento de voz de ESTA
+  // misma pregunta podía dejar que el resultado tardío contaminara la pregunta siguiente.
+  return `<div class="row" style="margin-top:10px"><button class="link" data-act="studySkipAsk" ${st.listening?'disabled':''}>🔑 ¿Sigue sin dejarte seguir? Pide a tu tutor que la salte</button></div>`;
 }
 function studyAnswerHTML(st,q){
   if(st.stage==='answer'){
@@ -5516,10 +5764,30 @@ function studyAnswerHTML(st,q){
        funciones genéricas, no específicas de Morfología, reutilizadas aquí tal cual). */
     if(st.stage==='ruleok'){
       if(!st.writeOk){
+        /* writeMode (pedido por David, 2026-11-04): 'text' (solo teclear, de toda la vida),
+           'voice' (solo decirlo en voz alta) o 'mixed' (las dos, a elegir), según lo que haya
+           pedido el tutor al poner este deber (ver taskAddOverlay/studyOpenHomework). En 'voice'
+           sin soporte de reconocimiento de voz en el navegador (Escucha.ready()===false) se cae a
+           'text' como red de seguridad: nunca se deja a Julia sin ninguna forma de contestar. */
+        const wm=st.writeMode||'mixed',micOk=Escucha.ready();
+        const showMic=(wm==='voice'||wm==='mixed')&&micOk;
+        /* Revisión adversarial (2026-11-04, ronda 7, ALTO): con wm==='voice' puro, si el permiso
+           de micrófono se deniega (o cualquier otro error PERSISTENTE, ver studyVoiceStart),
+           showText se quedaba en false para siempre -- sin textarea, Julia no puede escribir, Y
+           sin textarea nunca se genera st.writeDiff, así que TAMPOCO aparece nunca el enlace de
+           "pide a tu tutor que la salte" (solo se pinta cuando ya hay writeDiff). Callejón sin
+           salida real. st.micError (puesto por studyVoiceStart tras un error persistente, y
+           reseteado en cada pregunta nueva) añade el texto como vía de escape sin quitar el botón
+           de micrófono, por si el permiso se concede más adelante. */
+        const showText=wm!=='voice'||!micOk||st.micError;
+        const label=showText&&showMic?'Para continuar, escribe tú la respuesta correcta, o dila en voz alta:'
+          :showMic?'Para continuar, di en voz alta la respuesta correcta:'
+          :'Para continuar, escribe tú la respuesta correcta:';
         h+=`<div class="panel" style="border-color:var(--pri);background:#f1e9ff;margin-top:10px">
-        <b>✍️ Para continuar, escribe tú la respuesta correcta:</b>
-        <textarea id="studyWriteAns" data-enter="studyWriteAns" placeholder="Escribe aquí la respuesta correcta…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:70px;margin-top:8px">${esc(st.writeGiven||'')}</textarea>
-        <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyWriteCheck">✔ Comprobar</button></div>
+        <b>✍️ ${label}</b>
+        ${showText?`<textarea id="studyWriteAns" data-enter="studyWriteAns" placeholder="Escribe aquí la respuesta correcta…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:70px;margin-top:8px" ${st.listening?'disabled':''}>${esc(st.writeGiven||'')}</textarea>`:''}
+        ${showMic?voiceButtonHTML(st,'studyVoiceStart','studyVoiceStop'):''}
+        ${showText?`<div class="row" style="margin-top:8px"><button class="btn primary big" data-act="studyWriteCheck" ${st.listening?'disabled':''}>✔ Comprobar</button></div>`:''}
         ${st.writeDiff?morfoWriteDiffHTML(st.writeDiff)+studySkipHTML(st):''}
         </div>`;
       }else{
@@ -5580,7 +5848,16 @@ function studyQuitOverlay(){
 }
 function renderStudy(){
   const st=ui.study;if(!st){ui.screen='exlist';return render();}
-  const e=exGet(st.temaId);if(!e){ui.study=null;ui.studyVideoOpen=false;ui.screen='exlist';return render();}
+  /* Revisión adversarial (2026-11-04, ronda 9, ALTO): este guard es anterior a la feature de voz
+     (la tarjeta de teoría que se estaba estudiando ha sido borrada -- normalmente por el tutor
+     desde OTRO dispositivo, propagado por la sincronización en segundo plano, Cloud.sync(), no por
+     ninguna acción de Julia aquí mismo) y pone ui.study=null directamente, sin pasar por
+     Escucha.stop() como sí hacen todos los demás sitios que abandonan ui.study
+     (studyQuitResume/Discard/Ok, pruebaExit, goHome/setRole/logout, studyQuit). Si st.listening
+     era true (Julia tenía el micrófono escuchando esta misma pregunta justo cuando el tutor borró
+     la tarjeta desde otro dispositivo), el motor real se quedaba escuchando de fondo sin ningún
+     botón visible para cortarlo, ya en la pantalla de "exlist". */
+  const e=exGet(st.temaId);if(!e){Escucha.stop();ui.study=null;ui.studyVideoOpen=false;ui.screen='exlist';return render();}
   if(st.i>=st.qs.length)return renderStudyDone();
   const q=st.qs[st.i];
   /* Revisión adversarial (2026-11-01, ronda 3, MEDIO): igual que "Anterior", este botón no puede
@@ -5588,7 +5865,7 @@ function renderStudy(){
      abandonaría la ronda a medio corregir, y cuando la IA respondiera acabaría aplicando su
      resultado (firstOk/requeue) sobre un objeto de ronda ya descartado, con un "chime" de
      acierto/fallo sin pantalla visible a la que corresponda. */
-  const levelBtn=st.level===1?`<button class="btn" data-act="studyLevel2" ${st.checking?'disabled':''}>🚀 Nivel 2 (repasar de memoria)</button>`:`<button class="btn" data-act="studyLevel1" ${st.checking?'disabled':''}>📷 Volver a nivel 1 (con la foto siempre visible)</button>`;
+  const levelBtn=st.level===1?`<button class="btn" data-act="studyLevel2" ${st.checking||st.listening?'disabled':''}>🚀 Nivel 2 (repasar de memoria)</button>`:`<button class="btn" data-act="studyLevel1" ${st.checking||st.listening?'disabled':''}>📷 Volver a nivel 1 (con la foto siempre visible)</button>`;
   const overlay=studyPhotoOverlay();
   const videoOv=studyVideoOverlay();
   /* botón del vídeo de teoría: SIEMPRE visible mientras se estudia esta tarjeta (no solo una vez
@@ -5598,7 +5875,7 @@ function renderStudy(){
   app.innerHTML=`<button class="link" data-act="studyQuit">← Salir</button><h2 style="margin:0">📘 ${esc(e.title)}</h2>
   <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin:6px 0">
   <span class="mute">Nivel ${st.level} · pregunta ${st.i+1} de ${st.qs.length}</span>
-  <span class="row" style="gap:8px;flex-wrap:wrap">${videoBtn}<button class="btn" data-act="studyPrev" ${st.i&&!st.checking?'':'disabled'}>⬅ Anterior</button>${levelBtn}</span></div>
+  <span class="row" style="gap:8px;flex-wrap:wrap">${videoBtn}<button class="btn" data-act="studyPrev" ${st.i&&!st.checking&&!st.listening?'':'disabled'}>⬅ Anterior</button>${levelBtn}</span></div>
   ${studyTheoryOrWarn(e)}
   <div class="panel" id="qpanel"><div style="font-size:1.2rem;font-weight:800;line-height:1.4;margin-bottom:12px">${esc(q.q)}</div>
   ${studyAnswerHTML(st,q)}</div>${overlay}${videoOv}${studyQuitOverlay()}`;
@@ -5678,7 +5955,7 @@ const studyActions={
     st.seenIds=st.seenIds||{};st.seenIds[q.id]=true;
     st.doneIdx=st.doneIdx||{};st.doneIdx[st.i]=true;
     if(ok){if(firstTry&&!isReplay)st.firstOk++;st.stage='ok';}
-    else{if(!isReplay)st.qs.push(q);st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='rule';}
+    else{if(!isReplay)st.qs.push(q);st.opts=makeExamOptions(exGet(st.temaId).pool.filter(x=>!x.off),q);st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.micError=false;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='rule';}
     chime(ok);
     render();scrollQCenter();
   },
@@ -5703,31 +5980,86 @@ const studyActions={
      "Siguiente" (ver studyAnswerHTML, stage 'ruleok'). */
   studyWriteCheck(){
     const st=ui.study;if(!st||st.stage!=='ruleok')return;const q=st.qs[st.i];
-    const v=($('#studyWriteAns')&&$('#studyWriteAns').value||'').trim();st.writeGiven=v;
+    /* writeMode==='voice' (pedido por David, 2026-11-04): en modo voz puro no se renderiza ningún
+       #studyWriteAns (ver studyAnswerHTML), así que no hay ningún textarea del que leer -- en ese
+       caso se usa st.writeGiven tal cual, que studyVoiceStart ya habrá rellenado con lo reconocido
+       justo antes de llamar aquí. Si el textarea SÍ existe (modo 'text'/'mixed'), se sigue leyendo
+       de él como hasta ahora (por si Julia lo ha editado a mano después de dictarlo por voz). */
+    const ta=$('#studyWriteAns');
+    const v=(ta?(ta.value||''):(st.writeGiven||'')).trim();st.writeGiven=v;
     if(!v)return toast('Escribe la respuesta correcta primero');
     const correct=ruleTextOfQ(q); // ver el aviso en studyAnswerHTML: tiene que ser la MISMA función
     if(textCloseEnough(v,correct)){st.writeOk=true;st.writeDiff=null;}
     else{st.writeDiff=morfoWriteDiff(v,correct);toast('Todavía no es correcto del todo, mira en rojo qué palabras no coinciden');}
     render();scrollQCenter();
   },
+  /* "escríbelo tú" por voz (pedido por David, 2026-11-04): alternativa a teclear, solo si el tutor
+     eligió modo "De voz" o "Mixto" para este deber (ui.study.writeMode, ver taskAddOverlay) y el
+     navegador soporta reconocimiento de voz (Escucha.ready(), comprobado también en
+     voiceButtonHTML antes de pintar siquiera el botón -- así nunca se llega aquí sin soporte).
+     Reutiliza TAL CUAL studyWriteCheck para corregir: la voz solo sirve para rellenar el texto, el
+     corrector (textCloseEnough) es exactamente el mismo que si Julia lo hubiera tecleado. */
+  studyVoiceStart(){
+    const st=ui.study;if(!st||st.stage!=='ruleok'||st.writeOk||st.listening||!Escucha.ready())return;
+    st.listening=true;render();
+    Escucha.start(
+      text=>{
+        // si Julia sale de esta tarjeta mientras se escuchaba, "st" queda huérfano: no se aplica
+        // nada a una ronda ya abandonada (mismo patrón que studyCheck con la IA, ver su aviso).
+        if(ui.study!==st)return;
+        st.listening=false;
+        if(!text){toast('No te he oído bien: inténtalo otra vez');render();return;}
+        st.writeGiven=text;
+        const ta=$('#studyWriteAns');if(ta)ta.value=text;
+        studyActions.studyWriteCheck();
+      },
+      (msg,persistent)=>{
+        if(ui.study!==st)return;
+        st.listening=false;
+        /* Revisión adversarial (2026-11-04, ronda 7, ALTO): con writeMode='voice' puro (sin
+           textarea en pantalla, ver showText/showMic en studyAnswerHTML), un error PERSISTENTE
+           (permiso denegado, sin micrófono...) dejaba a Julia sin ninguna forma de seguir: el
+           mismo botón de micrófono volvería a fallar igual, y el enlace de "pide a tu tutor que la
+           salte" solo aparece cuando st.writeDiff ya existe (tras corregir una respuesta escrita),
+           que nunca llega a pasar si nunca se muestra ningún textarea. st.micError obliga a
+           mostrar también el texto como vía de escape (ver showText) hasta la siguiente pregunta. */
+        if(persistent)st.micError=true;
+        toast(msg);render();
+      }
+    );
+  },
+  studyVoiceStop(){const st=ui.study;if(!st)return;st.listening=false;Escucha.stop();render();},
   /* igual que morfoSkipAsk/morfoSkipGo/morfoSkipNo (p5c.js): si el tutor todavía no ha puesto PIN,
      se deja pasar sin pedirlo (no tiene sentido bloquear a Julia por un PIN que nadie ha
      configurado). Saltar cuenta como fallo igual (ya contaba desde que falló la explicación). */
-  studySkipAsk(){const st=ui.study;if(!st)return;st.skipPinAsk=true;render();const i=$('#studySkipPin');if(i)i.focus();},
+  studySkipAsk(){const st=ui.study;if(!st||st.listening)return;st.skipPinAsk=true;render();const i=$('#studySkipPin');if(i)i.focus();},
   studySkipNo(){const st=ui.study;if(!st)return;st.skipPinAsk=false;render();},
+  /* Revisión adversarial (2026-11-04, ALTO -- ronda 2 de la revisión de voz/writeMode): el PIN del
+     tutor podía saltar la pregunta (writeOk=true) MIENTRAS Julia seguía escuchando (st.listening)
+     para esa misma pregunta -- igual que el hallazgo ya arreglado en morfoPrev, "Siguiente" muta el
+     MISMO objeto ui.study (no lo sustituye), así que el guard "if(ui.study!==st)return;" de
+     studyVoiceStart nunca detectaba el salto, y el resultado tardío de la pregunta saltada se
+     volcaba sobre st.writeGiven de la pregunta SIGUIENTE (a la que Julia ya había avanzado con
+     "Siguiente", ver su guard de abajo). Se bloquea igual que el resto de acciones de navegación
+     mientras se escucha. */
   studySkipGo(){
-    const st=ui.study;if(!st)return;
+    const st=ui.study;if(!st||st.listening)return;
     const i=$('#studySkipPin');
     if(state.pin&&!(i&&i.value===state.pin)){toast('PIN incorrecto');if(i){i.value='';i.focus();}return;}
     st.skipPinAsk=false;st.writeOk=true;st.writeSkipped=true;
     render();scrollQCenter();
   },
   studyNext(){
-    const st=ui.study;if(!st)return;
+    // ver el aviso de studySkipGo: "Siguiente" también tiene que quedar bloqueado mientras se
+    // escucha (en la práctica solo se puede llegar aquí con listening=true si writeOk ya era true
+    // de ANTES por un Saltar con PIN que no hubiera comprobado esto -- ya arreglado arriba -- pero
+    // se deja el guard aquí también, por si algún camino futuro vuelve a dejar "Siguiente" visible
+    // con listening todavía true).
+    const st=ui.study;if(!st||st.listening)return;
     // st.doneIdx ya se marca en studyCheck en el momento mismo de corregir (ver ronda 2 de
     // revisión adversarial), no aquí: así queda marcado aunque Julia use "Anterior" antes de
     // llegar a pulsar "Siguiente".
-    st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='answer';
+    st.i++;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.micError=false;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='answer';
     studySave();
     /* Revisión adversarial (2026-11-01, ronda 1, MEDIO): se pasa st.n (fijo) en vez de
        st.qs.length -- con los reintentos, st.qs.length crece casi al mismo ritmo que st.i, así
@@ -5744,24 +6076,53 @@ const studyActions={
        IA podía acabar aplicándose (firstOk/requeue) a la pregunta a la que Julia se había movido
        mientras esperaba, no a la que de verdad corrigió. Mismo patrón que ya se usó en Exámenes
        (Fase 1, ronda 5): bloquear la navegación mientras dura una corrección asíncrona. */
-    const st=ui.study;if(!st||st.i<=0||st.checking)return;
-    st.i--;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='answer';
+    const st=ui.study;if(!st||st.i<=0||st.checking||st.listening)return;
+    st.i--;st.picked=null;st.given='';st.opts=null;st.wrongPicks=[];st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.micError=false;st.skipPinAsk=false;st.writeSkipped=false;st.writeNotNeeded=false;st.stage='answer';
     studySave();
     render();scrollQCenter();
   },
   studyToggleTheory(){const st=ui.study;if(!st)return;st.theoryOpen=!st.theoryOpen;const y=scrollY;render();scrollTo(0,y);},
-  studyLevel2(){const st=ui.study;if(!st||st.checking)return;studyRound(st.temaId,2,false,st.hwN,st.hwMode,st.qs,st.recorded,st.hwItem,st.qType);},
-  studyLevel1(){const st=ui.study;if(!st||st.checking)return;studyRound(st.temaId,1,true,st.hwN,st.hwMode,st.qs,st.recorded,st.hwItem,st.qType);},
-  studyRepeat(){const st=ui.study;if(!st||st.checking)return;studyRound(st.temaId,st.level,st.showPhoto,st.hwN,st.hwMode,st.qs,st.recorded,st.hwItem,st.qType);},
-  studyPhotoOpen(b){ui.studyPhotoView=b.dataset.id;render();},
+  studyLevel2(){const st=ui.study;if(!st||st.checking||st.listening)return;studyRound(st.temaId,2,false,st.hwN,st.hwMode,st.qs,st.recorded,st.hwItem,st.qType,st.writeMode);},
+  studyLevel1(){const st=ui.study;if(!st||st.checking||st.listening)return;studyRound(st.temaId,1,true,st.hwN,st.hwMode,st.qs,st.recorded,st.hwItem,st.qType,st.writeMode);},
+  studyRepeat(){const st=ui.study;if(!st||st.checking||st.listening)return;studyRound(st.temaId,st.level,st.showPhoto,st.hwN,st.hwMode,st.qs,st.recorded,st.hwItem,st.qType,st.writeMode);},
+  studyPhotoOpen(b){
+    /* Revisión adversarial (2026-11-04, ronda 6, MEDIO): este botón ("Ver fotos y teoría") estaba
+       siempre pulsable durante el "escríbelo tú", sin comprobar st.listening. El overlay de la foto
+       (.exph-ov, pantalla completa) tapa el botón "🎤 Escuchando… (toca para cancelar)", así que si
+       Julia lo pulsaba a mitad de hablar, el micrófono seguía escuchando de fondo sin ningún control
+       visible hasta cerrar la foto. Se corta aquí, igual que ya se hacía en goMorfoTheory(). */
+    const st=ui.study;if(st&&st.listening){st.listening=false;Escucha.stop();}
+    ui.studyPhotoView=b.dataset.id;render();
+  },
   studyPhotoClose(){ui.studyPhotoView=null;render();},
-  studyVideoOpen(){ui.studyVideoOpen=true;render();},
+  studyVideoOpen(){
+    /* Revisión adversarial (2026-11-04, ronda 6, MEDIO): mismo caso que studyPhotoOpen, con el
+       botón "🎬 Ver vídeo de teoría" y su overlay de pantalla completa. */
+    const st=ui.study;if(st&&st.listening){st.listening=false;Escucha.stop();}
+    ui.studyVideoOpen=true;render();
+  },
   studyVideoClose(){ui.studyVideoOpen=false;render();},
-  studyQuit(){ui.studyQuitAsk=true;const y=scrollY;render();scrollTo(0,y);},
+  studyQuit(){
+    /* Revisión adversarial (2026-11-04, ronda 8, MEDIO; ya se había visto en la ronda 6 y se dejó
+       sin arreglar por considerarlo solo confusión visual recuperable -- dos rondas independientes
+       han vuelto a señalarlo, así que se arregla igual que studyPhotoOpen/studyVideoOpen/
+       goMorfoTheory: el enlace "← Salir" está siempre pulsable en la cabecera, y su overlay de
+       confirmación de pantalla completa tapa el botón "🎤 Escuchando… (toca para cancelar)" de
+       debajo mientras está abierto, dejando el micrófono real escuchando de fondo sin ningún
+       control visible hasta responder al diálogo. Se corta aquí; si Julia pulsa "Cancelar, seguir
+       estudiando" puede volver a pulsar el micrófono con normalidad. */
+    const st=ui.study;if(st&&st.listening){st.listening=false;Escucha.stop();}
+    ui.studyQuitAsk=true;const y=scrollY;render();scrollTo(0,y);
+  },
   studyQuitCancel(){ui.studyQuitAsk=false;const y=scrollY;render();scrollTo(0,y);},
-  studyQuitResume(){ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.screen=ui.item?'today':'exlist';render();},
-  studyQuitDiscard(){const st=ui.study;if(st)studyClearProgress(st.temaId);ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.screen=ui.item?'today':'exlist';render();},
-  studyQuitOk(){ui.study=null;ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen=ui.item?'today':'exlist';render();}
+  // Escucha.stop() (pedido por David, 2026-11-04): al salir de la tarjeta se corta cualquier
+  // reconocimiento de voz que pudiera estar todavía escuchando, para no dejar el micrófono
+  // abierto de fondo sin ninguna pantalla que lo use (sin esto no se rompía nada visible -- el
+  // "st" quedaba huérfano y studyVoiceStart/Stop ya ignoran su resultado -- pero no hay motivo
+  // para seguir escuchando a Julia si ya ha salido de este paso).
+  studyQuitResume(){Escucha.stop();ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.screen=ui.item?'today':'exlist';render();},
+  studyQuitDiscard(){Escucha.stop();const st=ui.study;if(st)studyClearProgress(st.temaId);ui.study=null;ui.studyQuitAsk=false;ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.screen=ui.item?'today':'exlist';render();},
+  studyQuitOk(){Escucha.stop();ui.study=null;ui.studyPhotoView=null;ui.studyVideoOpen=false;ui.studyQuitAsk=false;ui.screen=ui.item?'today':'exlist';render();}
 };
 /* ================= minijuegos: cada 15 preguntas, un descanso interactivo =================
    Se insertan al azar dentro de las tandas largas de ejercicios (mates, exámenes, estudio de
@@ -6367,8 +6728,18 @@ async function morfoGenText(){
    volver a llamar a la IA -- así solo se gastan tokens la primera vez que se analiza cada texto,
    no cada vez que Julia (o el tutor) lo abre. Si el tutor edita el texto, saveDict/saveMorfo
    borran esta caché para que se vuelva a analizar como la primera vez. */
-function morfoStart(text,title,backScreen,rec){
-  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,morf:{},i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',nivel:1,writeGiven:'',writeOk:false,writeDiff:null,skipPinAsk:false,writeSkipped:false,extra:null,tilde:null,back:backScreen||'list',start:Date.now()};
+/* writeMode (pedido por David, 2026-11-04, ver taskAddOverlay/taskActions.openItem): 'text'/
+   'voice'/'mixed' -- cómo puede Julia escribir la respuesta correcta tras fallar una palabra (ver
+   morfoWriteGateHTML). A diferencia de Teoría, Morfología no tiene ningún progreso persistido
+   (no hay studySave/studyProgress aquí, ver investigación previa a este cambio: morfoStart
+   siempre empieza de cero), así que no hace falta guardarlo en ningún sitio más: basta con
+   dejarlo puesto en ui.morfo mientras dura esta ronda, igual que level/nivel. Solo se aplica
+   cuando este análisis es un DEBER de verdad (rec puesto, con writeMode pasado desde
+   taskActions.openItem); al entrar por "practicar"/analizar un texto suelto no hay deber ni
+   writeMode que respetar, y se usa el valor por defecto 'mixed'. */
+function morfoStart(text,title,backScreen,rec,writeMode){
+  const writeModeOk=(writeMode==='text'||writeMode==='voice')?writeMode:'mixed';
+  ui.morfo={text,title:title||'Texto',tokens:[],cats:null,subcats:null,morf:{},i:0,stage:'loading',results:[],ok:0,errMsg:'',level:'estudio',nivel:1,writeGiven:'',writeOk:false,writeDiff:null,writeMode:writeModeOk,listening:false,micError:false,skipPinAsk:false,writeSkipped:false,extra:null,tilde:null,back:backScreen||'list',start:Date.now()};
   ui.screen='morfo';render();
   const tokens=getWords(text).slice(0,220);
   if(rec&&Array.isArray(rec.morfoCats)&&rec.morfoCats.length===tokens.length){
@@ -6495,10 +6866,11 @@ function morfoWriteDiffHTML(diff){
 function morfoSkipHTML(st){
   if(st.skipPinAsk)return `<div class="row" style="margin-top:10px;gap:6px;flex-wrap:nowrap;align-items:center">
     <input type="password" autocomplete="off" inputmode="numeric" id="morfoSkipPin" data-enter="morfoSkipPin" placeholder="PIN tutor" style="width:120px;padding:6px 8px;font-size:1rem">
-    <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="morfoSkipGo">Saltar</button>
+    <button class="btn primary" style="min-height:36px;padding:4px 12px" data-act="morfoSkipGo" ${st.listening?'disabled':''}>Saltar</button>
     <button class="btn" style="min-height:36px;padding:4px 10px" data-act="morfoSkipNo">✕</button>
     </div>`;
-  return `<div class="row" style="margin-top:10px"><button class="link" data-act="morfoSkipAsk">🔑 ¿Sigue sin dejarte seguir? Pide a tu tutor que la salte</button></div>`;
+  // ver el aviso de morfoSkipGo: ni se ofrece pedir el PIN del tutor mientras se escucha.
+  return `<div class="row" style="margin-top:10px"><button class="link" data-act="morfoSkipAsk" ${st.listening?'disabled':''}>🔑 ¿Sigue sin dejarte seguir? Pide a tu tutor que la salte</button></div>`;
 }
 /* pedido por David (2026-10-22): cada palabra del texto que lleve tilde pregunta, en formato de
    elegir una opción, por qué la lleva (ver MORFO_TILDE_RULES/morfoTildeRule más arriba). Igual que
@@ -6521,10 +6893,22 @@ function morfoWriteGateHTML(st,cat,sub){
      que aquí no se le pide a Julia que escriba la respuesta correcta tras fallar -- eso revelaría
      al momento si ha acertado o no. Solo se aplica en Modo Estudio. */
   if(st.level!=='examen'&&st.stage==='wrong'&&!st.writeOk){
+    /* writeMode (pedido por David, 2026-11-04): igual que en Teoría (ver studyAnswerHTML), 'text'/
+       'voice'/'mixed' según lo que pidió el tutor al poner este deber (ver taskAddOverlay/
+       taskActions.openItem/morfoStart); 'voice' sin soporte del navegador cae a 'text'. */
+    const wm=st.writeMode||'mixed',micOk=Escucha.ready();
+    const showMic=(wm==='voice'||wm==='mixed')&&micOk;
+    // ver el aviso de studyAnswerHTML (ronda 7): st.micError añade el texto como vía de escape
+    // tras un error PERSISTENTE del micrófono (permiso denegado, etc.) con wm==='voice' puro.
+    const showText=wm!=='voice'||!micOk||st.micError;
+    const label=showText&&showMic?'Para continuar, escribe tú la respuesta correcta completa, con el porqué, o dila en voz alta:'
+      :showMic?'Para continuar, di en voz alta la respuesta correcta completa, con el porqué:'
+      :'Para continuar, escribe tú la respuesta correcta completa, con el porqué:';
     return `<div class="panel" style="border-color:var(--pri);background:#f1e9ff;margin-top:10px">
-    <b>✍️ Para continuar, escribe tú la respuesta correcta completa, con el porqué:</b>
-    <textarea id="morfoWriteAns" data-enter="morfoWriteAns" placeholder="Escribe aquí la categoría y, con «porque…», la explicación…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:60px;margin-top:8px">${esc(st.writeGiven||'')}</textarea>
-    <div class="row" style="margin-top:8px"><button class="btn primary big" data-act="morfoWriteCheck">✔ Comprobar</button></div>
+    <b>✍️ ${label}</b>
+    ${showText?`<textarea id="morfoWriteAns" data-enter="morfoWriteAns" placeholder="Escribe aquí la categoría y, con «porque…», la explicación…" autocomplete="off" autocorrect="off" spellcheck="false" style="min-height:60px;margin-top:8px" ${st.listening?'disabled':''}>${esc(st.writeGiven||'')}</textarea>`:''}
+    ${showMic?voiceButtonHTML(st,'morfoVoiceStart','morfoVoiceStop'):''}
+    ${showText?`<div class="row" style="margin-top:8px"><button class="btn primary big" data-act="morfoWriteCheck" ${st.listening?'disabled':''}>✔ Comprobar</button></div>`:''}
     ${st.writeDiff?morfoWriteDiffHTML(st.writeDiff)+morfoSkipHTML(st):''}
     </div>`;
   }
@@ -6592,14 +6976,15 @@ function morfoBody(){
    :(st.level==='examen'
       ? `${morfoExtraHTML(st)}${morfoTildeHTML(st)}${morfoWriteGateHTML(st,cat,sub)}`
       : `<div class="msg ${st.stage==='ok'?'right':'wrong'}" style="margin-top:10px">${st.stage==='ok'?`✅ ¡Correcto! Es ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`:`❌ La respuesta correcta es: ${esc(MORFO_LABEL[cat])}${subTxt}${whyTxt}.`}</div>${morfoExtraHTML(st)}${morfoTildeHTML(st)}${morfoWriteGateHTML(st,cat,sub)}`)}
-  <div class="row" style="margin-top:14px;justify-content:space-between">${st.i>0?`<button class="link" data-act="morfoPrev">← Anterior</button>`:'<span></span>'}<button class="link" data-act="morfoBack">← Salir</button></div>`;
+  <div class="row" style="margin-top:14px;justify-content:space-between">${st.i>0?`<button class="link" data-act="morfoPrev" ${st.listening?'disabled':''}>← Anterior</button>`:'<span></span>'}<button class="link" data-act="morfoBack">← Salir</button></div>`;
 }
 function renderMorfo(){
   const st=ui.morfo;if(!st){ui.screen='list';return render();}
   /* una vez elegido el modo Examen, se bloquea tanto el modo como el nivel hasta terminar la
      ronda (stage 'done'): "cuando se elige examen ya no se puede volver a la forma normal hasta
-     que no se acabe". */
-  const locked=st.level==='examen'&&st.stage!=='done';
+     que no se acabe". writeMode/voz (2026-11-04): mientras se está escuchando (st.listening),
+     tampoco se puede cambiar de nivel/modo -- ver el aviso de morfoPrev. */
+  const locked=(st.level==='examen'&&st.stage!=='done')||st.listening;
   const lvlRow=st.tokens.length?`<div class="row" style="margin:6px 0;gap:8px;flex-wrap:wrap">
   <button class="btn ${st.nivel===2?'':'primary'}" data-act="morfoNivel" data-nv="1" ${locked?'disabled':''} title="Nivel 1: solo hay que decir la categoría general de la palabra (sustantivo, verbo, adjetivo, adverbio, artículo, pronombre, preposición o conjunción).">Nivel 1</button>
   <button class="btn ${st.nivel===2?'primary':''}" data-act="morfoNivel" data-nv="2" ${locked?'disabled':''} title="Nivel 2: además de la categoría, cuando la palabra es pronombre, adverbio o adjetivo hay que decir también el tipo exacto (por ejemplo, no solo «adverbio», sino «adverbio de tiempo»).">Nivel 2</button>
@@ -6680,7 +7065,7 @@ const morfoActions={
        que el resumen final ("Repasa estas") pueda enseñar el subtipo solo si de verdad se le pidió
        en su momento, igual que ya hace el mensaje de "la respuesta correcta es" palabra a palabra. */
     st.results[st.i]={ok,pick,pickSub,correct,correctSub,nivel:st.nivel};if(ok)st.ok++;
-    st.stage=ok?'ok':'wrong';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.skipPinAsk=false;st.writeSkipped=false;
+    st.stage=ok?'ok':'wrong';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.micError=false;st.skipPinAsk=false;st.writeSkipped=false;
     st.extra=morfoExtraNeeded(st)?morfoMakeExtra():null;
     st.tilde=(st.tokens&&st.tokens[st.i]&&morfoTildeRule(st.tokens[st.i].t))?{pick:null,ok:null}:null;
     chime(ok);
@@ -6752,7 +7137,11 @@ const morfoActions={
   morfoWriteCheck(){
     const st=ui.morfo;if(!st||st.stage!=='wrong')return;
     const r=st.results[st.i];if(!r)return;
-    const v=($('#morfoWriteAns')&&$('#morfoWriteAns').value||'').trim();st.writeGiven=v;
+    /* writeMode==='voice' (pedido por David, 2026-11-04): igual que studyWriteCheck -- en modo voz
+       puro no hay ningún #morfoWriteAns en el DOM (ver morfoWriteGateHTML), así que se usa
+       st.writeGiven tal cual, ya rellenado por morfoVoiceStart justo antes de llamar aquí. */
+    const ta=$('#morfoWriteAns');
+    const v=(ta?(ta.value||''):(st.writeGiven||'')).trim();st.writeGiven=v;
     if(!v)return toast('Escribe la respuesta correcta primero');
     /* la respuesta completa: categoría (+subtipo en nivel 2) Y el porqué de la explicación --
        igual que se le muestra arriba ("La respuesta correcta es: Adjetivo calificativo,
@@ -6773,25 +7162,60 @@ const morfoActions={
     }
     const y=scrollY;render();scrollTo(0,y);
   },
-  morfoSkipAsk(){const st=ui.morfo;if(!st)return;st.skipPinAsk=true;render();const i=$('#morfoSkipPin');if(i)i.focus();},
+  /* "escríbelo tú" por voz (pedido por David, 2026-11-04): mismo patrón que studyVoiceStart/Stop
+     en Teoría -- solo si writeMode lo permite y el navegador soporta reconocimiento de voz, y
+     reutilizando morfoWriteCheck tal cual para corregir (la voz solo rellena el texto). */
+  morfoVoiceStart(){
+    const st=ui.morfo;if(!st||st.stage!=='wrong'||st.writeOk||st.listening||!Escucha.ready())return;
+    st.listening=true;render();
+    Escucha.start(
+      text=>{
+        if(ui.morfo!==st)return; // ronda abandonada mientras se escuchaba
+        st.listening=false;
+        if(!text){toast('No te he oído bien: inténtalo otra vez');render();return;}
+        st.writeGiven=text;
+        const ta=$('#morfoWriteAns');if(ta)ta.value=text;
+        morfoActions.morfoWriteCheck();
+      },
+      (msg,persistent)=>{
+        if(ui.morfo!==st)return;
+        st.listening=false;
+        // ver el aviso de studyVoiceStart (mismo hallazgo, ronda 7): un error persistente con
+        // writeMode='voice' puro deja sin textarea y sin enlace de "pedir PIN" (ambos dependen de
+        // que exista st.writeDiff) -- st.micError fuerza mostrar el texto como vía de escape.
+        if(persistent)st.micError=true;
+        toast(msg);render();
+      }
+    );
+  },
+  morfoVoiceStop(){const st=ui.morfo;if(!st)return;st.listening=false;Escucha.stop();render();},
+  morfoSkipAsk(){const st=ui.morfo;if(!st||st.listening)return;st.skipPinAsk=true;render();const i=$('#morfoSkipPin');if(i)i.focus();},
   morfoSkipNo(){const st=ui.morfo;if(!st)return;st.skipPinAsk=false;render();},
   /* igual que origGo (ver más arriba, p3s.js): si el tutor todavía no ha puesto PIN, se deja pasar
-     sin pedirlo (no tiene sentido bloquear a Julia por un PIN que nadie ha configurado). */
+     sin pedirlo (no tiene sentido bloquear a Julia por un PIN que nadie ha configurado).
+     Revisión adversarial (2026-11-04, ALTO -- ronda 2 de la revisión de voz/writeMode): igual que
+     en Teoría (ver studySkipGo), saltar con el PIN mientras st.listening sigue true dejaba que
+     "Siguiente" (morfoNext, que muta el MISMO ui.morfo sin sustituirlo) avanzara a la palabra
+     siguiente con el reconocimiento de la palabra abandonada todavía en el aire -- el guard
+     "if(ui.morfo!==st)return;" de morfoVoiceStart no lo detectaba, y el resultado tardío
+     contaminaba st.writeGiven de la palabra nueva. Se bloquea mientras se escucha. */
   morfoSkipGo(){
-    const st=ui.morfo;if(!st||st.stage!=='wrong')return;
+    const st=ui.morfo;if(!st||st.stage!=='wrong'||st.listening)return;
     const i=$('#morfoSkipPin');
     if(state.pin&&!(i&&i.value===state.pin)){toast('PIN incorrecto');if(i){i.value='';i.focus();}return;}
     st.skipPinAsk=false;st.writeOk=true;st.writeSkipped=true;
     const y=scrollY;render();scrollTo(0,y);
   },
   morfoNext(){
-    const st=ui.morfo;if(!st)return;
+    // ver el aviso de morfoSkipGo: bloqueado también aquí por si algún camino futuro deja
+    // "Siguiente" visible con listening todavía true.
+    const st=ui.morfo;if(!st||st.listening)return;
     if(st.level!=='examen'&&st.stage==='wrong'&&!st.writeOk)return toast('Escribe primero la respuesta correcta');
     if(st.extra&&st.extra.stage!=='done')return toast('Termina primero el análisis extra');
     if(st.tilde&&!st.tilde.pick)return toast('Responde primero por qué lleva tilde');
     st.i++;
     if(st.i>=st.tokens.length){st.stage='done';morfoFinish();const y=scrollY;render();scrollTo(0,y);return;}
-    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.extra=null;st.tilde=null;st.skipPinAsk=false;st.writeSkipped=false;
+    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.micError=false;st.extra=null;st.tilde=null;st.skipPinAsk=false;st.writeSkipped=false;
     /* igual que en mates/exámenes/estudio: cada X palabras (la frecuencia de Ajustes) aparece un
        minijuego de descanso. Se comprueba YA con la siguiente palabra lista (stage 'answer'),
        para que al volver del minijuego se pueda seguir directamente. */
@@ -6803,30 +7227,47 @@ const morfoActions={
      volver se deshace su resultado (y se descuenta de los aciertos si estaba bien) para que se
      pueda responder de nuevo. */
   morfoPrev(){
-    const st=ui.morfo;if(!st||st.i<=0)return;
+    /* Revisión adversarial (2026-11-04, voz/writeMode, ALTO): "Anterior" MUTA el mismo objeto
+       ui.morfo (no lo sustituye por uno nuevo), así que el guard "if(ui.morfo!==st)return;" de
+       morfoVoiceStart NUNCA detecta que se ha cambiado de palabra -- si Julia pulsa el micrófono
+       para la palabra actual y, mientras sigue escuchando, pulsa "Anterior", el resultado que
+       llegue después (tarde, de fondo) seguía aplicándose a st.writeGiven de la palabra NUEVA,
+       contaminándola con lo dicho para la palabra abandonada. Se bloquea igual que ya hacían
+       studyPrev/studyLevel1/studyLevel2/studyRepeat en Teoría con st.checking: mientras se está
+       escuchando, no se puede cambiar de palabra. */
+    const st=ui.morfo;if(!st||st.i<=0||st.listening)return;
     st.i--;
     const prev=st.results[st.i];
     if(prev){if(prev.ok)st.ok=Math.max(0,st.ok-1);st.results[st.i]=null;}
-    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.extra=null;st.tilde=null;st.skipPinAsk=false;st.writeSkipped=false;
+    st.stage='answer';st.writeGiven='';st.writeOk=false;st.writeDiff=null;st.micError=false;st.extra=null;st.tilde=null;st.skipPinAsk=false;st.writeSkipped=false;
     const y=scrollY;render();scrollTo(0,y);
   },
-  morfoBack(){const back=(ui.morfo&&ui.morfo.back)||'list';ui.morfo=null;ui.screen=back;render();},
+  morfoBack(){Escucha.stop();const back=(ui.morfo&&ui.morfo.back)||'list';ui.morfo=null;ui.screen=back;render();},
   morfoLevel(b){
-    const st=ui.morfo;if(!st)return;
+    const st=ui.morfo;if(!st||st.listening)return; // ver el aviso de morfoPrev: no cambiar nada mientras se escucha
     if(st.level==='examen'&&st.stage!=='done')return; // en examen no se puede cambiar de modo hasta terminar
     st.level=b.dataset.lv==='examen'?'examen':'estudio';
     render();
   },
   morfoNivel(b){
-    const st=ui.morfo;if(!st)return;
+    const st=ui.morfo;if(!st||st.listening)return; // ver el aviso de morfoPrev: no cambiar nada mientras se escucha
     if(st.level==='examen'&&st.stage!=='done')return; // en examen no se puede cambiar de nivel hasta terminar
     st.nivel=b.dataset.nv==='2'?2:1;
     render();
   },
   /* ficha de teoría (pantalla completa, lado Julia): se puede abrir desde la lista de textos o
      desde dentro de un ejercicio en marcha (sin perder el progreso, que se queda intacto en
-     ui.morfo mientras se mira la teoría). Recuerda de dónde se vino para volver ahí. */
-  goMorfoTheory(){ui.morfoTheoryBack=ui.screen;ui.screen='morfoTheory';render();},
+     ui.morfo mientras se mira la teoría). Recuerda de dónde se vino para volver ahí.
+     Revisión adversarial (2026-11-04, ronda 5, ALTO): este botón se pinta SIEMPRE en la cabecera
+     del ejercicio (renderMorfo), sin comprobar st.listening -- a diferencia de los botones de
+     Nivel/Modo de esa misma pantalla, que sí quedan deshabilitados mientras se escucha (ver
+     "locked" en renderMorfo). Como aquí NO se sustituye ui.morfo (a propósito, para no perder el
+     progreso), el guard "ui.morfo!==st" de morfoVoiceStart no detectaba nada raro, y el micrófono
+     real se quedaba escuchando de fondo -- sin ningún botón de "Cancelar" visible, porque ese
+     vive en la pantalla del ejercicio, no en la ficha de teoría -- mientras Julia miraba la
+     teoría. Se corta aquí, igual que en el resto de salidas ya arregladas; el progreso en sí
+     (ui.morfo) sigue intacto como siempre, solo se corta el micrófono. */
+  goMorfoTheory(){Escucha.stop();if(ui.morfo)ui.morfo.listening=false;ui.morfoTheoryBack=ui.screen;ui.screen='morfoTheory';render();},
   morfoTheoryBack(){ui.screen=ui.morfoTheoryBack||'morfolist';ui.morfoTheoryBack=null;render();}
 };
 /* ================= Preposiciones (dentro de Análisis Morfológico) =================
@@ -7482,6 +7923,36 @@ function sayWordEN(text,cb,voiceOverride){
     synth.speak(u);
   }catch(e){fin();}
 }
+/* pedido por David (2026-11-03): "faltan poner las voces de la IA en el spelling" -- reutiliza
+   EXACTAMENTE el patrón que ya usa Dictado: al empezar una ronda de dictado de spelling, se genera
+   en segundo plano (y se guarda en caché en el dispositivo) el audio IA de todas las palabras
+   distintas de la lista, aprovechando como "tiempo de cortesía" la propia pantalla de elegir modo
+   ("ask") que ya se ve antes de la primera palabra -- así no hace falta ninguna pantalla de carga
+   nueva. Si la IA no está activada (Ajustes → "Usar voz IA"), o si falla, no pasa nada: cada
+   palabra sigue cayendo a la voz nativa del dispositivo en spDictPlay, igual que siempre.
+   El parámetro "r" es el objeto ui.spRun de ESTA ronda en el momento de la llamada: como esto es
+   asíncrono, antes de cada paso con efecto (el aviso de fallo, o guardar el audio en el mapa en
+   memoria que usa Voz.play) se comprueba que ui.spRun siga siendo el mismo objeto -- si Julia ya
+   salió de la ronda, la repitió ("Otra vez") o entró en otra lista mientras tanto, esta
+   generación "vieja" se para sola sin tocar nada de la ronda nueva (mismo patrón que ya usa
+   spDictPhotoUpload). No se añade ningún botón nuevo de "Generar voz" en el área de tutor para
+   Spelling: la generación es automática, igual que en Dictado solo se ve el progreso al vuelo. */
+async function spPrepareVoice(l,r){
+  if(!Voz.ready())return;
+  const texts=[...new Set((l.words||[]).map(w=>w.w).filter(Boolean))];
+  if(!texts.length)return;
+  try{
+    const miss=await Voz.missing(texts,'spell');
+    if(ui.spRun!==r)return;
+    if(miss.length){
+      const res=await Voz.prepare(miss,null,'spell');
+      if(ui.spRun!==r)return;
+      if(res.fail)toast((res.err||'No se pudo generar toda la voz IA de esta lista')+'. En esas palabras se usará la voz del dispositivo.');
+    }
+    if(ui.spRun!==r)return;
+    await Voz.load(texts,'spell');
+  }catch(e){/* silencioso: cada palabra cae a la voz nativa en spDictPlay si no quedó en caché */}
+}
 function renderSpellList(){
   let filterId=null,isHw=false,hwIt=null;
   if(ui.item){const it=itemsOf(todayStr()).find(x=>x.id===ui.item);if(it&&it.type==='spelling'){filterId=it.spid;isHw=true;hwIt=it;}}
@@ -7740,6 +8211,7 @@ function spHwRunStep(){
   spellHwSave();
   if(kind==='dict'){
     ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,voiceIdx:0,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
+    spPrepareVoice(l,ui.spRun);
     ui.screen='spelldict';
   }else{
     ui.spRun={listId:l.id,order:shuffleArr(l.sentences.map(s=>s.id)),i:0,given:'',stage:'answer',ok:null,results:[]};
@@ -7779,6 +8251,7 @@ const spellRunActions={
     const l=spGet(b.dataset.id);if(!l||l.status!=='ready')return toast('Esta lista no está disponible');
     if(!l.words.length)return toast('Esta lista no tiene palabras');
     ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,voiceIdx:0,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
+    spPrepareVoice(l,ui.spRun);
     ui.t0=Date.now();ui.screen='spelldict';render();
   },
   spHwStart(b){
@@ -7854,8 +8327,14 @@ const spellRunActions={
        ratón. Esperamos 1 segundo antes de reproducir la palabra (si se llama a la voz demasiado
        pegado al clic, a veces se corta el principio de la palabra). */
     const inp=$('#spDictAns');if(inp)inp.focus();
+    /* voz IA (ver spPrepareVoice más arriba): si ya se generó y está en caché para esta palabra,
+       se usa esa; si no (IA desactivada, todavía generándose, o falló), cae a la voz nativa de
+       siempre sin que Julia note nada distinto salvo el sonido de la voz. */
+    const useAi=Voz.ready()&&Voz.has(w.w,'spell');
     setTimeout(()=>{
-      sayWordEN(w.w,()=>{const inp2=$('#spDictAns');if(inp2)inp2.focus();});
+      const refocus=()=>{const inp2=$('#spDictAns');if(inp2)inp2.focus();};
+      if(useAi)Voz.play(w.w,state.ai.speed,refocus,()=>sayWordEN(w.w,refocus),'spell');
+      else sayWordEN(w.w,refocus);
     },1000);
   },
   /* pedido por David (2026-11-02): "poder pedir que se diga con otra voz por si con otra la
@@ -8059,6 +8538,7 @@ const spellRunActions={
   spDictRepeat(){
     const r=ui.spRun;if(!r)return;const l=spGet(r.listId);if(!l)return;
     ui.spRun={listId:l.id,stage:'ask',order:shuffleArr(l.words.map(w=>w.id)),i:0,given:'',ok:null,results:[],photoErr:'',meaning:'',meaningOk:undefined,meaningBusy:false,photoBusy:false,meaningCorrect:'',retypeGiven:'',retypeOk:false,retypeTried:false,skipPinAsk:false,retypeSkipped:false,voiceIdx:0,photoMeanings:[],photoMeaningOk:[],photoMeaningCorrect:[]};
+    spPrepareVoice(l,ui.spRun);
     ui.t0=Date.now();render();
   },
   spDictQuit(){if(ui.spHw){ui.spHwQuitAsk=true;return render();}ui.spRun=null;ui.spHw=null;ui.screen='spelllist';render();},
@@ -8292,12 +8772,12 @@ function tabAjustes(){
   <label class="f">Tope diario <span class="v" id="v_screenCapMin">${s.screenCapMin||45} min</span><input type="range" min="5" max="120" step="5" value="${s.screenCapMin||45}" data-set="screenCapMin"></label>
   </div></div>
   <div class="panel"><h3>🔤 Voz del Spelling (inglés)</h3>
-  <p class="mute" style="margin-top:0">La voz que usa la IA para dictar las palabras de Spelling (voz del dispositivo, en inglés). Si el acento suena demasiado cerrado, prueba otra voz de la lista (las de ⭐ se entienden mejor) y pulsa "Probar voz".</p>
+  <p class="mute" style="margin-top:0">Voz de reserva del dispositivo (en inglés) para las palabras de Spelling: se usa si la voz IA está apagada, o en una palabra concreta mientras su audio IA todavía se está generando. Si el acento suena demasiado cerrado, prueba otra voz de la lista (las de ⭐ se entienden mejor) y pulsa "Probar voz".</p>
   ${EnVoice.voices().length?`<label class="f">Voz<select data-set="spVoice"><option value="">(automática: la de mejor calidad disponible)</option>${EnVoice.voices().map(v=>`<option value="${esc(v.name)}" ${v.name===s.spVoice?'selected':''}>${v._q>=20?'⭐ ':''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select><button class="btn" style="margin-top:8px" data-act="testSpVoice">🔊 Probar voz</button></label>`:'<p class="mute">No se ha encontrado ninguna voz en inglés en este dispositivo.</p>'}
   </div>
   <div class="panel"><h3>🎙 IA de OpenAI: voz y lectura de fotos</h3>
-  <p class="mute" style="margin-top:0">Usa la voz de OpenAI para dictar como una profesora. El audio se genera <b>una sola vez</b> al guardar cada dictado (cuesta unos céntimos) y queda guardado en este iPad. El audio queda guardado en cada dispositivo.</p>
-  <label class="f"><input type="checkbox" data-ai="on" ${state.ai.on?'checked':''}> Usar voz IA (dictados)</label><br>
+  <p class="mute" style="margin-top:0">Usa la voz de OpenAI para dictar como una profesora, tanto en los dictados como en las palabras de Spelling. El audio se genera <b>una sola vez</b> por palabra o frase (cuesta unos céntimos) y queda guardado en este dispositivo. En Spelling se genera solo, sin ningún botón, nada más empezar a practicar una lista.</p>
+  <label class="f"><input type="checkbox" data-ai="on" ${state.ai.on?'checked':''}> Usar voz IA (dictados y Spelling)</label><br>
   <label class="f"><input type="checkbox" data-ai="photoOn" ${state.ai.photoOn?'checked':''}> Usar IA para leer fotos y generar preguntas</label><br>
   <p class="mute" style="margin:6px 0">Son dos interruptores independientes: puedes tener la voz IA apagada y la lectura de fotos encendida, o al revés.</p>
   <p class="mute" style="margin:6px 0">🔒 La clave de OpenAI está guardada en el servidor, no en este dispositivo.</p>
@@ -8464,7 +8944,14 @@ const tutorActions={
 };
 /* ================= eventos ================= */
 const studentActions={
-  goHome(){if(ui.role==='tutor'){ui.role='alumna';}Dict.stop();ui.item=null;ui.screen='home';render();},
+  /* Revisión adversarial (2026-11-04, ronda 4, ALTO): el botón "📚 Deberes de Julia" de la
+     cabecera está SIEMPRE visible y pulsable por encima de cualquier pantalla (está fuera de
+     <main id="app">, ver el HTML más arriba), incluida la pantalla de estudio/morfología con un
+     reconocimiento de voz en curso -- a diferencia de "Salir" (studyQuitOk/morfoBack), que ya
+     corta Escucha, pulsar este logo mientras se escucha no tocaba ui.study/ui.morfo NI el
+     micrófono, dejándolo escuchando de fondo sin ninguna pantalla visible que pudiera ya
+     cancelarlo (el mismo problema, por un camino distinto, que ya se arregló en pruebaExit). */
+  goHome(){Escucha.stop();if(ui.role==='tutor'){ui.role='alumna';}Dict.stop();ui.item=null;ui.screen='home';render();},
   goList(){ui.screen='list';render();},
   backList(){Dict.stop();ui.screen=ui.item?'today':'list';render();},
   openDict(b){ui.item=null;ui.t0=Date.now();ui.dict=b.dataset.id;ui.answer='';ui.photo=null;ui.dictTheoryOpen=true;ui.dictRuleOpen=null;ui.dictReveal=null;ui.dictUnclear=null;ui.dictBodyChunks=null;ui.screen='run';render();},
@@ -8511,7 +8998,8 @@ const studentActions={
        sin efecto sobre el mismo rol que ya está activo), se sale primero de la prueba, como si se
        hubiera pulsado "✕ Salir" (que ya deja ui.role en 'tutor' y renderiza), y no se hace nada más. */
     if(ui.testZoneBackup&&r!==ui.role)return pruebaActions.pruebaExit();
-    if(r!==ui.role){Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();
+    // ver el aviso de goHome: mismo botón "siempre visible" de la cabecera, mismo arreglo.
+    if(r!==ui.role){Escucha.stop();Dict.stop();ui.unlocked=false;ui.editId=null;}ui.role=r;if(r==='alumna'&&ui.screen==='run')ui.screen='run';render();
   },
   showVersion(){const l=state.sync.last?new Date(state.sync.last).toLocaleString('es-ES',{dateStyle:'short',timeStyle:'short'}):'nunca';toast(`Versión v${APP_VERSION} · última sincronización: ${l}`);},
   goNotesAlumna(){ui.screen='notasAlumna';render();},
@@ -8609,6 +9097,14 @@ const pruebaActions={
     if(!ui.testZoneBackup)return;
     state=ui.testZoneBackup;ui.testZoneBackup=null;
     try{Dict.stop();}catch(e){}
+    /* Revisión adversarial (2026-11-04, ronda 3, voz/writeMode): esta función pone ui.study/
+       ui.morfo a null directamente (más abajo) sin pasar por studyQuitResume/Discard/Ok ni por
+       morfoBack -- que son los sitios donde se añadió Escucha.stop() para cortar el micrófono al
+       salir. Si el tutor, probando una tarjeta en la Zona de Pruebas con writeMode "voz"/"mixto",
+       pulsa el micrófono y sale por aquí (✕ Salir del banner, cambiar de rol, o cerrar sesión)
+       antes de que termine el reconocimiento, el micrófono real del navegador se quedaba
+       escuchando de fondo sin ninguna pantalla que pudiera ya cortarlo. */
+    try{Escucha.stop();}catch(e){}
     const ret=ui.testZoneReturn;ui.testZoneReturn=null;
     ui.role='tutor';ui.unlocked=true;
     /* vuelve a donde estaba el tutor al entrar (ver pruebaEnter); si por lo que sea no se guardó
@@ -8660,6 +9156,8 @@ const authActions={
        prueba todavía a medio camino -- hace falta pulsar "🚪" una 2ª vez para cerrar sesión de
        verdad, igual que ya pasa hoy con "Tutor/Alumna" en ese mismo caso. */
     if(ui.testZoneBackup)return pruebaActions.pruebaExit();
+    // ver el aviso de goHome: mismo botón "siempre visible" de la cabecera, mismo arreglo.
+    try{Escucha.stop();}catch(e){}
     try{Dict.stop();}catch(e){}
     ui.authUid=null;ui.unlocked=false;ui.editId=null;ui.role='alumna';ui.screen='home';
     clearAuth();
