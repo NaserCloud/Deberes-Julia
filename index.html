@@ -1653,7 +1653,7 @@ function dictadoPreviewHTML(text){
    verify_tema_exam_date_round2.js y verify_tema_exam_date_round3.js (casos límite de cada ronda).
    Suite completa (51 archivos verify_*.js) en verde, salvo las exclusiones pre-existentes ya
    documentadas. */
-const APP_VERSION='2026.11.23-1';
+const APP_VERSION='2026.11.23-3';
 /* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
    1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
       hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
@@ -4242,7 +4242,7 @@ function render(){
   document.querySelectorAll('.role button').forEach(b=>b.classList.toggle('on',b.dataset.role===ui.role));
   window.scrollTo(0,0);
   if(ui.role==='tutor')return renderTutor();
-  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo,morfolist:renderMorfoList,morfoTheory:renderMorfoTheory,morfoprep:renderPrep,engdict:renderEngDict,notasAlumna:renderNotasAlumna,spelllist:renderSpellList,spelldict:renderSpellDict,spellsent:renderSpellSent,ejercicio:renderEjercicio}[ui.screen]||renderHome)();
+  ({home:renderHome,list:renderList,run:renderRun,fix:renderFix,today:renderToday,mrun:renderMrun,msum:renderMsum,mlist:renderMlist,dsum:renderDsum,exlist:renderExlist,exrun:renderExrun,exres:renderExres,study:renderStudy,minigame:renderMiniGame,morfo:renderMorfo,morfolist:renderMorfoList,morfoTheory:renderMorfoTheory,morfoprep:renderPrep,engdict:renderEngDict,notasAlumna:renderNotasAlumna,spelllist:renderSpellList,spelldict:renderSpellDict,spellsent:renderSpellSent,ejercicio:renderEjercicio,tildes:renderTildes,tildessum:renderTildessum}[ui.screen]||renderHome)();
   if(ui.testZoneBackup)app.innerHTML=pruebaBannerHTML()+app.innerHTML;
   /* pedido por David (2026-10-23): que Julia vea en todo momento, en cualquier pantalla suya,
      cuánto tiempo de pantalla lleva ganado hoy -- se queda fuera a propósito durante la Zona de
@@ -4850,6 +4850,7 @@ function itemTitle(it){
   if(it.type==='spelling'){const l=state.spelling.find(x=>x.id===it.spid);return 'Spelling: '+(l?l.title:'(lista borrada)');}
   if(it.type==='morfo'){const m=state.morfos.find(x=>x.id===it.mid);return 'Análisis morfológico: '+(m?m.title:'(texto borrado)');}
   if(it.type==='ejercicio'){const j=ejGet(it.jid);return 'Ejercicio: '+(j?j.title:'(ejercicio borrado)');}
+  if(it.type==='tildes')return '✨ Tildes: practica de acentuación';
   return mathTitle(it.cfg);
 }
 /* resumen corto de una pieza de deberes ya hecha, para la lista de "Deberes de hoy" (cada tipo
@@ -4860,7 +4861,7 @@ function itemSummary(it,x){
   if(it.type==='dictado')return `${x.total-x.wrong} de ${x.total} bien`;
   if(it.type==='examen')return `${(Math.round(x.score*10)/10).toString().replace('.',',')} de ${x.n} puntos`;
   if(it.type==='teoria')return `${x.ok} de ${x.n} a la primera`;
-  if(it.type==='spelling'||it.type==='morfo')return `${x.ok} de ${x.n} bien`;
+  if(it.type==='spelling'||it.type==='morfo'||it.type==='tildes')return `${x.ok} de ${x.n} bien`;
   if(it.type==='ejercicio')return x.done?'✅ Hecho':'';
   return x.first!==undefined?`${x.first} de ${x.n} a la primera`:'';
 }
@@ -4881,6 +4882,7 @@ function itemPendingInfo(it){
   if(it.type==='spelling'){const l=state.spelling.find(x=>x.id===it.spid);if(!l)return '';return `${l.words.length} ${l.words.length===1?'palabra':'palabras'}`;}
   if(it.type==='morfo'){const m=state.morfos.find(x=>x.id===it.mid);return m?nWordsMorfoLabel(m.text):'';}
   if(it.type==='mates'){const n=(it.cfg&&it.cfg.n)||10;return `${n} ${n===1?'ejercicio':'ejercicios'}`;}
+  if(it.type==='tildes'){const n=(Number.isInteger(it.n)&&it.n>0)?Math.min(it.n,TILDE_BANK.length):TILDES_N;return `${n} ${n===1?'palabra':'palabras'}`;}
   if(it.type==='ejercicio'){const j=ejGet(it.jid);return j&&j.video?'🎬 Con vídeo':'';}
   return '';
 }
@@ -4920,6 +4922,7 @@ function sessionReport(s){
     else if(r.kind==='teoria'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} a la primera · nivel ${x.level}${x.level===1?' (con foto)':' (repaso de memoria)'}`;}
     else if(r.kind==='minijuego'&&r.res){o.line=r.res.line;}
     else if(r.kind==='morfo'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien clasificadas`;}
+    else if(r.kind==='tildes'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} palabras bien`;o.det=x.wrong.map(w=>`${w.word}${w.rule?' ('+MORFO_TILDE_RULES[w.rule].l+')':''}`);}
     else if(r.kind==='prep'&&r.res){const x=r.res;o.line=`${x.ok} de ${x.n} preposiciones bien`;}
     else if(r.kind==='spelling'){
       if(r.res){const x=r.res;
@@ -5006,6 +5009,7 @@ function renderHome(){
   <button class="tile" data-act="goList"><span class="ico">✏️</span><b>Dictados</b><small>Escucha y escribe lo que oyes</small></button>
   ${state.examenes.some(e=>e.status==='ready')?`<button class="tile" data-act="goExams"><span class="ico">📚</span><b>Teoría y exámenes</b><small>${(()=>{const nx=state.examenes.filter(e=>e.status==='ready'&&e.isExam&&e.date>=t).sort((a,b)=>a.date<b.date?-1:1)[0];return nx?'Próximo examen: '+esc(nx.title)+' ('+exDaysTxt(nx.date)+')':'Estudia la teoría o practica un examen';})()}</small></button>`:''}
   <button class="tile" data-act="goMlist"><span class="ico">➗</span><b>Matemáticas</b><small>Practica cuando quieras</small></button>
+  <button class="tile" data-act="goTildes"><span class="ico">✨</span><b>Tildes</b><small>Coloca la tilde donde toca</small></button>
   <button class="tile" data-act="goDict"><span class="ico">📖</span><b>Diccionario (inglés)</b><small>Adivina qué significan palabras en inglés</small></button>
   ${state.spelling.some(l=>l.status==='ready')?`<button class="tile" data-act="goSpell"><span class="ico">🔤</span><b>Spelling</b><small>Dictado de palabras y frases en inglés</small></button>`:''}
   ${state.morfos.length?`<button class="tile" data-act="goMorfoList"><span class="ico">🔎</span><b>Análisis Morfológico</b><small>Clasifica las palabras por su tipo</small></button>`:''}
@@ -5162,6 +5166,7 @@ function renderMsum(){
 const taskActions={
   goToday(){Dict.stop();ui.item=null;ui.mrun=null;ui.screen='today';render();},
   goMlist(){ui.screen='mlist';render();},
+  goTildes(){tildesStart('home',null,'free'+Date.now());},
   mlv(b){ui.mlv=+b.dataset.l;render();},
   mstart(b){const g=b.dataset.g,lv=ui.mlv||2;
     const cfg={gens:g==='mix'?['suma','resta','multi','divi','frac_de_num','porc','dec','orden','problemas']:[g],n:10,level:lv,tablas:[]};
@@ -5186,6 +5191,9 @@ const taskActions={
       if(!d)return toast('Ese texto ya no existe');
       if(!state.ai.photoOn)return toast('El tutor tiene que activar la IA de fotos en Ajustes para usar el análisis morfológico');
       morfoStart(d.text,d.title,'today',d,it.writeMode,it.id);
+    }
+    else if(it.type==='tildes'){
+      tildesStart('today',it.id,it.seed||('t'+it.id),it.n);
     }
     else if(it.type==='ejercicio'){
       const j=ejGet(it.jid);
@@ -5354,7 +5362,7 @@ function tfInput(t){
    calendario pequeño para elegir el día (o varios días seguidos) en que se le pone esa actividad
    como deberes a Julia, sin tener que ir al asistente de la pestaña Deberes. Reutiliza tfDates()
    para "varios días seguidos" igual que hace ese asistente. */
-const TASK_ADD_LABEL={dictado:'✏️ Dictado',examen:'📝 Examen',teoria:'📖 Tarjeta de teoría',spelling:'🔤 Spelling',morfo:'🔎 Análisis morfológico',ejercicio:'🏃 Ejercicio'};
+const TASK_ADD_LABEL={dictado:'✏️ Dictado',examen:'📝 Examen',teoria:'📖 Tarjeta de teoría',spelling:'🔤 Spelling',morfo:'🔎 Análisis morfológico',ejercicio:'🏃 Ejercicio',tildes:'✨ Tildes'};
 /* writeMode (pedido por David, 2026-11-04): en Teoría y Análisis Morfológico, al fallar y tener
    que "escribir tú la respuesta correcta" para poder seguir, el tutor elige aquí, al poner el
    deber, si Julia puede hacerlo escrito (⌨️, de toda la vida), de viva voz (🎤, reconocimiento de
@@ -5404,6 +5412,8 @@ function taskAddOverlay(){
   ${a.nSent?`<div class="chips">${[0,1,2,3].map(n=>chip(a.sentRounds===n,'taskAddSentRounds',`data-v="${n}"`,n===0?'Ninguna':n+(n===1?' ronda':' rondas'))).join('')}</div>`:'<p class="mute" style="margin:4px 0;font-size:.85rem">Esta lista todavía no tiene frases preparadas, así que hoy solo escuchar.</p>'}
   ${!a.dictRounds&&!a.sentRounds?(a.nSent?'<p class="msg wrong" style="margin:6px 0">⚠️ Elige al menos una ronda (de escuchar o de frases): no puedes poner «Ninguna» en las dos a la vez, si no Julia no tendría nada que hacer ese día.</p>':'<p class="msg wrong" style="margin:6px 0">⚠️ Esta lista todavía no tiene frases preparadas, así que tiene que tener al menos 1 ronda de escuchar las palabras (si no, Julia no tendría nada que hacer ese día).</p>'):''}`:''}
   ${a.type==='morfo'?taskAddWriteModeHTML(a):''}
+  ${a.type==='tildes'?`<div class="lbl" style="margin-top:14px">¿Cuántas palabras?</div>
+  <div class="chips">${[5,10,15,20,30,TILDE_BANK.length].map(n=>chip(a.nWords===n,'taskAddNWords',`data-v="${n}"`,n===TILDE_BANK.length?`Todas (${n})`:n)).join('')}</div>`:''}
   <p class="mute" style="margin:10px 0">${esc(when)}</p>
   <div class="row" style="margin-top:4px"><button class="btn primary big" data-act="taskAddConfirm" ${a.type==='spelling'&&!a.dictRounds&&!a.sentRounds?'disabled':''}>💾 Agregar a deberes</button><button class="btn" data-act="taskAddClose">Cancelar</button></div>
   </div></div>`;
@@ -5427,6 +5437,12 @@ const taskAddActions={
       const l=spGet(a.ref);a.nSent=l?l.sentences.length:0;a.dictRounds=2;a.sentRounds=a.nSent?1:0;
     }else if(a.type==='morfo'){
       a.writeMode='mixed';
+    }else if(a.type==='tildes'){
+      // pedido por David (2026-11-23): poder elegir cuántas palabras tiene este deber en concreto,
+      // en vez de las TILDES_N (10) fijas de siempre -- mismo patrón que "¿Cuántas preguntas?" de
+      // Teoría (taskAddN/a.nQuestions). Por defecto se deja el valor de siempre (10), para no
+      // cambiarle nada a un tutor que no toque este chip nuevo.
+      a.nWords=TILDES_N;
     }
     ui.taskAdd=a;render();
   },
@@ -5445,6 +5461,7 @@ const taskAddActions={
   taskAddWriteMode(b){ui.taskAdd.writeMode=b.dataset.v;render();},
   taskAddDictRounds(b){ui.taskAdd.dictRounds=+b.dataset.v;render();},
   taskAddSentRounds(b){ui.taskAdd.sentRounds=+b.dataset.v;render();},
+  taskAddNWords(b){ui.taskAdd.nWords=+b.dataset.v;render();},
   taskAddConfirm(){
     const a=ui.taskAdd;if(!a)return;
     // pedido por David (2026-10-30): se puede elegir "Ninguna" ronda de escuchar palabras (antes
@@ -5455,7 +5472,7 @@ const taskAddActions={
     // no crear un deber vacío si se llegara a pulsar de algún otro modo).
     if(a.type==='spelling'&&!a.dictRounds&&!a.sentRounds)return toast('Elige al menos una ronda (de escuchar o de frases)');
     const ds=tfDates(a);
-    const keyByType={dictado:'did',examen:'eid',teoria:'tid',spelling:'spid',morfo:'mid',ejercicio:'jid'};
+    const keyByType={dictado:'did',examen:'eid',teoria:'tid',spelling:'spid',morfo:'mid',ejercicio:'jid',tildes:'ttid'};
     const k=keyByType[a.type];if(!k)return;
     ds.forEach(date=>{
       const it={id:'i'+uid(),type:a.type,[k]:a.ref};
@@ -5465,6 +5482,16 @@ const taskAddActions={
       if(a.type==='teoria'){it.n=a.nQuestions||null;it.mode=a.mode||'estudio';it.qType=(a.qType==='test'||a.qType==='red')?a.qType:null;it.writeMode=(a.writeMode==='text'||a.writeMode==='voice')?a.writeMode:'mixed';}
       if(a.type==='spelling'){it.dictRounds=a.dictRounds!==undefined?a.dictRounds:2;it.sentRounds=a.sentRounds!==undefined?a.sentRounds:1;}
       if(a.type==='morfo'){it.writeMode=(a.writeMode==='text'||a.writeMode==='voice')?a.writeMode:'mixed';}
+      // "seed" (igual que el "seed" de Mates, taskActions.mstart/deberesActions.createTask): cada
+      // día de deberes de Tildes ya puesto reparte un juego de palabras distinto pero FIJO (mismo
+      // orden si Julia lo reabre antes de terminarlo, en cualquier dispositivo -- ver
+      // tildesShuffled/tildesStart), en vez de barajar otra vez cada vez que abre el deber.
+      // "n" (pedido por David, 2026-11-23): cuántas palabras tiene ESTE deber en concreto (ver
+      // taskAddOverlay/taskAddNWords); nunca se deja "a.nWords" tal cual por si llegara corrupto o
+      // ausente por algún camino que no sea el chip (defensivo, mismo criterio ya aplicado a
+      // dictRounds/sentRounds más arriba) -- un deber antiguo, de antes de este cambio, no tiene
+      // este campo y sigue usando TILDES_N (10) por defecto, ver tildesStart/itemPendingInfo.
+      if(a.type==='tildes'){it.seed='ti'+date+'-'+uid();it.n=(Number.isInteger(a.nWords)&&a.nWords>0)?a.nWords:TILDES_N;}
       state.tareas.push({id:'t'+uid(),date,items:[it]});
     });
     save();ui.taskAdd=null;render();toast(`Agregado a deberes de ${ds.length} ${ds.length===1?'día':'días'} ✅`);
@@ -12594,10 +12621,10 @@ function renderTutor(){
      de Dictado (palabras falladas, reglas, tendencia). Se unen en una sola pestaña: Actividad
      primero (el día a día) y, debajo, la sección de estadísticas de Dictado que antes era
      Historial (ver tabActividad). */
-  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad e Historial'],['examenes','📚 Teoría y exámenes'],['spelling','🔤 Spelling'],['morfologia','🔎 Morfología'],['ejercicio','🏃 Ejercicio'],['reglas','📘 Reglas propias'],['pruebas','🧪 Zona de pruebas'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
+  const tabs=[['dictados','📝 Dictados'],['deberes','📅 Deberes'],['actividad','📋 Actividad e Historial'],['examenes','📚 Teoría y exámenes'],['spelling','🔤 Spelling'],['morfologia','🔎 Morfología'],['tildes','✨ Tildes'],['ejercicio','🏃 Ejercicio'],['reglas','📘 Reglas propias'],['pruebas','🧪 Zona de pruebas'],['notas','🗒 Notas'],['ajustes','⚙️ Dictado y ajustes']];
   app.innerHTML=`<div class="row" style="justify-content:space-between"><h2 style="margin:0">Área de tutor</h2><span class="row" style="gap:6px"><button class="btn" data-act="deshacer" ${(undoStack.length&&!examBgBusy())?'':'disabled'} title="Deshace la última acción: guardar/borrar/copiar un dictado o un texto de morfología, reglas propias, asignaturas/temas, borrar un examen o sus preguntas, borrar una lista de spelling, borrar un deber, borrar una nota, o vaciar el historial. NO deshace crear una nota, una lista de spelling o un examen nuevos, ni nada de fotos de apuntes (subir/rotar/borrar).">↩️ Deshacer</button><button class="btn" data-act="lock">🔒 Bloquear</button></span></div>
   <div class="tabs">${tabs.map(t=>`<button data-act="tab" data-t="${t[0]}" class="${ui.tab===t[0]?'on':''}">${t[1]}</button>`).join('')}</div><div id="tab"></div>${taskAddOverlay()}`;
-  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,spelling:tabSpelling,morfologia:tabMorfologia,ejercicio:tabEjercicio,reglas:tabReglas,pruebas:tabPruebas,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
+  ({dictados:tabDictados,deberes:tabDeberes,actividad:tabActividad,examenes:tabExamenes,spelling:tabSpelling,morfologia:tabMorfologia,tildes:tabTildes,ejercicio:tabEjercicio,reglas:tabReglas,pruebas:tabPruebas,notas:tabNotas,ajustes:tabAjustes}[ui.tab])();
 }
 function tabNotas(){
   const list=(state.notas||[]).slice().sort((a,b)=>a.date<b.date?1:-1);
@@ -12728,6 +12755,20 @@ function tabMorfologia(){
   <div class="row" style="margin:6px 0;gap:8px"><button class="btn primary" data-act="newMorfo">＋ Nuevo texto</button><button class="btn" data-act="tutorToggleMorfoTheory">📘 Ver la ficha de teoría</button></div>
   <div class="list">${state.morfos.map(d=>`<div class="panel row" style="justify-content:space-between"><span><b>${esc(d.title)}</b><br><small class="mute">${nWordsMorfoLabel(d.text)}</small></span><span class="row"><button class="btn" data-act="taskAddOpen" data-type="morfo" data-id="${esc(d.id)}" data-title="${esc(d.title)}">📅 Agregar a deberes</button><button class="btn" data-act="morfoToDict" data-id="${esc(d.id)}" title="Crea una copia de este texto en Dictados (este texto de morfología se queda igual)">📝 Copiar a dictados</button><button class="btn" data-act="editMorfo" data-id="${esc(d.id)}">✏️ Editar</button><button class="btn danger" data-act="delMorfo" data-id="${esc(d.id)}">🗑</button></span></div>`).join('')||'<p class="mute">Aún no hay textos para analizar.</p>'}</div>`;
 }
+/* pantalla de tutor del nuevo apartado "✨ Tildes" (pedido por David, 2026-11-23): a diferencia de
+   Spelling/Morfología, aquí no hay NADA que crear ni editar -- la lista de palabras es fija (ver
+   el aviso completo junto a TILDE_BANK, p4a.js), así que esta pestaña es solo informativa más el
+   botón de siempre para ponerlo como deberes. El recuento por categoría es para que el tutor vea
+   de un vistazo qué cubre la lista sin tener que abrir el código. */
+function tabTildes(){
+  const counts={};MORFO_TILDE_ORDER.forEach(k=>counts[k]=0);let sinTilde=0;
+  TILDE_BANK.forEach(w=>w.hasTilde?counts[w.rule]++:sinTilde++);
+  $('#tab').innerHTML=`<p class="mute" style="margin-top:0">Julia ve una palabra sin tilde y pulsa la letra donde iría (o «No lleva tilde», si no le hace falta ninguna); si acierta y la palabra sí lleva tilde, elige después por qué. Puede reintentar las veces que quiera en los dos pasos, pero solo cuenta como acertada si acierta a la primera en los dos.</p>
+  <div class="panel"><b>📋 Lista de palabras (fija, ${TILDE_BANK.length} en total)</b>
+  <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:8px">${MORFO_TILDE_ORDER.map(k=>`<span class="tag">${esc(MORFO_TILDE_RULES[k].l)}: ${counts[k]}</span>`).join('')}<span class="tag">Sin tilde (trampa): ${sinTilde}</span></div>
+  <p class="mute" style="margin:10px 0 0">La práctica libre usa ${TILDES_N} palabras al azar de esta lista; al poner un deber, se puede elegir cuántas (${[5,10,15,20,30,TILDE_BANK.length].join('/')}).</p></div>
+  <div class="row" style="margin-top:10px"><button class="btn" data-act="taskAddOpen" data-type="tildes" data-id="main" data-title="Tildes: practica de acentuación">📅 Agregar a deberes</button></div>`;
+}
 function tabReglas(){
   const rs=state.customRules;
   $('#tab').innerHTML=`<div class="panel"><p class="mute" style="margin-top:0">Si quieres que una palabra concreta se explique con <b>tu</b> regla (en vez de la automática), añádela aquí. Escribe la palabra tal como debe quedar en el dictado.</p>
@@ -12744,7 +12785,7 @@ const PRUEBA_KINDS=[
   ['mates','🧮 Matemáticas'],['examen','📝 Examen (test)'],['teoria','📚 Tarjeta de teoría'],
   ['dictado','✏️ Dictado'],['morfologia','🔎 Análisis morfológico'],['preposiciones','🔗 Preposiciones'],
   ['spelling_escuchar','🔤 Spelling: escuchar'],['spelling_frases','🔤 Spelling: frases'],
-  ['ingles','🇬🇧 Inglés (dictado)'],['minijuego','🎮 Minijuego'],['ejercicio','🏃 Ejercicio']
+  ['ingles','🇬🇧 Inglés (dictado)'],['minijuego','🎮 Minijuego'],['ejercicio','🏃 Ejercicio'],['tildes','✨ Tildes']
 ];
 function tabPruebas(){
   $('#tab').innerHTML=`<div class="panel"><p class="mute" style="margin-top:0">Prueba aquí cualquier ejercicio tal y como lo ve Julia, con ejemplos al azar entre lo que ya tengas cargado. Nada de lo que hagas aquí se guarda en las estadísticas ni el progreso reales de Julia.</p>
@@ -13359,6 +13400,12 @@ function pruebaEnter(){
        medio hacer (no hay respuesta ni foto que perder, solo el botón "✅ Ya lo he hecho" -- pero
        sí perdería la PANTALLA en la que estaba, igual que ya se cuida para el resto). */
     ej:ui.ej,
+    /* "tildesRun" (nuevo apartado de Tildes, pedido por David 2026-11-23) añadido aquí por el mismo
+       motivo exacto que ya documentan las rondas 17/18 de arriba para el resto de actividades: sin
+       guardarlo/restaurarlo, si el tutor entrara en la Zona de Pruebas a probar Tildes mientras
+       Julia tiene un deber real de Tildes a medias, pruebaExit() machacaría su ronda real con la de
+       prueba (o con null) sin ningún aviso. */
+    tildesRun:ui.tildesRun,
     screen:ui.screen,t0:ui.t0,dictReveal:ui.dictReveal,dictUnclear:ui.dictUnclear,dictBodyChunks:ui.dictBodyChunks,
     /* Revisión adversarial (2026-11-05, ronda 19, Zona A, BAJO): faltaba "ui.studyQuitAsk" -- sin
        guardarlo/restaurarlo, si Julia estaba en Teoría con el aviso "¿Seguro que quieres salir sin
@@ -13449,6 +13496,7 @@ const pruebaActions={
       if(!pick)return toast('Todavía no hay ningún ejercicio creado para probar');
       enter();ui.ej={jid:pick.id,itemId:null,done:false};ui.screen='ejercicio';render();return;
     }
+    if(kind==='tildes'){enter();tildesStart('home',null,'prueba'+Date.now());return;}
   },
   pruebaExit(){
     if(!ui.testZoneBackup)return;
@@ -13505,7 +13553,7 @@ const pruebaActions={
     if(ret){
       ui.tab=ret.tab;ui.exId=ret.exId;ui.exTemaId=ret.exTemaId;ui.exAsigId=ret.exAsigId;ui.spHw=ret.spHw||null;ui.spHwQuitAsk=ret.spHwQuitAsk||false;
       ui.mrun=ret.mrun||null;ui.study=ret.study||null;ui.ex=ret.ex||null;ui.exres=ret.exres||null;ui.dict=ret.dict||null;ui.item=ret.item||null;ui.morfo=ret.morfo||null;
-      ui.prep=ret.prep||null;ui.spRun=ret.spRun||null;ui.engdict=ret.engdict||null;ui.answer=ret.answer||'';ui.photo=ret.photo||null;ui.fix=ret.fix||null;ui.ej=ret.ej||null;
+      ui.prep=ret.prep||null;ui.spRun=ret.spRun||null;ui.engdict=ret.engdict||null;ui.answer=ret.answer||'';ui.photo=ret.photo||null;ui.fix=ret.fix||null;ui.ej=ret.ej||null;ui.tildesRun=ret.tildesRun||null;
       // ronda 18 (Zona A, ver aviso en pruebaEnter): también se restaura la PANTALLA real (sin
       // esto, render() seguía mirando la pantalla de la prueba, no la de Julia), el reloj del
       // intento y las marcas de "no lo he entendido" del dictado real.
@@ -13515,7 +13563,7 @@ const pruebaActions={
     }else{
       ui.tab='pruebas';ui.spHw=null;ui.spHwQuitAsk=false;
       ui.mrun=null;ui.study=null;ui.ex=null;ui.exres=null;ui.dict=null;ui.item=null;ui.morfo=null;
-      ui.prep=null;ui.spRun=null;ui.engdict=null;ui.answer='';ui.photo=null;ui.fix=null;ui.ej=null;
+      ui.prep=null;ui.spRun=null;ui.engdict=null;ui.answer='';ui.photo=null;ui.fix=null;ui.ej=null;ui.tildesRun=null;
       ui.dictReveal=null;ui.dictUnclear=null;ui.dictBodyChunks=null;ui.studyQuitAsk=false;
     }
     ui.mgame=null;ui.studyVideoOpen=false;ui.spProbarId=null;
@@ -13631,7 +13679,216 @@ const userActions={
     save();render();toast('Cuenta borrada');
   }
 };
-const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,prepActions,engDictActions,spellActions,spellRunActions,pruebaActions,authActions,userActions,ejercicioActions,ejercicioRunActions);
+/* ================= nuevo apartado "✨ Tildes" (pedido por David, 2026-11-23) =================
+   Módulo independiente (NO dentro de Análisis Morfológico, a propósito: David quiso un apartado
+   propio, como Dictado o Spelling, con su propio icono/menú y su propio "📅 Agregar a deberes" --
+   ver AskUserQuestion de esta misma sesión, "Apartado nuevo, independiente"). Aparece una palabra
+   (o una palabra dentro de una frase corta, solo para las diacríticas, ver más abajo) sin tilde:
+   Julia pulsa con el ratón/dedo la LETRA donde iría la tilde, o el botón "🚫 No lleva tilde" si
+   cree que no le hace falta ninguna. Si acierta y la palabra SÍ lleva tilde, elige después por
+   qué (test de 5 opciones, reutilizando MORFO_TILDE_RULES/MORFO_TILDE_ORDER de Análisis
+   Morfológico -- misma explicación exacta de cada regla, para no mantener dos textos distintos
+   para la misma regla en la app).
+
+   Pedido explícito de David sobre los reintentos: "no hace falta que escriba la respuesta
+   correcta, solo que le deje elegir opciones hasta que elija la correcta. Eso sí, si no elige la
+   correcta a la primera no se la dará como acertada." Es decir: NINGÚN botón se deshabilita al
+   fallar (a diferencia de morfoTildePick, que es de un solo intento -- ver su propio aviso):
+   Julia puede seguir pulsando opciones distintas tantas veces como quiera, en los dos pasos
+   (letra y regla), pero la palabra solo cuenta como "acertada" (para el resumen y el tiempo de
+   pantalla/puntos de equitación, igual que el resto de la app) si los DOS pasos se aciertan a la
+   primera, sin ningún fallo previo en ninguno de los dos (ver st.wrongLetter/st.wrongRule).
+
+   Lista de palabras FIJA, preparada por el tutor (yo, Claude) -- David eligió explícitamente
+   "Lista fija que preparo yo" en vez de una lista editable por él (a diferencia de Spelling). Por
+   eso TILDE_BANK vive como una constante de código, igual que MORFO_TILDE_RULES o DIAC, y NO como
+   un array de "state": no hace falta sincronizarla entre dispositivos (va igual en cada versión
+   de la app, no la toca nunca el tutor) ni protegerla de la limpieza de huérfanos
+   (repairOrphanCards y similares, que solo miran arrays de "state"). Cada entrada es
+   {pre,word,post,hasTilde,rule}: "word" es la palabra INTERACTIVA en minúsculas (con su tilde si
+   hasTilde=true, para poder calcular sola la letra correcta con noTilde()/tildeAnswerIdx, en vez
+   de guardar el índice a mano en cada entrada -- si me equivocara tecleando una palabra, un índice
+   guardado a mano podría quedar "desincronizado" de ella sin que se note a simple vista en una
+   lista de 90+ palabras); "pre"/"post" son el texto de contexto que la rodea (vacío salvo en las
+   diacríticas, donde una sola palabra suelta sería ambigua de verdad: "si" y "sí" son palabras
+   distintas según la frase, no según la ortografía a secas). David pidió explícitamente incluir
+   palabras que NO llevan tilde, mezcladas con las que sí (con un botón aparte, siempre visible
+   mientras se elige letra, para "no lleva tilde"), así que cada categoría trae también su propio
+   grupo de palabras-trampa sin tilde (salvo las esdrújulas, que SIEMPRE llevan tilde sin
+   excepción: no existe una "esdrújula sin tilde" que enseñar). */
+const TILDE_BANK=[
+  // agudas con tilde (acaban en vocal, N o S y el golpe de voz va en la última sílaba)
+  {word:'camión',hasTilde:true,rule:'aguda'},{word:'canción',hasTilde:true,rule:'aguda'},
+  {word:'corazón',hasTilde:true,rule:'aguda'},{word:'jamás',hasTilde:true,rule:'aguda'},
+  {word:'café',hasTilde:true,rule:'aguda'},{word:'sofá',hasTilde:true,rule:'aguda'},
+  {word:'además',hasTilde:true,rule:'aguda'},{word:'autobús',hasTilde:true,rule:'aguda'},
+  {word:'francés',hasTilde:true,rule:'aguda'},{word:'inglés',hasTilde:true,rule:'aguda'},
+  {word:'balón',hasTilde:true,rule:'aguda'},{word:'avión',hasTilde:true,rule:'aguda'},
+  {word:'también',hasTilde:true,rule:'aguda'},{word:'ratón',hasTilde:true,rule:'aguda'},
+  // agudas SIN tilde (acaban en una consonante que no es N ni S -- trampa a propósito)
+  {word:'reloj',hasTilde:false},{word:'pared',hasTilde:false},{word:'feliz',hasTilde:false},
+  {word:'ciudad',hasTilde:false},{word:'papel',hasTilde:false},{word:'animal',hasTilde:false},
+  {word:'verdad',hasTilde:false},{word:'nariz',hasTilde:false},
+  // llanas con tilde (el golpe de voz va en la penúltima sílaba y acaban en consonante que no es N ni S)
+  {word:'árbol',hasTilde:true,rule:'llana'},{word:'lápiz',hasTilde:true,rule:'llana'},
+  {word:'fácil',hasTilde:true,rule:'llana'},{word:'azúcar',hasTilde:true,rule:'llana'},
+  {word:'útil',hasTilde:true,rule:'llana'},{word:'débil',hasTilde:true,rule:'llana'},
+  {word:'ángel',hasTilde:true,rule:'llana'},{word:'césped',hasTilde:true,rule:'llana'},
+  {word:'túnel',hasTilde:true,rule:'llana'},{word:'hábil',hasTilde:true,rule:'llana'},
+  // llanas SIN tilde (acaban en vocal, N o S -- el caso más normal, por eso no llevan tilde)
+  {word:'mesa',hasTilde:false},{word:'ventana',hasTilde:false},{word:'examen',hasTilde:false},
+  {word:'joven',hasTilde:false},{word:'lunes',hasTilde:false},{word:'mochila',hasTilde:false},
+  {word:'cuaderno',hasTilde:false},{word:'silla',hasTilde:false},{word:'zapato',hasTilde:false},
+  {word:'libro',hasTilde:false},
+  // esdrújulas (el golpe de voz va en la antepenúltima sílaba o antes: SIEMPRE llevan tilde, sin excepción)
+  {word:'página',hasTilde:true,rule:'esdrujula'},{word:'teléfono',hasTilde:true,rule:'esdrujula'},
+  {word:'rápido',hasTilde:true,rule:'esdrujula'},{word:'música',hasTilde:true,rule:'esdrujula'},
+  {word:'cámara',hasTilde:true,rule:'esdrujula'},{word:'médico',hasTilde:true,rule:'esdrujula'},
+  {word:'película',hasTilde:true,rule:'esdrujula'},{word:'sábado',hasTilde:true,rule:'esdrujula'},
+  {word:'último',hasTilde:true,rule:'esdrujula'},{word:'miércoles',hasTilde:true,rule:'esdrujula'},
+  {word:'número',hasTilde:true,rule:'esdrujula'},{word:'histórico',hasTilde:true,rule:'esdrujula'},
+  // diacríticas: la MISMA palabra se escribe con o sin tilde según su significado en la frase, así
+  // que aquí sí hace falta algo de contexto alrededor (pre/post) para que la frase tenga sentido.
+  {pre:'',word:'él',post:' juega al fútbol',hasTilde:true,rule:'diac'},
+  {pre:'',word:'el',post:' perro corre',hasTilde:false},
+  {pre:'',word:'tú',post:' tienes razón',hasTilde:true,rule:'diac'},
+  {pre:'',word:'tu',post:' hermano llegó',hasTilde:false},
+  {pre:'esto es para ',word:'mí',post:'',hasTilde:true,rule:'diac'},
+  {pre:'vino a ',word:'mi',post:' casa',hasTilde:false},
+  {pre:'dijo que ',word:'sí',post:'',hasTilde:true,rule:'diac'},
+  {pre:'iré ',word:'si',post:' llueve',hasTilde:false},
+  {pre:'quiero un ',word:'té',post:'',hasTilde:true,rule:'diac'},
+  {pre:'',word:'te',post:' quiero mucho',hasTilde:false},
+  {pre:'espero que ',word:'dé',post:' su opinión',hasTilde:true,rule:'diac'},
+  {pre:'vengo ',word:'de',post:' casa',hasTilde:false},
+  {pre:'',word:'sé',post:' bueno con ella',hasTilde:true,rule:'diac'},
+  {pre:'él ',word:'se',post:' fue',hasTilde:false},
+  {pre:'',word:'qué',post:' raro es esto',hasTilde:true,rule:'diac'},
+  {pre:'dijo ',word:'que',post:' vendría',hasTilde:false},
+  {pre:'',word:'cómo',post:' te llamas',hasTilde:true,rule:'diac'},
+  {pre:'lo hizo ',word:'como',post:' pudo',hasTilde:false},
+  {pre:'',word:'cuándo',post:' llegas',hasTilde:true,rule:'diac'},
+  {pre:'vendré ',word:'cuando',post:' pueda',hasTilde:false},
+  {pre:'',word:'dónde',post:' vives',hasTilde:true,rule:'diac'},
+  {pre:'fue ',word:'donde',post:' le dijeron',hasTilde:false},
+  {pre:'',word:'quién',post:' ha llamado',hasTilde:true,rule:'diac'},
+  {pre:'fue mi padre ',word:'quien',post:' llamó',hasTilde:false},
+  // hiatos (una vocal débil -i/u- suena más fuerte que la vocal fuerte de al lado: quedan en
+  // sílabas distintas, y por eso lleva tilde aunque no sea ni aguda ni llana ni esdrújula "normal")
+  {word:'país',hasTilde:true,rule:'hiato'},{word:'baúl',hasTilde:true,rule:'hiato'},
+  {word:'raíz',hasTilde:true,rule:'hiato'},{word:'maíz',hasTilde:true,rule:'hiato'},
+  {word:'tío',hasTilde:true,rule:'hiato'},{word:'frío',hasTilde:true,rule:'hiato'},
+  {word:'río',hasTilde:true,rule:'hiato'},{word:'día',hasTilde:true,rule:'hiato'},
+  {word:'caída',hasTilde:true,rule:'hiato'},{word:'ataúd',hasTilde:true,rule:'hiato'},
+  {word:'oído',hasTilde:true,rule:'hiato'},{word:'reír',hasTilde:true,rule:'hiato'},
+  // palabras con vocales seguidas que NO necesitan tilde (diptongo normal, sin romperse -- trampa)
+  {word:'aire',hasTilde:false},{word:'cuidado',hasTilde:false},{word:'bailar',hasTilde:false},
+  {word:'peine',hasTilde:false},{word:'patio',hasTilde:false},{word:'piano',hasTilde:false},
+  {word:'estudio',hasTilde:false},{word:'premio',hasTilde:false}
+].map((w,i)=>Object.assign({id:'ti'+i,pre:w.pre||'',post:w.post||''},w));
+const TILDES_N=10; // palabras por ronda (deberes o práctica libre), mismo criterio que Mates (taskActions.mstart)
+function tildeAnswerIdx(word){for(let i=0;i<word.length;i++)if(/[áéíóú]/.test(word[i]))return i;return -1;}
+/* baraja determinista de TILDE_BANK a partir de una semilla (mismo patrón que makeExercises/
+   seedRng en Matemáticas): con la MISMA semilla sale siempre el mismo orden, para que un deber de
+   Tildes ya puesto (su "seed" se guarda en el propio item de state.tareas al crearlo, ver
+   taskAddConfirm) reparta las mismas palabras si Julia lo reabre antes de terminarlo, en
+   cualquier dispositivo. */
+function tildesShuffled(seed){
+  const r=seedRng(seed);
+  return TILDE_BANK.map(w=>[r(),w]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
+}
+/* "n" (pedido por David, 2026-11-23): cuántas palabras tiene esta ronda, elegido por el tutor al
+   poner el deber (ver taskAddOverlay/taskAddConfirm, campo it.n) -- antes era siempre TILDES_N
+   (10), fijo. Por defecto (práctica libre, Zona de Pruebas, o un deber antiguo de antes de este
+   cambio sin campo "n") se sigue usando TILDES_N, igual que siempre. Nunca se confía en "n" tal
+   cual (defensivo, mismo criterio ya aplicado en otros sitios de esta sesión a dictRounds/
+   sentRounds): un valor que no sea un entero positivo cae al valor por defecto, y cualquier valor
+   válido se recorta al tamaño real del banco (nunca pedir más palabras de las que existen). */
+function tildesStart(ret,itemId,seed,n){
+  const nn=(Number.isInteger(n)&&n>0)?Math.min(n,TILDE_BANK.length):TILDES_N;
+  ui.tildesRun={ret,itemId,queue:tildesShuffled(seed).slice(0,nn),i:0,step:'letter',wrongLetter:false,wrongRule:false,msg:'',msgOk:true,log:[],start:Date.now()};
+  ui.screen='tildes';render();
+}
+function tildesFinish(){
+  const st=ui.tildesRun,secs=Math.round((Date.now()-st.start)/1000);
+  const res={n:st.log.length,ok:st.log.filter(x=>x.ok).length,secs,wrong:st.log.filter(x=>!x.ok).map(x=>({word:x.word,rule:x.rule}))};
+  st.res=res;
+  earnScreenTime(res.ok);earnEquitacionPoints(res.ok);
+  /* mismo criterio exacto que morfoFinish/finishMath/exSubmit (ver sus propios avisos, rondas 41-
+     43 de la revisión adversarial a toda la app, 2026-11-05): se usa el "itemId" de ESTA ronda, no
+     el flag global "ui.item", para no marcar hecho por error un deber real y abandonado mientras
+     se practicaba libremente (goTildes) o se probaba desde la Zona de Pruebas (pruebaStart,
+     itemId null). */
+  if(st.itemId){
+    const it=itemsOf(todayStr()).find(x=>x.id===st.itemId);
+    if(it&&it.type==='tildes'){const [s,r]=recItem(it);r.secs=(r.secs||0)+secs;r.end=Date.now();r.done=true;r.res=res;touchSes(s);ui.screen='tildessum';return render();}
+  }
+  const s=getSes(todayStr(),true);if(!s.started)s.started=Date.now()-secs*1000;
+  s.extra.push({id:uid(),kind:'tildes',title:'Tildes: practica de acentuación',start:Date.now()-secs*1000,end:Date.now(),secs,res,done:true});
+  touchSes(s);ui.screen='tildessum';render();
+}
+function renderTildes(){
+  const st=ui.tildesRun;if(!st){ui.screen='home';return render();}
+  const w=st.queue[st.i],plain=noTilde(w.word),letters=[...plain],pct=Math.round(100*st.i/st.queue.length);
+  const inLetter=st.step==='letter',inRule=st.step==='rule',done=st.step==='done';
+  const wordHTML=`<span class="mute">${esc(w.pre)}</span>${letters.map((ch,li)=>`<button class="btn" style="min-width:42px;padding:8px 2px;font-size:1.4rem;font-weight:800" data-act="tildesLetterPick" data-i="${li}" ${inLetter?'':'disabled'}>${esc(ch)}</button>`).join('')}<span class="mute">${esc(w.post)}</span>`;
+  app.innerHTML=`<button class="link" data-act="tildesExit">← Salir</button><h2 style="margin:0">✨ Tildes</h2>
+  <div class="status"><span class="ico">✨</span><div style="flex:1"><div>Palabra ${st.i+1} de ${st.queue.length}</div><div class="bar"><i style="width:${pct}%"></i></div></div></div>
+  ${st.msg?`<p style="font-weight:800;color:${st.msgOk?'var(--ok)':'var(--bad)'};margin:6px 0">${esc(st.msg)}</p>`:''}
+  <div class="panel" style="text-align:center">
+  <p class="mute" style="margin:0 0 10px">${inLetter?'¿En qué letra va la tilde?':inRule?'¿Por qué lleva tilde?':'✅ ¡Muy bien!'}</p>
+  <div style="font-size:1.4rem;line-height:2.6">${wordHTML}</div>
+  ${inLetter?`<div class="row" style="justify-content:center;margin-top:10px"><button class="btn" data-act="tildesNoTilde">🚫 No lleva tilde</button></div>`:''}
+  ${inRule?`<div class="row" style="justify-content:center;gap:8px;flex-wrap:wrap;margin-top:12px">${MORFO_TILDE_ORDER.map(k=>`<button class="btn" data-act="tildesRulePick" data-k="${k}">${esc(MORFO_TILDE_RULES[k].l)}</button>`).join('')}</div>`:''}
+  ${done?`<div class="msg right" style="margin-top:10px">${w.hasTilde?esc(MORFO_TILDE_RULES[w.rule].t):'Esta palabra no lleva tilde.'}</div>
+  <div class="row" style="justify-content:center;margin-top:12px"><button class="btn primary big" data-act="tildesNext">${st.i+1<st.queue.length?'Siguiente ➜':'Terminar'}</button></div>`:''}
+  </div>`;
+}
+function renderTildessum(){
+  const st=ui.tildesRun,res=st&&st.res;if(!res){ui.screen='home';return render();}
+  const good=res.n?res.ok>=Math.ceil(res.n*.8):true;
+  app.innerHTML=`<h2>${good?'🎉 ¡Genial, Julia!':'💪 ¡Bien hecho!'}</h2>
+  <div class="panel" style="border-color:var(--ok);background:var(--okbg)"><div style="font-size:1.6rem;font-weight:800">${res.ok} de ${res.n} a la primera</div></div>
+  ${res.wrong.length?`<h3>Para repasar</h3><div class="panel">${res.wrong.map(w=>`<div style="margin:6px 0"><b>${esc(w.word)}</b>${w.rule?` <small class="mute">(${esc(MORFO_TILDE_RULES[w.rule].l)})</small>`:''}</div>`).join('')}</div>`:''}
+  <div class="row"><button class="btn primary big" data-act="${st.itemId?'goToday':'goTildes'}">${st.itemId?'📅 Volver a los deberes':'✨ Más palabras'}</button><button class="btn" data-act="goHome">Inicio</button></div>`;
+}
+const tildesRunActions={
+  tildesLetterPick(b){
+    const st=ui.tildesRun;if(!st||st.step!=='letter')return;
+    const w=st.queue[st.i],i=+b.dataset.i;
+    if(w.hasTilde&&i===tildeAnswerIdx(w.word)){
+      chime(true);st.step='rule';st.msg='✅ ¡Letra correcta! Ahora elige la regla.';st.msgOk=true;render();
+    }else{
+      st.wrongLetter=true;chime(false);st.msg='Todavía no. ¡Sigue intentándolo!';st.msgOk=false;render();
+    }
+  },
+  tildesNoTilde(){
+    const st=ui.tildesRun;if(!st||st.step!=='letter')return;
+    const w=st.queue[st.i];
+    if(!w.hasTilde){
+      chime(true);st.log.push({ok:!st.wrongLetter,word:(w.pre+w.word+w.post).trim(),rule:null});st.step='done';st.msg='';render();
+    }else{
+      st.wrongLetter=true;chime(false);st.msg='Esta sí necesita una tilde. ¡Sigue intentándolo!';st.msgOk=false;render();
+    }
+  },
+  tildesRulePick(b){
+    const st=ui.tildesRun;if(!st||st.step!=='rule')return;
+    const w=st.queue[st.i],k=b.dataset.k;
+    if(k===w.rule){
+      chime(true);st.log.push({ok:!st.wrongLetter&&!st.wrongRule,word:(w.pre+w.word+w.post).trim(),rule:w.rule});st.step='done';st.msg='';render();
+    }else{
+      st.wrongRule=true;chime(false);st.msg='Esa regla no es. ¡Prueba otra!';st.msgOk=false;render();
+    }
+  },
+  tildesNext(){
+    const st=ui.tildesRun;if(!st||st.step!=='done')return;
+    st.i++;st.wrongLetter=false;st.wrongRule=false;st.msg='';
+    if(st.i>=st.queue.length)return tildesFinish();
+    st.step='letter';render();
+  },
+  tildesExit(){ui.screen=(ui.tildesRun&&ui.tildesRun.ret)||'home';ui.tildesRun=null;render();}
+};
+const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,deberesActions,taskAddActions,examActions,studyActions,miniActions,morfoActions,prepActions,engDictActions,spellActions,spellRunActions,pruebaActions,authActions,userActions,ejercicioActions,ejercicioRunActions,tildesRunActions);
 /* bug real avisado por David (2026-10-24): "Si en la zona de pruebas le doy atrás me saca del
    tutor y melleva al alumno". Causa: cada tipo de ejercicio tiene su propio botón de "← Salir"/
    "← Volver"/"Atrás" (mexit en Mates, exQuit en Exámenes, studyQuit/studyQuitOk en Teoría,
@@ -13662,7 +13919,14 @@ const ALL=Object.assign({},studentActions,tutorActions,fixActions,taskActions,de
    la primera versión de este arreglo metía "miniDone" en el Set genérico sin distinguir los dos
    casos, y eso hacía que probar casi cualquier ejercicio en la Zona de Pruebas terminara de golpe
    la prueba entera en cuanto aparecía el primer descanso de minijuego). */
-const TEST_EXIT_ACTIONS=new Set(['goHome','goToday','goMlist','goExams','goList','backList','mexit','exQuit','studyQuit','studyQuitOk','studyQuitResume','studyQuitDiscard','morfoBack','prepBack','spDictQuit','spSentQuit','spHwQuitResume','spHwQuitDiscard','dictBack']);
+/* "goTildes" NO se incluye aquí a propósito (hallazgo real de la revisión adversarial
+   independiente, 2026-11-23): a diferencia de "goMlist" (que lleva a la LISTA de tipos de
+   Matemáticas, una pantalla intermedia de elegir, antes de "mstart"), "goTildes" empieza una ronda
+   nueva DIRECTAMENTE (llama a tildesStart() sin pasar por ninguna pantalla intermedia) -- es el
+   mismo papel exacto que "mstart"/"studyRepeat"/"spDictRepeat"/"spSentRepeat" (ver el aviso de
+   arriba, "no se incluyen aquí los botones de... 'repetir/otra vez'"), así que debe seguir
+   funcionando con normalidad dentro de la Zona de Pruebas, no sacar al tutor de ella. */
+const TEST_EXIT_ACTIONS=new Set(['goHome','goToday','goMlist','goExams','goList','backList','mexit','exQuit','studyQuit','studyQuitOk','studyQuitResume','studyQuitDiscard','morfoBack','prepBack','spDictQuit','spSentQuit','spHwQuitResume','spHwQuitDiscard','dictBack','tildesExit']);
 document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b||b.disabled)return;
   /* "despierta" el audio del sonido de acierto/fallo en el primer click de lo que sea: en iOS/
      Safari un AudioContext solo se puede crear/reanudar dentro de un gesto del usuario, y algunas
