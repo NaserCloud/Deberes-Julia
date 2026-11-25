@@ -1653,7 +1653,7 @@ function dictadoPreviewHTML(text){
    verify_tema_exam_date_round2.js y verify_tema_exam_date_round3.js (casos límite de cada ronda).
    Suite completa (51 archivos verify_*.js) en verde, salvo las exclusiones pre-existentes ya
    documentadas. */
-const APP_VERSION='2026.11.23-3';
+const APP_VERSION='2026.11.25-5';
 /* v2026.10.22-7 -- pedido por David: "Zona de pruebas" en el área de Tutor, un botón por cada tipo
    1) Mates: tras fallar 2 veces un ejercicio, antes se revelaba sola la respuesta correcta. Ahora
       hace falta el PIN del tutor para verla (igual que ya pasa en Teoría/Dictado) -- mientras
@@ -2008,7 +2008,11 @@ function saveAuth(a){try{localStorage.setItem(AUTH_KEY,JSON.stringify(a));}catch
 function clearAuth(){try{localStorage.removeItem(AUTH_KEY);}catch(e){}}
 const START_DELAY=4;
 const FIN='Fin del dictado. Repasa lo que has escrito.';
-const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,fxSound:true,fxSoundPack:'aplauso',voice:'',spVoice:'',screenSecPerOk:26,screenCapMin:45,equitacionPtsPerOk:2,equitacionPtsPerClase:150};
+// tildesDiacOn (pedido por David, 2026-11-25): Julia todavía no ha estudiado las tildes
+// diacríticas, así que por defecto (false) se excluyen de Tildes -- ver tildesBank(), tabTildes().
+// El tutor lo reactiva él mismo desde la pestaña "✨ Tildes" en cuanto la haya estudiado, sin
+// que haga falta tocar código.
+const DEF_SETTINGS={rate:0.8,phr:'mid',pause:6,repeat:1,gap:3,ppause:1,punct:true,showOrig:true,fxSound:true,fxSoundPack:'aplauso',voice:'',spVoice:'',screenSecPerOk:26,screenCapMin:45,equitacionPtsPerOk:2,equitacionPtsPerClase:150,tildesDiacOn:false};
 const SAMPLE={id:'demo',title:'Ejemplo: Un día de lluvia',text:'Ayer por la tarde llovió mucho en Madrid. Mi hermano y yo bajamos a la calle con los paraguas, pero había tanta agua que volvimos a casa.\nDespués merendamos un bocadillo de jamón y bebimos un vaso de leche caliente. ¡Qué tarde tan divertida!'};
 function loadState(){
   let s={};try{s=JSON.parse(localStorage.getItem(KEY)||'{}');}catch(e){}
@@ -3187,6 +3191,26 @@ if(typeof window!=='undefined')window.addEventListener('storage',e=>{
      pestaña. */
   if(e.key===AUTH_KEY){
     if(typeof ui==='undefined')return;
+    /* Revisión adversarial independiente (2026-11-25), mismo hallazgo y mismo arreglo que
+       authGhostCheck() (ver su aviso completo, más abajo, junto a "function authGhostCheck()"):
+       esta rama reaccionaba a CUALQUIER escritura de otra pestaña en AUTH_KEY -- incluida una tan
+       normal como volver a teclear el PIN correcto, iniciar sesión de nuevo, o "🔒 Bloquear",
+       TODO ello sobre la MISMA cuenta de tutor ya autenticada en esta pestaña -- y la "aplicaba"
+       siempre con restoreAuth(), que fuerza "ui.role" al rol real de la cuenta. Si esta pestaña
+       estaba a propósito viendo la app como Alumna (botón "👧 Alumna" de cabecera, setRole(), sin
+       cerrar sesión real), ese cambio inocente en OTRA pestaña la devolvía sola al Área de tutor
+       -- el mismo síntoma que reportó David, por esta vía (multitarea/dos pestañas) en vez de por
+       el "setInterval" de 25s que ya arregló authGhostCheck(). Se aplica el mismo criterio: si la
+       sesión persistida sigue siendo la MISMA cuenta (mismo uid) que esta pestaña ya tenía, no es
+       un cambio de SESIÓN real -- no se toca "ui.role"; si además se bloqueó desde la otra
+       pestaña, sí se respeta cerrando el candado aquí (sin tocar el rol que se esté viendo). */
+    const authSame=(()=>{const a=loadAuth();return a&&ui.authUid&&a.uid===ui.authUid?a:null;})();
+    if(authSame){
+      // nit (revisión adversarial independiente, 2026-11-25): limpiar los mismos campos que ya
+      // limpian lock()/setRole()/tab() al cerrar el candado, no solo un subconjunto.
+      if(authSame.locked&&ui.unlocked){ui.unlocked=false;ui.editId=null;ui.morfoEditId=null;ui.morfoDraft=null;ui.ejEditId=null;ui.exManualQ=null;ui.tutorMorfoTheory=false;render();}
+      return;
+    }
     /* Revisión adversarial (2026-11-04, ronda 7, ALTO): si ESTA pestaña está dentro de la Zona de
        Pruebas (ui.testZoneBackup puesto) cuando llega un cambio de sesión desde OTRA pestaña, el
        código de abajo (ya correcto para el caso normal) dejaba "ui.testZoneBackup" colgado --
@@ -4715,7 +4739,16 @@ function updateFinal(){
   const f=$('#final');if(!f)return;
   if(left){f.innerHTML='';return;}
   recordDictado();
-  if(!r.gameShown){r.gameShown=true;startMiniGame('fix');return;}
+  /* pedido por David (2026-11-25, ver miniGameDue): a diferencia del resto de minijuegos de
+     descanso ("cada X preguntas"), el de fin de Dictado es un disparador APARTE, incondicional,
+     que NO pasa por miniGameDue() -- así que el guard de ui.testZoneBackup puesto ahí no lo cubría
+     (hallazgo real de la revisión adversarial, 2026-11-25: se colaba al probar un Dictado desde la
+     Zona de Pruebas). Mismo criterio aquí: no tocar minijuegos mientras el tutor solo está probando
+     -- pero OJO, a diferencia de startMiniGame('mrun')/etc. (que vuelven aquí solas al terminar el
+     minijuego, vía endMiniGame()), si simplemente nos saltamos startMiniGame() sin más, nada vuelve
+     a llamar a updateFinal() después, y el panel de "¡Muy bien, Julia!" de abajo nunca se pintaría
+     -- "r.gameShown=true" y seguir SIN "return" para que caiga directo en ese panel. */
+  if(!r.gameShown){r.gameShown=true;if(!ui.testZoneBackup)return startMiniGame('fix');}
   f.innerHTML=`<div class="panel" style="border-color:var(--ok);background:var(--okbg)"><h2 style="margin:0">🎉 ¡Muy bien, Julia!</h2><p>${r.errors.length?'Has corregido todos los fallos.':'Sigue así.'}</p>
   <details><summary>Ver el dictado correcto</summary><div class="marked" style="margin-top:8px">${esc(state.dictados.find(d=>d.id===ui.dict)?.text||'')}</div></details>
   <div class="row" style="margin-top:12px">${ui.item?'<button class="btn primary big" data-act="backList">📅 Volver a los deberes</button>':'<button class="btn primary" data-act="again">🔁 Repetir este dictado</button><button class="btn" data-act="backList">Elegir otro</button>'}</div></div>`;
@@ -4882,7 +4915,7 @@ function itemPendingInfo(it){
   if(it.type==='spelling'){const l=state.spelling.find(x=>x.id===it.spid);if(!l)return '';return `${l.words.length} ${l.words.length===1?'palabra':'palabras'}`;}
   if(it.type==='morfo'){const m=state.morfos.find(x=>x.id===it.mid);return m?nWordsMorfoLabel(m.text):'';}
   if(it.type==='mates'){const n=(it.cfg&&it.cfg.n)||10;return `${n} ${n===1?'ejercicio':'ejercicios'}`;}
-  if(it.type==='tildes'){const n=(Number.isInteger(it.n)&&it.n>0)?Math.min(it.n,TILDE_BANK.length):TILDES_N;return `${n} ${n===1?'palabra':'palabras'}`;}
+  if(it.type==='tildes'){const n=(Number.isInteger(it.n)&&it.n>0)?Math.min(it.n,tildesBank().length):TILDES_N;return `${n} ${n===1?'palabra':'palabras'}`;}
   if(it.type==='ejercicio'){const j=ejGet(it.jid);return j&&j.video?'🎬 Con vídeo':'';}
   return '';
 }
@@ -5413,7 +5446,7 @@ function taskAddOverlay(){
   ${!a.dictRounds&&!a.sentRounds?(a.nSent?'<p class="msg wrong" style="margin:6px 0">⚠️ Elige al menos una ronda (de escuchar o de frases): no puedes poner «Ninguna» en las dos a la vez, si no Julia no tendría nada que hacer ese día.</p>':'<p class="msg wrong" style="margin:6px 0">⚠️ Esta lista todavía no tiene frases preparadas, así que tiene que tener al menos 1 ronda de escuchar las palabras (si no, Julia no tendría nada que hacer ese día).</p>'):''}`:''}
   ${a.type==='morfo'?taskAddWriteModeHTML(a):''}
   ${a.type==='tildes'?`<div class="lbl" style="margin-top:14px">¿Cuántas palabras?</div>
-  <div class="chips">${[5,10,15,20,30,TILDE_BANK.length].map(n=>chip(a.nWords===n,'taskAddNWords',`data-v="${n}"`,n===TILDE_BANK.length?`Todas (${n})`:n)).join('')}</div>`:''}
+  <div class="chips">${[5,10,15,20,30,tildesBank().length].map(n=>chip(a.nWords===n,'taskAddNWords',`data-v="${n}"`,n===tildesBank().length?`Todas (${n})`:n)).join('')}</div>`:''}
   <p class="mute" style="margin:10px 0">${esc(when)}</p>
   <div class="row" style="margin-top:4px"><button class="btn primary big" data-act="taskAddConfirm" ${a.type==='spelling'&&!a.dictRounds&&!a.sentRounds?'disabled':''}>💾 Agregar a deberes</button><button class="btn" data-act="taskAddClose">Cancelar</button></div>
   </div></div>`;
@@ -8843,6 +8876,16 @@ const miniLoseMsg=()=>MINI_LOSE_MSGS[Math.floor(Math.random()*MINI_LOSE_MSGS.len
    a llegar a un múltiplo), aun así sale un minijuego una vez, a mitad de ronda, para que ninguna
    ronda se quede sin ninguno. */
 function miniGameDue(count,total){
+  /* pedido por David (2026-11-25): "en los ejercicios de prueba no metas juegos" -- mientras el
+     tutor está probando un ejercicio desde la "🧪 Zona de pruebas" (ui.testZoneBackup puesto, ver
+     pruebaEnter/pruebaExit más abajo), NO deben colarse los minijuegos de descanso de "cada X
+     preguntas" (miniGameEvery) a mitad de la prueba -- interrumpen sin motivo una comprobación que
+     el tutor solo quiere hacer rápido. Esto NO afecta al kind "minijuego" de PRUEBA_KINDS (probar
+     un minijuego EN SÍ, pruebaActions.pruebaStart) porque ese camino llama a startMiniGame()
+     directamente, sin pasar por miniGameDue(); tampoco afecta a la vista previa de un minijuego
+     desde Ajustes (miniPreview/"__tutorpreview__"), que tampoco pasa por aquí. Sí sigue
+     respetándose con normalidad en los deberes reales de Julia (ui.testZoneBackup es null). */
+  if(ui.testZoneBackup)return false;
   const ev=state.miniGameEvery||15;
   if(count<=0||count>=total)return false;
   if(total>ev)return count%ev===0;
@@ -12761,12 +12804,21 @@ function tabMorfologia(){
    botón de siempre para ponerlo como deberes. El recuento por categoría es para que el tutor vea
    de un vistazo qué cubre la lista sin tener que abrir el código. */
 function tabTildes(){
+  // pedido por David (2026-11-25): "las tildes diacriticas aun no las ha estudiado asi que esas
+  // no le pongas por ahora" -- interruptor para excluirlas/incluirlas (ver tildesBank/
+  // DEF_SETTINGS.tildesDiacOn), con el mismo mecanismo genérico "data-set" que ya usan el resto de
+  // interruptores de Ajustes (listener de "input", no hace falta ninguna acción nueva).
+  const diacOn=!!(state.settings&&state.settings.tildesDiacOn);
+  const bank=tildesBank();
+  const diacTotal=TILDE_BANK.filter(w=>w.diac).length; // 24 (12 pares con/sin tilde), fijo
   const counts={};MORFO_TILDE_ORDER.forEach(k=>counts[k]=0);let sinTilde=0;
-  TILDE_BANK.forEach(w=>w.hasTilde?counts[w.rule]++:sinTilde++);
+  bank.forEach(w=>w.hasTilde?counts[w.rule]++:sinTilde++);
   $('#tab').innerHTML=`<p class="mute" style="margin-top:0">Julia ve una palabra sin tilde y pulsa la letra donde iría (o «No lleva tilde», si no le hace falta ninguna); si acierta y la palabra sí lleva tilde, elige después por qué. Puede reintentar las veces que quiera en los dos pasos, pero solo cuenta como acertada si acierta a la primera en los dos.</p>
-  <div class="panel"><b>📋 Lista de palabras (fija, ${TILDE_BANK.length} en total)</b>
+  <div class="panel"><label class="f"><input type="checkbox" data-set="tildesDiacOn" ${diacOn?'checked':''}> Incluir tildes diacríticas (él/el, tú/tu, sí/si…)</label>
+  <p class="mute" style="margin:6px 0 0">${diacOn?`Incluidas: ${diacTotal} palabras (12 pares).`:`Excluidas por ahora (${diacTotal} palabras, 12 pares) — actívalo en cuanto Julia haya estudiado esta regla.`}</p></div>
+  <div class="panel"><b>📋 Lista de palabras activa (${bank.length} de ${TILDE_BANK.length} en total)</b>
   <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:8px">${MORFO_TILDE_ORDER.map(k=>`<span class="tag">${esc(MORFO_TILDE_RULES[k].l)}: ${counts[k]}</span>`).join('')}<span class="tag">Sin tilde (trampa): ${sinTilde}</span></div>
-  <p class="mute" style="margin:10px 0 0">La práctica libre usa ${TILDES_N} palabras al azar de esta lista; al poner un deber, se puede elegir cuántas (${[5,10,15,20,30,TILDE_BANK.length].join('/')}).</p></div>
+  <p class="mute" style="margin:10px 0 0">La práctica libre usa ${TILDES_N} palabras al azar de esta lista; al poner un deber, se puede elegir cuántas (${[5,10,15,20,30,bank.length].join('/')}).</p></div>
   <div class="row" style="margin-top:10px"><button class="btn" data-act="taskAddOpen" data-type="tildes" data-id="main" data-title="Tildes: practica de acentuación">📅 Agregar a deberes</button></div>`;
 }
 function tabReglas(){
@@ -13543,7 +13595,17 @@ const pruebaActions={
        escuchando de fondo sin ninguna pantalla que pudiera ya cortarlo. */
     try{Escucha.stop();}catch(e){}
     const ret=ui.testZoneReturn;ui.testZoneReturn=null;
-    ui.role='tutor';ui.unlocked=true;
+    /* Revisión adversarial independiente (2026-11-25), hallazgo real sobre el arreglo de hoy de la
+       rama "storage"/AUTH_KEY (ver su aviso completo, más arriba): esta línea desbloqueaba SIEMPRE
+       al salir de la Zona de Pruebas, sin mirar si mientras tanto había llegado un "🔒 Bloquear"
+       real desde OTRA pestaña del mismo dispositivo (ui.testZoneBackup puesto no se toca por ese
+       bloqueo remoto -- antes "colaba" sin querer porque esa rama SIEMPRE acababa en
+       restoreAuth(), que sí respeta el bloqueo, machacando después lo que dejara esta línea; el
+       arreglo de hoy hace que, para la MISMA cuenta, ya no pase por ahí). Se respeta aquí el mismo
+       criterio que restoreAuth()/esa rama: solo se desbloquea si AUTH_KEY (loadAuth(), la sesión
+       persistida en ESTE dispositivo) no quedó con "locked:true" entretanto. */
+    const authAtExit=loadAuth();
+    ui.role='tutor';ui.unlocked=!(authAtExit&&authAtExit.locked);
     /* vuelve a donde estaba el tutor al entrar (ver pruebaEnter); si por lo que sea no se guardó
        nada (p.ej. un "state" antiguo restaurado de un punto intermedio raro), se cae al mismo
        sitio de siempre (pestaña "🧪 Zona de pruebas") como ya hacía esta función. */
@@ -13749,30 +13811,34 @@ const TILDE_BANK=[
   {word:'número',hasTilde:true,rule:'esdrujula'},{word:'histórico',hasTilde:true,rule:'esdrujula'},
   // diacríticas: la MISMA palabra se escribe con o sin tilde según su significado en la frase, así
   // que aquí sí hace falta algo de contexto alrededor (pre/post) para que la frase tenga sentido.
-  {pre:'',word:'él',post:' juega al fútbol',hasTilde:true,rule:'diac'},
-  {pre:'',word:'el',post:' perro corre',hasTilde:false},
-  {pre:'',word:'tú',post:' tienes razón',hasTilde:true,rule:'diac'},
-  {pre:'',word:'tu',post:' hermano llegó',hasTilde:false},
-  {pre:'esto es para ',word:'mí',post:'',hasTilde:true,rule:'diac'},
-  {pre:'vino a ',word:'mi',post:' casa',hasTilde:false},
-  {pre:'dijo que ',word:'sí',post:'',hasTilde:true,rule:'diac'},
-  {pre:'iré ',word:'si',post:' llueve',hasTilde:false},
-  {pre:'quiero un ',word:'té',post:'',hasTilde:true,rule:'diac'},
-  {pre:'',word:'te',post:' quiero mucho',hasTilde:false},
-  {pre:'espero que ',word:'dé',post:' su opinión',hasTilde:true,rule:'diac'},
-  {pre:'vengo ',word:'de',post:' casa',hasTilde:false},
-  {pre:'',word:'sé',post:' bueno con ella',hasTilde:true,rule:'diac'},
-  {pre:'él ',word:'se',post:' fue',hasTilde:false},
-  {pre:'',word:'qué',post:' raro es esto',hasTilde:true,rule:'diac'},
-  {pre:'dijo ',word:'que',post:' vendría',hasTilde:false},
-  {pre:'',word:'cómo',post:' te llamas',hasTilde:true,rule:'diac'},
-  {pre:'lo hizo ',word:'como',post:' pudo',hasTilde:false},
-  {pre:'',word:'cuándo',post:' llegas',hasTilde:true,rule:'diac'},
-  {pre:'vendré ',word:'cuando',post:' pueda',hasTilde:false},
-  {pre:'',word:'dónde',post:' vives',hasTilde:true,rule:'diac'},
-  {pre:'fue ',word:'donde',post:' le dijeron',hasTilde:false},
-  {pre:'',word:'quién',post:' ha llamado',hasTilde:true,rule:'diac'},
-  {pre:'fue mi padre ',word:'quien',post:' llamó',hasTilde:false},
+  // "diac:true" en LOS 24 (las 12 con tilde Y sus 12 contrapartes sin tilde, que no tienen "rule"
+  // propio): marca a la familia entera como "diacrítica" para poder excluirla de raíz (ver
+  // tildesBank/DEF_SETTINGS.tildesDiacOn, pedido por David 2026-11-25: "las tildes diacriticas aun
+  // no las ha estudiado asi que esas no le pongas por ahora").
+  {pre:'',word:'él',post:' juega al fútbol',hasTilde:true,rule:'diac',diac:true},
+  {pre:'',word:'el',post:' perro corre',hasTilde:false,diac:true},
+  {pre:'',word:'tú',post:' tienes razón',hasTilde:true,rule:'diac',diac:true},
+  {pre:'',word:'tu',post:' hermano llegó',hasTilde:false,diac:true},
+  {pre:'esto es para ',word:'mí',post:'',hasTilde:true,rule:'diac',diac:true},
+  {pre:'vino a ',word:'mi',post:' casa',hasTilde:false,diac:true},
+  {pre:'dijo que ',word:'sí',post:'',hasTilde:true,rule:'diac',diac:true},
+  {pre:'iré ',word:'si',post:' llueve',hasTilde:false,diac:true},
+  {pre:'quiero un ',word:'té',post:'',hasTilde:true,rule:'diac',diac:true},
+  {pre:'',word:'te',post:' quiero mucho',hasTilde:false,diac:true},
+  {pre:'espero que ',word:'dé',post:' su opinión',hasTilde:true,rule:'diac',diac:true},
+  {pre:'vengo ',word:'de',post:' casa',hasTilde:false,diac:true},
+  {pre:'',word:'sé',post:' bueno con ella',hasTilde:true,rule:'diac',diac:true},
+  {pre:'él ',word:'se',post:' fue',hasTilde:false,diac:true},
+  {pre:'',word:'qué',post:' raro es esto',hasTilde:true,rule:'diac',diac:true},
+  {pre:'dijo ',word:'que',post:' vendría',hasTilde:false,diac:true},
+  {pre:'',word:'cómo',post:' te llamas',hasTilde:true,rule:'diac',diac:true},
+  {pre:'lo hizo ',word:'como',post:' pudo',hasTilde:false,diac:true},
+  {pre:'',word:'cuándo',post:' llegas',hasTilde:true,rule:'diac',diac:true},
+  {pre:'vendré ',word:'cuando',post:' pueda',hasTilde:false,diac:true},
+  {pre:'',word:'dónde',post:' vives',hasTilde:true,rule:'diac',diac:true},
+  {pre:'fue ',word:'donde',post:' le dijeron',hasTilde:false,diac:true},
+  {pre:'',word:'quién',post:' ha llamado',hasTilde:true,rule:'diac',diac:true},
+  {pre:'fue mi padre ',word:'quien',post:' llamó',hasTilde:false,diac:true},
   // hiatos (una vocal débil -i/u- suena más fuerte que la vocal fuerte de al lado: quedan en
   // sílabas distintas, y por eso lleva tilde aunque no sea ni aguda ni llana ni esdrújula "normal")
   {word:'país',hasTilde:true,rule:'hiato'},{word:'baúl',hasTilde:true,rule:'hiato'},
@@ -13788,14 +13854,21 @@ const TILDE_BANK=[
 ].map((w,i)=>Object.assign({id:'ti'+i,pre:w.pre||'',post:w.post||''},w));
 const TILDES_N=10; // palabras por ronda (deberes o práctica libre), mismo criterio que Mates (taskActions.mstart)
 function tildeAnswerIdx(word){for(let i=0;i<word.length;i++)if(/[áéíóú]/.test(word[i]))return i;return -1;}
-/* baraja determinista de TILDE_BANK a partir de una semilla (mismo patrón que makeExercises/
-   seedRng en Matemáticas): con la MISMA semilla sale siempre el mismo orden, para que un deber de
-   Tildes ya puesto (su "seed" se guarda en el propio item de state.tareas al crearlo, ver
-   taskAddConfirm) reparta las mismas palabras si Julia lo reabre antes de terminarlo, en
-   cualquier dispositivo. */
+/* el banco "activo" de verdad: todo TILDE_BANK, salvo que el tutor haya dejado fuera las tildes
+   diacríticas (state.settings.tildesDiacOn=false, el valor por defecto -- ver DEF_SETTINGS, pedido
+   por David 2026-11-25). Se filtra aquí, en el único sitio del que parten TODAS las rondas
+   (deberes, práctica libre y Zona de Pruebas pasan todas por tildesShuffled), para que una vez
+   excluidas no puedan colarse por ningún camino. Defensivo ante "state.settings" ausente (no
+   debería pasar nunca -- loadState() siempre lo rellena con DEF_SETTINGS -- pero por si acaso). */
+function tildesBank(){return (state.settings&&state.settings.tildesDiacOn)?TILDE_BANK:TILDE_BANK.filter(w=>!w.diac);}
+/* baraja determinista del banco ACTIVO (ver tildesBank) a partir de una semilla (mismo patrón que
+   makeExercises/seedRng en Matemáticas): con la MISMA semilla sale siempre el mismo orden, para
+   que un deber de Tildes ya puesto (su "seed" se guarda en el propio item de state.tareas al
+   crearlo, ver taskAddConfirm) reparta las mismas palabras si Julia lo reabre antes de terminarlo,
+   en cualquier dispositivo. */
 function tildesShuffled(seed){
   const r=seedRng(seed);
-  return TILDE_BANK.map(w=>[r(),w]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
+  return tildesBank().map(w=>[r(),w]).sort((a,b)=>a[0]-b[0]).map(x=>x[1]);
 }
 /* "n" (pedido por David, 2026-11-23): cuántas palabras tiene esta ronda, elegido por el tutor al
    poner el deber (ver taskAddOverlay/taskAddConfirm, campo it.n) -- antes era siempre TILDES_N
@@ -13805,7 +13878,7 @@ function tildesShuffled(seed){
    sentRounds): un valor que no sea un entero positivo cae al valor por defecto, y cualquier valor
    válido se recorta al tamaño real del banco (nunca pedir más palabras de las que existen). */
 function tildesStart(ret,itemId,seed,n){
-  const nn=(Number.isInteger(n)&&n>0)?Math.min(n,TILDE_BANK.length):TILDES_N;
+  const nn=(Number.isInteger(n)&&n>0)?Math.min(n,tildesBank().length):TILDES_N;
   ui.tildesRun={ret,itemId,queue:tildesShuffled(seed).slice(0,nn),i:0,step:'letter',wrongLetter:false,wrongRule:false,msg:'',msgOk:true,log:[],start:Date.now()};
   ui.screen='tildes';render();
 }
@@ -14130,7 +14203,27 @@ document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;const t=e.targ
 function authGhostCheck(){
   if(typeof ui==='undefined'||!ui.authUid)return false;
   const acc=(state.users||[]).find(x=>x.id===ui.authUid);
-  if(acc&&acc.role===ui.role)return false;
+  /* ARREGLADO (aviso de David, 2026-11-25: "en las Tildes cada 2 o 3 palabras se me va del perfil
+     de alumno al de tutor"). Hallazgo real: esta comprobación comparaba "acc.role" (el rol REAL
+     de la cuenta autenticada, según state.users) contra "ui.role" -- pero "ui.role" NO es lo
+     mismo: es solo el rol que se está VIENDO ahora mismo en esta pestaña, y el botón siempre
+     visible "👧 Alumna / 🧑‍🏫 Tutor" (setRole(), más abajo) lo cambia A PROPÓSITO sin tocar
+     "ui.authUid" ni AUTH_KEY -- así el tutor puede echar un vistazo o probar algo él mismo como
+     Julia sin cerrar sesión de verdad. En cuanto David pulsaba "👧 Alumna" para hacer así los
+     deberes de Tildes, "acc.role" ('tutor', el real) dejaba de coincidir con "ui.role" ('alumna',
+     solo de vista) -- esta función lo confundía con una sesión "fantasma" de verdad (cuenta
+     borrada o rol cambiado desde OTRO dispositivo, que es para lo que de verdad sirve) y la
+     "arreglaba" sola: limpiaba el rol y llamaba a restoreAuth(), que vuelve a leer AUTH_KEY (que
+     setRole() nunca toca, así que seguía con 'tutor') y devolvía "ui.role='tutor';
+     ui.unlocked=true" -- sin ningún clic, cada vez que se repetía esta comprobación (se llama
+     desde el "setInterval" de 25s de Cloud.sync() y desde cada "visibilitychange", ver más abajo
+     junto a "C.start()" -- de ahí el patrón de "cada 2 o 3 palabras", más o menos lo que tarda en
+     volver a cumplirse ese intervalo mientras se practica). Se compara ahora contra el rol de la
+     SESIÓN PERSISTIDA (AUTH_KEY, vía loadAuth(), que setRole() nunca toca) en vez de "ui.role":
+     así solo se dispara el "arreglo" cuando la cuenta cambió o desapareció DE VERDAD, nunca por
+     estar viendo la app como Alumna a propósito con el mismo inicio de sesión de tutor. */
+  const a=loadAuth();
+  if(acc&&a&&a.uid===ui.authUid&&acc.role===a.role)return false;
   try{miniPreviewExit();}catch(err){}
   try{Escucha.stop();}catch(err){}
   try{Dict.stop();}catch(err){}
